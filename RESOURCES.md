@@ -124,3 +124,16 @@
   JSDoc halaman API `HttpInterceptorFn` (interceptor fungsi, injection context). Use for: menyebut interceptor fungsi sebagai alternatif standalone di v16.
 - [Axios: Interceptors](https://axios-http.com/docs/interceptors)
   Dokumentasi resmi request/response interceptor Axios. Use for: padanan React untuk HTTP Interceptor.
+
+## Knowledge (tambahan lesson 0010)
+
+- [Martin Fowler: TestDouble](https://martinfowler.com/bliki/TestDouble.html) dan [Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html)
+  Definisi Dummy/Fake/Stub/Spy/Mock (dari Meszaros), state vs behavior verification ("only mocks insist upon behavior verification"). Use for: mock vs stub vs fake (lesson 0010).
+- [Ham Vocke (martinfowler.com): The Practical Test Pyramid](https://martinfowler.com/articles/practical-test-pyramid.html)
+  Dua aturan piramida, kelemahan E2E (flaky, lambat), solitary vs sociable unit test. Use for: testing pyramid.
+- [Microsoft Learn: EF Core, Choosing a testing strategy](https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy)
+  Test against DB produksi vs test double; SQLite in-memory sebagai fake dan perbedaannya; provider in-memory "highly discouraged"; jangan mock `DbSet` untuk query; repository pattern sebagai test double. Use for: apa yang di-mock dan database di integration test (lesson 0010, 0011).
+- [Moq Quickstart](https://github.com/devlooped/moq/wiki/Quickstart)
+  `Mock<T>`, `Setup/Returns/ReturnsAsync`, `It.IsAny`, `Verify` + `Times`, `mock.Object`. Use for: sintaks stub/mock di xUnit.
+- [Jest: Mock Functions](https://jestjs.io/docs/mock-functions) dan [SuperTest](https://github.com/ladjs/supertest)
+  Use for: padanan Node untuk Moq dan `WebApplicationFactory`.

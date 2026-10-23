@@ -258,3 +258,34 @@ _Avoid_: Model-driven form, dynamic form (itu pola lain di atas Reactive Forms)
 Pendekatan form Angular (`FormsModule`) di mana form model dibuat implisit oleh directive `ngModel` di template, dengan two-way binding dan alur data asinkron.
 Padanan React: tidak ada padanan langsung; paling dekat input dengan `value` + `onChange` di JSX.
 _Avoid_: HTML form, simple form
+## Testing (tambahan lesson 0010)
+
+**Test Double**:
+Istilah umum untuk objek pengganti objek produksi saat test; jenisnya dummy, stub, spy, mock, dan fake.
+Padanan Node: semua yang dibuat dengan `jest.fn()` / `jest.mock()` atau implementasi palsu buatan sendiri.
+_Avoid_: Mock (sebagai istilah umum; mock hanya salah satu jenisnya)
+
+**Stub**:
+Test double yang memberi jawaban siap (`Setup(...).Returns(...)` di Moq) dan tidak di-assert.
+Padanan Node: `jest.fn().mockReturnValue(...)`.
+_Avoid_: Mock (kalau tidak diverifikasi)
+
+**Fake**:
+Test double dengan implementasi kerja yang mengambil jalan pintas, mis. SQLite in-memory pengganti SQL Server. Catatan: dokumen .NET kadang memakai "fake" sebagai istilah umum.
+Padanan Node: repository berbasis array, SQLite `:memory:`.
+_Avoid_: Stub, mock
+
+**Testing Pyramid**:
+Pedoman komposisi test: banyak Unit Test, lebih sedikit Integration Test, sedikit sekali E2E Test; makin tinggi levelnya, makin sedikit jumlahnya.
+Padanan Node: sama (Jest banyak, Supertest sedikit, Playwright/Cypress paling sedikit).
+_Avoid_: Test ratio, coverage target
+
+**E2E Test**:
+Test dari UI (browser Angular) sampai database lewat aplikasi yang berjalan utuh; paling lambat dan paling rapuh.
+Padanan Node: Playwright / Cypress.
+_Avoid_: Integration test (berbeda: tanpa browser)
+
+**WebApplicationFactory**:
+Class `WebApplicationFactory<Program>` dari `Microsoft.AspNetCore.Mvc.Testing` yang menjalankan aplikasi ASP.NET Core di TestServer in-memory untuk Integration Test, dengan `CreateClient()` dan titik untuk mengganti service.
+Padanan Node: Supertest `request(app)`.
+_Avoid_: Test host (itu bagian di dalamnya), test server saja
