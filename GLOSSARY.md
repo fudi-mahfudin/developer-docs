@@ -249,3 +249,30 @@ _Avoid_: Model-driven form, dynamic form (itu pola lain di atas Reactive Forms)
 Pendekatan form Angular (`FormsModule`) di mana form model dibuat implisit oleh directive `ngModel` di template, dengan two-way binding dan alur data asinkron.
 Padanan React: tidak ada padanan langsung; paling dekat input dengan `value` + `onChange` di JSX.
 _Avoid_: HTML form, simple form
+
+## Arsitektur
+
+**Clean Architecture**:
+Arsitektur yang menaruh aturan bisnis (Application Core) di pusat, dengan Infrastructure dan UI di luar yang bergantung ke dalam; nama lainnya Hexagonal, Ports-and-Adapters, Onion.
+Padanan Node: hexagonal / ports and adapters di NestJS, dengan Prisma sebagai adapter.
+_Avoid_: Onion layer, layered (layered tradisional arahnya UI → BLL → DAL)
+
+**Dependency Rule**:
+Aturan Clean Architecture bahwa dependency source code hanya boleh mengarah ke dalam; lingkaran dalam tidak tahu apa pun tentang lingkaran luar. Diwujudkan lewat DIP.
+Padanan Node: folder `domain/` yang tidak pernah meng-`import` Prisma atau Express.
+_Avoid_: Layer rule, call direction (alur runtime tetap boleh keluar)
+
+**Application Core**:
+Project pusat Clean Architecture berisi Entity, interface (mis. `IProductRepository`), domain service, dan DTO; tidak mereferensikan project lain.
+Padanan Node: folder `domain/` + `services/` tanpa dependency ke framework.
+_Avoid_: Domain layer saja, core library
+
+**Infrastructure**:
+Project Clean Architecture berisi detail teknis yang mengimplementasikan interface dari Application Core: `DbContext`, Migration, implementasi Repository, pengirim email.
+Padanan Node: adapter Prisma, Nodemailer, klien HTTP.
+_Avoid_: DAL, data layer (itu istilah N-Layer)
+
+**Unit of Work**:
+Pola yang mengumpulkan semua insert/update/delete satu aksi lalu menyimpannya dalam satu transaksi; di EF Core diwujudkan oleh `DbContext` dan dijalankan saat `SaveChanges`.
+Padanan Node: `prisma.$transaction([...])`, atau unit of work di MikroORM.
+_Avoid_: Transaction (lebih sempit), batch save
