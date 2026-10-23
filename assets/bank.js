@@ -88,31 +88,42 @@
 
   // results: [{ question, ok }] for mc, [{ question, checked }] for oral.
   // A topic is weak if any of its drawn questions was missed.
+  // Spec: lulus = kuis acak benar DAN lisan >= 4/6, so a topic with no oral drawn
+  // can at most reach QUIZ_ONLY, never PASSED.
+  const STATUS = { PASSED: "Lulus", QUIZ_ONLY: "Kuis lulus, lisan belum diuji", WEAK: "Lemah" };
+
   function scoreByTopic(results) {
     const byTopic = new Map();
     results.forEach(r => {
       const q = r.question;
       const right = q.type === "oral" ? oralPassed(r.checked || 0, q.checklist.length) : !!r.ok;
-      const s = byTopic.get(q.topic) || { topic: q.topic, right: 0, total: 0 };
+      const s = byTopic.get(q.topic) || { topic: q.topic, right: 0, total: 0, oral: false };
       s.total += 1;
       if (right) s.right += 1;
+      if (q.type === "oral") s.oral = true;
       byTopic.set(q.topic, s);
     });
-    return [...byTopic.values()].map(s => ({ ...s, weak: s.right < s.total }));
+    return [...byTopic.values()].map(({ oral, ...s }) => {
+      const weak = s.right < s.total;
+      return { ...s, weak, status: weak ? STATUS.WEAK : oral ? STATUS.PASSED : STATUS.QUIZ_ONLY };
+    });
   }
 
   // Plain text the user pastes back to the agent.
   function summaryText(scores, { title = "Review", labels = {} } = {}) {
     const name = t => (labels[t] ? `${labels[t]} (${t})` : t);
     const weak = scores.filter(s => s.weak).map(s => s.topic);
+    const quizOnly = scores.filter(s => s.status === STATUS.QUIZ_ONLY).map(s => s.topic);
+    const mark = s => (s.weak ? " LEMAH" : s.status === STATUS.QUIZ_ONLY ? ` ${STATUS.QUIZ_ONLY.toUpperCase()}` : "");
     return [
       `Hasil ${title}`,
-      ...scores.map(s => `- ${name(s.topic)}: ${s.right}/${s.total}${s.weak ? " LEMAH" : ""}`),
+      ...scores.map(s => `- ${name(s.topic)}: ${s.right}/${s.total}${mark(s)}`),
       `Topik lemah: ${weak.length ? weak.join(", ") : "(tidak ada)"}`,
+      ...(quizOnly.length ? [`${STATUS.QUIZ_ONLY}: ${quizOnly.join(", ")}`] : []),
     ].join("\n");
   }
 
-  const api = { createBank, draw, shuffle, seededRandom, oralPassed, scoreByTopic, summaryText };
+  const api = { createBank, draw, shuffle, seededRandom, oralPassed, scoreByTopic, summaryText, STATUS };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.QuestionBank = Object.assign(createBank(), api);
 })(typeof globalThis !== "undefined" ? globalThis : this);

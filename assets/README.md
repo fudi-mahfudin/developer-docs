@@ -91,7 +91,7 @@ Latihan urutan tidak masuk bank soal (bank hanya `mc`/`oral`); ubah materinya me
 - `data-lessons`: lesson sumber. `data-topics`: topik tambahan (mis. topik lemah dari review sebelumnya, untuk pengulangan berjarak). Soal diambil kalau lesson **atau** topiknya cocok.
 - `data-mc` / `data-oral`: jumlah soal kuis dan lisan. Penarikan menyebar ke semua topik dulu sebelum mengulang topik, lalu kuis dan lisan diacak bersama.
 - Seed tampil di halaman. `?seed=123` di URL mengulang set yang sama. Tombol "Acak ulang" membuat set baru.
-- Setelah semua soal dijawab, tampil tabel skor per topik dan teks siap salin (`Topik lemah: …`) untuk ditempel ke agent. Topik lemah = ada soal yang salah atau lisan di bawah 2/3 checklist.
+- Setelah semua soal dijawab, tampil tabel skor per topik dan teks siap salin (`Topik lemah: …`) untuk ditempel ke agent. Status per topik (`QuestionBank.STATUS`): **Lemah** = ada soal yang salah atau lisan di bawah 2/3 checklist; **Lulus** = semua kuis topik itu benar **dan** ada soal lisan yang lulus; **Kuis lulus, lisan belum diuji** = kuis benar tapi tidak ada soal lisan topik itu yang ditarik (bukan bukti lulus, ditulis di baris tersendiri di teks salin).
 
 ## Indeks (`index.html` di root)
 
@@ -102,3 +102,5 @@ Satu baris `<li>` per lesson. Saat lesson selesai, ganti hanya baris lesson itu 
 ```sh
 node --test      # dari root repo; menjalankan tests/*.test.js, tanpa npm
 ```
+
+Test bank soal per lesson (`tests/questions-NNNN.test.js`) dan review (`tests/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal ke bank baru, `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, dan aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.

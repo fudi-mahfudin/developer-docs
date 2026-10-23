@@ -15,7 +15,7 @@
 - [x] Reference doc yang bisa dicetak dibuat atau diperbarui dan di-link dari lesson
 - [x] Istilah konsisten dengan GLOSSARY, dan setiap konsep diberi padanan Node/Express/React
 - [x] Ada satu sumber resmi utama yang direkomendasikan, plus pengingat untuk bertanya ke agent
-- [ ] Link navigasi dari lesson sebelumnya dan entri di halaman indeks lesson sudah diperbarui
+- [x] Link navigasi dari lesson sebelumnya dan entri di halaman indeks lesson sudah diperbarui
 - [x] Memakai stylesheet dan komponen bersama; kode yang bisa dipakai ulang ditaruh di assets, bukan ditulis langsung di lesson
 - [x] Semua contoh memakai sintaks Angular 16 (tanpa control flow v17)
 

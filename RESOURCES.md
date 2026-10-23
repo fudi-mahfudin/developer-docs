@@ -92,28 +92,6 @@
   Rumusan ringkas kelima prinsip SOLID dari pencetusnya. Use for: definisi SRP/OCP/LSP/ISP/DIP satu kalimat (lesson 0008).
 - [Robert C. Martin: The Single Responsibility Principle](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) dan [The Open Closed Principle](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html)
   "Reason to change" = orang/peran; OCP lewat arsitektur plugin. Use for: menjelaskan SRP dan OCP lebih dalam.
-
-## Wisdom (Communities)
-
-- [r/dotnet](https://www.reddit.com/r/dotnet/) dan [r/csharp](https://www.reddit.com/r/csharp/)
-  Komunitas besar & aktif. Use for: menanyakan pengalaman interview .NET, review kode.
-- [r/Angular2](https://www.reddit.com/r/Angular2/)
-  Subreddit utama Angular. Use for: pertanyaan Angular praktis.
-- [Stack Overflow — tag c#, asp.net-core, angular](https://stackoverflow.com/questions/tagged/asp.net-core)
-  Use for: error spesifik saat praktik.
-
-## Gaps
-- Belum ada sumber bank-soal interview .NET/Angular yang benar-benar high-trust; pertanyaan latihan disusun dari dokumentasi resmi.
-
-## Knowledge (tambahan lesson 0014)
-
-- [React docs: Passing Data Deeply with Context](https://react.dev/learn/passing-data-deeply-with-context) dan [`lazy`](https://react.dev/reference/react/lazy)
-  Dokumentasi resmi React. Use for: padanan React untuk DI hierarkis Angular (Provider terdekat) dan lazy loading route (lesson 0014).
-- [Sumber kode Angular v16 `packages/router/src/models.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/router/src/models.ts)
-  JSDoc yang menjadi halaman API v16.angular.io/api/router/*, termasuk tanda `@deprecated` class-based guard. Use for: mengutip status deprecated `CanActivate` di v16.
-
-## Knowledge (tambahan lesson 0009)
-
 - [Kent Beck: Canon TDD](https://newsletter.kentbeck.com/p/canon-tdd)
   Langkah TDD versi pencetusnya (test list → satu test → pass → refactor opsional → ulangi) beserta daftar kesalahan per langkah. Use for: siklus red-green-refactor dan jebakannya (lesson 0009).
 - [Martin Fowler: Test Driven Development](https://martinfowler.com/bliki/TestDrivenDevelopment.html) dan [Self Testing Code](https://martinfowler.com/bliki/SelfTestingCode.html)
@@ -122,8 +100,24 @@
   Tutorial resmi dengan pendekatan TDD ("write a test that's known to fail"), `[Fact]`, `[Theory]` + `[InlineData]`. Use for: contoh siklus di xUnit.
 - [Jest: Globals API (`test`, `test.each`)](https://jestjs.io/docs/api#testeachtablename-fn-timeout)
   Use for: padanan Node untuk `[Fact]`/`[Theory]`.
-## Knowledge (tambahan lesson 0016)
-
+- [Martin Fowler: TestDouble](https://martinfowler.com/bliki/TestDouble.html) dan [Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html)
+  Definisi Dummy/Fake/Stub/Spy/Mock (dari Meszaros), state vs behavior verification ("only mocks insist upon behavior verification"). Use for: mock vs stub vs fake (lesson 0010).
+- [Ham Vocke (martinfowler.com): The Practical Test Pyramid](https://martinfowler.com/articles/practical-test-pyramid.html)
+  Dua aturan piramida, kelemahan E2E (flaky, lambat), solitary vs sociable unit test. Use for: testing pyramid.
+- [Microsoft Learn: EF Core, Choosing a testing strategy](https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy) dan [Testing without your production database system](https://learn.microsoft.com/en-us/ef/core/testing/testing-without-the-database)
+  Test against DB produksi vs test double; SQLite in-memory sebagai fake dan perbedaannya; provider in-memory "highly discouraged"; jangan mock `DbSet` untuk query; repository pattern sebagai test double yang direkomendasikan, biayanya, jangan kembalikan `IQueryable`; mulai dari test ke database asli. Use for: database di integration test dan apa yang diganti test double (lesson 0010), debat Repository di atas EF Core (lesson 0011).
+- [Moq Quickstart](https://github.com/devlooped/moq/wiki/Quickstart)
+  `Mock<T>`, `Setup/Returns/ReturnsAsync`, `It.IsAny`, `Verify` + `Times`, `mock.Object`. Use for: sintaks stub/mock di xUnit.
+- [Jest: Mock Functions](https://jestjs.io/docs/mock-functions) dan [SuperTest](https://github.com/ladjs/supertest)
+  Use for: padanan Node untuk Moq dan `WebApplicationFactory`.
+- [EF Core API: DbContext Class](https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontext?view=efcore-8.0)
+  "DbContext is a combination of the Unit Of Work and Repository patterns." Use for: argumen kontra Repository.
+- [Microsoft Learn: Designing the infrastructure persistence layer (eBook .NET Microservices)](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design)
+  Repository per aggregate root, Unit of Work = `SaveChanges`, bagian "Repositories shouldn't be mandatory" (kutipan Jimmy Bogard). Use for: sisi "tidak wajib" dalam debat Repository.
+- [React docs: Passing Data Deeply with Context](https://react.dev/learn/passing-data-deeply-with-context) dan [`lazy`](https://react.dev/reference/react/lazy)
+  Dokumentasi resmi React. Use for: padanan React untuk DI hierarkis Angular (Provider terdekat) dan lazy loading route (lesson 0014).
+- [Sumber kode Angular v16 `packages/router/src/models.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/router/src/models.ts)
+  JSDoc yang menjadi halaman API v16.angular.io/api/router/*, termasuk tanda `@deprecated` class-based guard. Use for: mengutip status deprecated `CanActivate` di v16.
 - [Angular v16: Introduction to forms](https://v16.angular.io/guide/forms-overview) dan [Reactive forms](https://v16.angular.io/guide/reactive-forms)
   Tabel "Key differences" reactive vs template-driven (setup, data model, data flow, validasi, testing), `FormBuilder`, `valueChanges`. Use for: memilih pendekatan form (lesson 0016).
 - [Angular v16: HTTP - Intercept requests and responses](https://v16.angular.io/guide/http-intercept-requests-and-responses) dan [Interceptor use-cases](https://v16.angular.io/guide/http-interceptor-use-cases)
@@ -134,8 +128,6 @@
   JSDoc halaman API `HttpInterceptorFn` (interceptor fungsi, injection context). Use for: menyebut interceptor fungsi sebagai alternatif standalone di v16.
 - [Axios: Interceptors](https://axios-http.com/docs/interceptors)
   Dokumentasi resmi request/response interceptor Axios. Use for: padanan React untuk HTTP Interceptor.
-## Knowledge (tambahan lesson 0017)
-
 - [Microsoft Learn: Overview of ASP.NET Core Authentication (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-8.0) dan [Introduction to authorization](https://learn.microsoft.com/en-us/aspnet/core/security/authorization/introduction?view=aspnetcore-8.0)
   Definisi authentication vs authorization, scheme/handler, challenge (401 + `www-authenticate: bearer`) vs forbid (403), `ClaimsPrincipal`. Use for: pertanyaan authn vs authz (lesson 0017).
 - [Microsoft Learn: Configure JWT bearer authentication in ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication?view=aspnetcore-8.0)
@@ -152,29 +144,18 @@
   `HttpClient` membaca cookie `XSRF-TOKEN` dan mengirim header `X-XSRF-TOKEN`; "supports only the client half". Use for: proteksi CSRF bila JWT di cookie.
 - [Express: cors middleware](https://expressjs.com/en/resources/middleware/cors.html)
   Package `cors` dan opsi `origin`. Use for: padanan Node untuk CORS di ASP.NET Core.
-
-## Knowledge (tambahan lesson 0010)
-
-- [Martin Fowler: TestDouble](https://martinfowler.com/bliki/TestDouble.html) dan [Mocks Aren't Stubs](https://martinfowler.com/articles/mocksArentStubs.html)
-  Definisi Dummy/Fake/Stub/Spy/Mock (dari Meszaros), state vs behavior verification ("only mocks insist upon behavior verification"). Use for: mock vs stub vs fake (lesson 0010).
-- [Ham Vocke (martinfowler.com): The Practical Test Pyramid](https://martinfowler.com/articles/practical-test-pyramid.html)
-  Dua aturan piramida, kelemahan E2E (flaky, lambat), solitary vs sociable unit test. Use for: testing pyramid.
-- [Microsoft Learn: EF Core, Choosing a testing strategy](https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy)
-  Test against DB produksi vs test double; SQLite in-memory sebagai fake dan perbedaannya; provider in-memory "highly discouraged"; jangan mock `DbSet` untuk query; repository pattern sebagai test double. Use for: apa yang di-mock dan database di integration test (lesson 0010, 0011).
-- [Moq Quickstart](https://github.com/devlooped/moq/wiki/Quickstart)
-  `Mock<T>`, `Setup/Returns/ReturnsAsync`, `It.IsAny`, `Verify` + `Times`, `mock.Object`. Use for: sintaks stub/mock di xUnit.
-- [Jest: Mock Functions](https://jestjs.io/docs/mock-functions) dan [SuperTest](https://github.com/ladjs/supertest)
-  Use for: padanan Node untuk Moq dan `WebApplicationFactory`.
-## Knowledge (tambahan lesson 0011)
-
-- [EF Core: Choosing a testing strategy](https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy) dan [Testing without your production database system](https://learn.microsoft.com/en-us/ef/core/testing/testing-without-the-database)
-  Repository pattern sebagai test double yang direkomendasikan, biayanya, jangan kembalikan `IQueryable`, in-memory provider "highly discouraged", mulai dari test ke database asli. Use for: debat Repository di atas EF Core (lesson 0011) dan strategi test (0010).
-- [EF Core API: DbContext Class](https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontext?view=efcore-8.0)
-  "DbContext is a combination of the Unit Of Work and Repository patterns." Use for: argumen kontra Repository.
-- [Microsoft Learn: Designing the infrastructure persistence layer (eBook .NET Microservices)](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design)
-  Repository per aggregate root, Unit of Work = `SaveChanges`, bagian "Repositories shouldn't be mandatory" (kutipan Jimmy Bogard). Use for: sisi "tidak wajib" dalam debat Repository.
-
-## Knowledge (tambahan lesson 0018)
-
 - [MIT CAPD: The STAR method for behavioral interviews](https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/)
   Porsi S 20% / T 10% / A 60% / R 10%, pakai "saya" bukan "kami", hasil terukur. Use for: memoles 4 cerita STAR (lesson 0018).
+
+## Wisdom (Communities)
+
+- [r/dotnet](https://www.reddit.com/r/dotnet/) dan [r/csharp](https://www.reddit.com/r/csharp/)
+  Komunitas besar & aktif. Use for: menanyakan pengalaman interview .NET, review kode.
+- [r/Angular2](https://www.reddit.com/r/Angular2/)
+  Subreddit utama Angular. Use for: pertanyaan Angular praktis.
+- [Stack Overflow — tag c#, asp.net-core, angular](https://stackoverflow.com/questions/tagged/asp.net-core)
+  Use for: error spesifik saat praktik.
+
+## Gaps
+
+- Belum ada sumber bank-soal interview .NET/Angular yang benar-benar high-trust; pertanyaan latihan disusun dari dokumentasi resmi.

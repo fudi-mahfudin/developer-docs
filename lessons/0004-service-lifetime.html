@@ -119,6 +119,7 @@ builder.Services.AddSingleton&lt;IOperationSingleton, Operation&gt;();
 <section class="exercise">
   <h2>Latihan 1 — Pilih lifetime untuk setiap skenario</h2>
   <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review campuran 0007.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0007-review-hari-1.html">review campuran 0007</a>.</p>
   <div class="quiz" data-bank-lesson="0004" data-bank-topic="di-lifetime" data-stack></div>
   <div class="quiz" data-bank-lesson="0004" data-bank-topic="di-dbcontext" data-stack></div>
 </section>
@@ -246,7 +247,7 @@ public class PriceCache(AppDbContext db) { ... }   // ✗ Singleton memegang Sco
 
 <p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kalau Service saya Transient tapi meng-inject DbContext, apakah itu captive?" atau "kapan BackgroundService perlu <code>CreateScope</code>?"</p>
 
-<p class="note" style="font-size:.8rem">
+<p class="note sources">
   Sumber:
   <a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/service-lifetimes">[1] Service lifetimes</a> ·
   <a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/guidelines">[2] Dependency injection guidelines</a> ·

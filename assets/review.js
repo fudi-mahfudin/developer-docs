@@ -37,6 +37,7 @@
   .review .summary { border-top: 2px solid var(--ink); margin-top: 1.5rem; padding-top: .4rem; }
   .review textarea { width: 100%; min-height: 8rem; font-family: "SF Mono", Menlo, monospace; font-size: .8rem; }
   .review tr.weak td { color: var(--bad); }
+  .review tr.quiz-only td { color: var(--muted); }
   @media print {
     .review button { border: none; padding: 0; background: none; }
     .review .controls, .review .summary textarea { display: none; }
@@ -102,7 +103,7 @@
         summary.innerHTML = `
           <h3>Ringkasan per topik</h3>
           <table><thead><tr><th>Topik</th><th>Skor</th><th>Status</th></tr></thead><tbody>
-          ${scores.map(s => `<tr class="${s.weak ? "weak" : ""}"><td>${esc(label(s.topic))}</td><td>${s.right}/${s.total}</td><td>${s.weak ? "Lemah" : "Lulus"}</td></tr>`).join("")}
+          ${scores.map(s => `<tr class="${s.weak ? "weak" : s.status === QB.STATUS.QUIZ_ONLY ? "quiz-only" : ""}"><td>${esc(label(s.topic))}</td><td>${s.right}/${s.total}</td><td>${esc(s.status)}</td></tr>`).join("")}
           </tbody></table>
           <p>Salin teks ini dan tempel ke agent supaya hasilnya dicatat:</p>
           <textarea readonly>${esc(text)}</textarea>

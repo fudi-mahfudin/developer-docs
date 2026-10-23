@@ -106,7 +106,7 @@ QuestionBank.register([
     options: {
       a: "Biarkan saja, mock semua method di setiap test",
       b: "Gabungkan semua repository menjadi satu interface yang besar",
-      c: "Pisah menjadi <code>IProductReader</code> dan <code>IProductWriter</code>, injeksi seperlunya",
+      c: "Pisah menjadi <code>IProductReader</code> dan <code>IProductWriter</code>, lalu injeksi seperlunya",
       d: "Ganti interface dengan class konkret agar lebih sederhana",
     },
     answer: "c",

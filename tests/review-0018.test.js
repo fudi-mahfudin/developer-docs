@@ -6,30 +6,15 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { createBank, draw, seededRandom } = require("../assets/bank.js");
+const { draw, seededRandom } = require("../assets/bank.js");
+const { ROOT, loadLesson, runAsBrowserScripts } = require("./helpers.js");
 const { parseSegments } = require("../assets/timer.js");
 
-const ROOT = path.join(__dirname, "..");
 const CONCEPT = ["0001", "0002", "0003", "0004", "0005", "0006", "0008", "0009", "0010", "0011",
                  "0013", "0014", "0015", "0016", "0017"];
 const REVIEWED = CONCEPT.filter(n => n <= "0011"); // lessons covered by reviews 0007 and 0012
 const STAR = ["star-insiden", "star-refactor", "star-konflik", "star-belajar"];
 const html = fs.readFileSync(path.join(ROOT, "lessons", "0018-star-mock-interview.html"), "utf8");
-
-function loadTogether(nums) {
-  const bank = createBank();
-  globalThis.QuestionBank = bank;
-  try {
-    nums.forEach(n => {
-      const full = path.join(ROOT, "assets", "questions", `${n}.js`);
-      delete require.cache[require.resolve(full)];
-      require(full);
-    });
-  } finally {
-    delete globalThis.QuestionBank;
-  }
-  return bank;
-}
 
 const list = s => (s || "").split(",").map(x => x.trim()).filter(Boolean);
 function block(part) {
@@ -41,17 +26,10 @@ function block(part) {
 
 const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
 const loadedLessons = scripts.map(s => (s.match(/questions\/(\d{4})\.js$/) || [])[1]).filter(Boolean);
-const bank = () => loadTogether(loadedLessons);
+const bank = () => loadLesson(...loadedLessons);
 
 test("all question files 0001–0018 run together as browser scripts", () => {
-  const vm = require("node:vm");
-  const ctx = vm.createContext({});
-  ctx.window = ctx;
-  vm.runInContext(fs.readFileSync(path.join(ROOT, "assets", "bank.js"), "utf8"), ctx);
-  CONCEPT.concat("0018").forEach(n => {
-    const file = path.join(ROOT, "assets", "questions", `${n}.js`);
-    assert.doesNotThrow(() => vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file }), `questions/${n}.js`);
-  });
+  runAsBrowserScripts(CONCEPT.concat("0018"));
 });
 
 test("0018 loads every question file 0001–0017 plus 0018 after bank.js and before review.js", () => {
@@ -80,7 +58,7 @@ test("weak topics from 0007/0012 get their own part: one quiz each, all from rev
   const { lessons, topics, mc, oral } = block("lemah");
   assert.deepEqual(lessons, [], "bagian topik lemah hanya memakai data-topics");
   assert.ok(topics.length >= 1, "data-topics harus berisi topik lemah (atau daftar default)");
-  const reviewed = loadTogether(REVIEWED).select({ lessons: REVIEWED });
+  const reviewed = loadLesson(...REVIEWED).select({ lessons: REVIEWED });
   topics.forEach(t => {
     const qs = reviewed.filter(q => q.topic === t);
     assert.ok(qs.some(q => q.type === "mc"), `topik "${t}" bukan topik kuis dari lesson 0001–0011`);

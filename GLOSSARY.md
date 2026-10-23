@@ -80,7 +80,7 @@ Siklus TDD: tulis test yang gagal, buat lulus dengan kode minimal, lalu rapikan 
 _Avoid_: Test-first saja (tidak menyebut tahap refactor)
 
 **Unit Test**:
-Test untuk satu kelas (biasanya Service) dengan dependensi I/O di-mock.
+Test untuk satu kelas (biasanya Service) dengan dependensi I/O diganti test double.
 Padanan Node: test Jest dengan `jest.fn()` / `jest.mock()`.
 _Avoid_: Small test
 
@@ -90,9 +90,49 @@ Padanan Node: Supertest + database test.
 _Avoid_: E2E test (itu dari browser sampai ke DB)
 
 **Mock**:
-Pengganti dependensi yang bisa diverifikasi apakah dipanggil (Moq / `jasmine.createSpyObj`).
+Jenis test double yang diverifikasi apakah dipanggil (`Verify` di Moq / `jasmine.createSpyObj`); bukan sebutan umum untuk semua test double.
 Padanan Node: `jest.fn()`.
 _Avoid_: Fake, stub (berbeda: stub hanya mengembalikan nilai, fake punya implementasi ringan)
+
+**Arrange-Act-Assert**:
+Pola menyusun satu test: siapkan objek dan test double (Arrange), panggil satu method yang diuji (Act), periksa hasilnya (Assert).
+Padanan Node: susunan yang sama di dalam `it()` Jest; Red-Green-Refactor di Node = `jest --watch` merah, hijau, rapikan.
+_Avoid_: Given-When-Then (setara, tapi istilah BDD)
+
+**Test List**:
+Daftar skenario perilaku yang ingin dicakup, diambil satu per satu dalam siklus Red-Green-Refactor.
+Padanan Node: daftar `test.todo()` di Jest.
+_Avoid_: Test plan, test suite
+
+**Test Double**:
+Istilah umum untuk objek pengganti objek produksi saat test; jenisnya dummy, stub, spy, mock, dan fake.
+Padanan Node: semua yang dibuat dengan `jest.fn()` / `jest.mock()` atau implementasi palsu buatan sendiri.
+_Avoid_: Mock (sebagai istilah umum; mock hanya salah satu jenisnya)
+
+**Stub**:
+Test double yang memberi jawaban siap (`Setup(...).Returns(...)` di Moq) dan tidak di-assert.
+Padanan Node: `jest.fn().mockReturnValue(...)`.
+_Avoid_: Mock (kalau tidak diverifikasi)
+
+**Fake**:
+Test double dengan implementasi kerja yang mengambil jalan pintas, mis. SQLite in-memory pengganti SQL Server. Catatan: dokumen .NET kadang memakai "fake" sebagai istilah umum.
+Padanan Node: repository berbasis array, SQLite `:memory:`.
+_Avoid_: Stub, mock
+
+**Testing Pyramid**:
+Pedoman komposisi test: banyak Unit Test, lebih sedikit Integration Test, sedikit sekali E2E Test; makin tinggi levelnya, makin sedikit jumlahnya.
+Padanan Node: sama (Jest banyak, Supertest sedikit, Playwright/Cypress paling sedikit).
+_Avoid_: Test ratio, coverage target
+
+**E2E Test**:
+Test dari UI (browser Angular) sampai database lewat aplikasi yang berjalan utuh; paling lambat dan paling rapuh.
+Padanan Node: Playwright / Cypress.
+_Avoid_: Integration test (berbeda: tanpa browser)
+
+**WebApplicationFactory**:
+Class `WebApplicationFactory<Program>` dari `Microsoft.AspNetCore.Mvc.Testing` yang menjalankan aplikasi ASP.NET Core di TestServer in-memory untuk Integration Test, dengan `CreateClient()` dan titik untuk mengganti service.
+Padanan Node: Supertest `request(app)`.
+_Avoid_: Test host (itu bagian di dalamnya), test server saja
 
 ## Frontend (Angular 16)
 
@@ -206,6 +246,7 @@ _Avoid_: Early return, abort
 Penyimpanan secret untuk development (`dotnet user-secrets`) di profil user, di luar folder project dan tidak ikut source control; tidak terenkripsi dan hanya dibaca di environment Development.
 Padanan Node: file `.env` yang masuk `.gitignore`.
 _Avoid_: Secret store, vault (itu untuk production, mis. Azure Key Vault)
+
 ## EF Core
 
 **Change Tracker**:
@@ -227,6 +268,7 @@ _Avoid_: Join loading, preload
 Query dengan `AsNoTracking()` yang hasilnya tidak masuk change tracker; untuk skenario read-only, lebih cepat, dan perubahannya tidak disimpan oleh `SaveChanges`.
 Padanan Node: hasil query Prisma biasa (objek polos).
 _Avoid_: Read-only query (bukan istilah EF Core), detached query
+
 ## RxJS (Angular 16)
 
 **Subject**:
@@ -249,15 +291,6 @@ Pipe template `| async` yang subscribe ke Observable, menampilkan nilai terakhir
 Padanan React: `useEffect` + `useState` + cleanup yang ditulis otomatis.
 _Avoid_: Auto-subscribe
 
-**Arrange-Act-Assert**:
-Pola menyusun satu test: siapkan objek dan mock (Arrange), panggil satu method yang diuji (Act), periksa hasilnya (Assert).
-Padanan Node: susunan yang sama di dalam `it()` Jest; Red-Green-Refactor di Node = `jest --watch` merah, hijau, rapikan.
-_Avoid_: Given-When-Then (setara, tapi istilah BDD)
-
-**Test List**:
-Daftar skenario perilaku yang ingin dicakup, diambil satu per satu dalam siklus Red-Green-Refactor.
-Padanan Node: daftar `test.todo()` di Jest.
-_Avoid_: Test plan, test suite
 ## Forms (Angular 16)
 
 **Reactive Forms**:
@@ -269,6 +302,7 @@ _Avoid_: Model-driven form, dynamic form (itu pola lain di atas Reactive Forms)
 Pendekatan form Angular (`FormsModule`) di mana form model dibuat implisit oleh directive `ngModel` di template, dengan two-way binding dan alur data asinkron.
 Padanan React: tidak ada padanan langsung; paling dekat input dengan `value` + `onChange` di JSX.
 _Avoid_: HTML form, simple form
+
 ## Auth dan error handling (lesson 0017)
 
 **JWT**:
@@ -295,37 +329,6 @@ _Avoid_: CORS error sebagai "error API" (yang memblokir adalah browser)
 Format standar (RFC 9457, dulu 7807) untuk body error HTTP API dengan field `type`, `title`, `status`, `detail`, `instance`; di .NET 8 dihasilkan lewat `AddProblemDetails` dan `IExceptionHandler`.
 Padanan Node: format JSON error yang Anda tentukan sendiri di error middleware Express.
 _Avoid_: Error object, error DTO
-## Testing (tambahan lesson 0010)
-
-**Test Double**:
-Istilah umum untuk objek pengganti objek produksi saat test; jenisnya dummy, stub, spy, mock, dan fake.
-Padanan Node: semua yang dibuat dengan `jest.fn()` / `jest.mock()` atau implementasi palsu buatan sendiri.
-_Avoid_: Mock (sebagai istilah umum; mock hanya salah satu jenisnya)
-
-**Stub**:
-Test double yang memberi jawaban siap (`Setup(...).Returns(...)` di Moq) dan tidak di-assert.
-Padanan Node: `jest.fn().mockReturnValue(...)`.
-_Avoid_: Mock (kalau tidak diverifikasi)
-
-**Fake**:
-Test double dengan implementasi kerja yang mengambil jalan pintas, mis. SQLite in-memory pengganti SQL Server. Catatan: dokumen .NET kadang memakai "fake" sebagai istilah umum.
-Padanan Node: repository berbasis array, SQLite `:memory:`.
-_Avoid_: Stub, mock
-
-**Testing Pyramid**:
-Pedoman komposisi test: banyak Unit Test, lebih sedikit Integration Test, sedikit sekali E2E Test; makin tinggi levelnya, makin sedikit jumlahnya.
-Padanan Node: sama (Jest banyak, Supertest sedikit, Playwright/Cypress paling sedikit).
-_Avoid_: Test ratio, coverage target
-
-**E2E Test**:
-Test dari UI (browser Angular) sampai database lewat aplikasi yang berjalan utuh; paling lambat dan paling rapuh.
-Padanan Node: Playwright / Cypress.
-_Avoid_: Integration test (berbeda: tanpa browser)
-
-**WebApplicationFactory**:
-Class `WebApplicationFactory<Program>` dari `Microsoft.AspNetCore.Mvc.Testing` yang menjalankan aplikasi ASP.NET Core di TestServer in-memory untuk Integration Test, dengan `CreateClient()` dan titik untuk mengganti service.
-Padanan Node: Supertest `request(app)`.
-_Avoid_: Test host (itu bagian di dalamnya), test server saja
 
 ## Arsitektur
 

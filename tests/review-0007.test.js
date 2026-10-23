@@ -4,27 +4,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { createBank, draw, seededRandom } = require("../assets/bank.js");
+const { draw, seededRandom } = require("../assets/bank.js");
+const { ROOT, loadLesson, runAsBrowserScripts } = require("./helpers.js");
 
-const ROOT = path.join(__dirname, "..");
 const DAY1 = ["0001", "0002", "0003", "0004", "0005", "0006"];
 const html = fs.readFileSync(path.join(ROOT, "lessons", "0007-review-hari-1.html"), "utf8");
-
-// Load question files into one shared bank, as the browser does with several <script> tags.
-function loadTogether(nums) {
-  const bank = createBank();
-  globalThis.QuestionBank = bank;
-  try {
-    nums.forEach(n => {
-      const full = path.join(ROOT, "assets", "questions", `${n}.js`);
-      delete require.cache[require.resolve(full)];
-      require(full);
-    });
-  } finally {
-    delete globalThis.QuestionBank;
-  }
-  return bank;
-}
 
 const reviewAttrs = () => {
   const tag = html.match(/<div class="review"[^>]*>/);
@@ -35,19 +19,12 @@ const reviewAttrs = () => {
 };
 
 test("all Day 1 question files load into one bank without id collisions", () => {
-  assert.doesNotThrow(() => loadTogether(DAY1));
+  assert.doesNotThrow(() => loadLesson(...DAY1));
 });
 
 test("Day 1 question files run together as browser scripts (shared global scope, no name clashes)", () => {
-  const vm = require("node:vm");
-  const ctx = vm.createContext({});
-  ctx.window = ctx;
-  vm.runInContext(fs.readFileSync(path.join(ROOT, "assets", "bank.js"), "utf8"), ctx);
-  DAY1.forEach(n => {
-    const file = path.join(ROOT, "assets", "questions", `${n}.js`);
-    assert.doesNotThrow(() => vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file }), `questions/${n}.js`);
-  });
-  const lessons = new Set(ctx.QuestionBank.select({ lessons: DAY1 }).map(q => q.lesson));
+  const pageBank = runAsBrowserScripts(DAY1);
+  const lessons = new Set(pageBank.select({ lessons: DAY1 }).map(q => q.lesson));
   assert.deepEqual([...lessons].sort(), DAY1);
 });
 
@@ -64,7 +41,7 @@ test("0007 review covers lessons 0001–0006 and loads each question file before
 
 test("0007 draws one quiz question from every Day 1 topic and mixes in oral questions", () => {
   const { lessons, mc, oral } = reviewAttrs();
-  const pool = loadTogether(DAY1).select({ lessons });
+  const pool = loadLesson(...DAY1).select({ lessons });
   const mcTopics = new Set(pool.filter(q => q.type === "mc").map(q => q.topic));
   assert.ok(oral >= 1, "review harus memuat soal lisan");
   for (let seed = 1; seed <= 10; seed++) {

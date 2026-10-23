@@ -83,9 +83,9 @@ test("scoreByTopic counts right answers per topic, oral judged by checklist", ()
     { question: oral("o2", "0002", "B"), checked: 3 },
   ];
   assert.deepEqual(scoreByTopic(results), [
-    { topic: "A", right: 2, total: 2, weak: false },
-    { topic: "B", right: 1, total: 2, weak: true },
-    { topic: "C", right: 1, total: 1, weak: false },
+    { topic: "A", right: 2, total: 2, weak: false, status: "Lulus" },
+    { topic: "B", right: 1, total: 2, weak: true, status: "Lemah" },
+    { topic: "C", right: 1, total: 1, weak: false, status: "Kuis lulus, lisan belum diuji" },
   ]);
 });
 
@@ -114,4 +114,28 @@ test("topic labels registered by different lesson files are merged", () => {
 
 test("draw returns what is available when asking for more than the pool", () => {
   assert.equal(draw(pool, { mc: 50, oral: 50 }, seededRandom(3)).length, pool.length);
+});
+
+test("a topic only passes when its oral was tested too; quiz-only passes are marked separately", () => {
+  const six = { ...oral("o6", "0001", "A"), checklist: ["1", "2", "3", "4", "5", "6"] };
+  const scores = scoreByTopic([
+    { question: mc("a1", "0001", "A"), ok: true },
+    { question: six, checked: 4 },
+    { question: mc("c1", "0003", "C"), ok: true },
+    { question: mc("b1", "0002", "B"), ok: false },
+  ]);
+  assert.deepEqual(scores.map(s => [s.topic, s.status]), [
+    ["A", "Lulus"],
+    ["C", "Kuis lulus, lisan belum diuji"],
+    ["B", "Lemah"],
+  ]);
+  const text = summaryText(scores, { title: "Review 0007" });
+  assert.equal(text, [
+    "Hasil Review 0007",
+    "- A: 2/2",
+    "- C: 1/1 KUIS LULUS, LISAN BELUM DIUJI",
+    "- B: 0/1 LEMAH",
+    "Topik lemah: B",
+    "Kuis lulus, lisan belum diuji: C",
+  ].join("\n"));
 });
