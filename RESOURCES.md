@@ -134,3 +134,12 @@
   JSDoc halaman API `HttpInterceptorFn` (interceptor fungsi, injection context). Use for: menyebut interceptor fungsi sebagai alternatif standalone di v16.
 - [Axios: Interceptors](https://axios-http.com/docs/interceptors)
   Dokumentasi resmi request/response interceptor Axios. Use for: padanan React untuk HTTP Interceptor.
+
+## Knowledge (tambahan lesson 0011)
+
+- [EF Core: Choosing a testing strategy](https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy) dan [Testing without your production database system](https://learn.microsoft.com/en-us/ef/core/testing/testing-without-the-database)
+  Repository pattern sebagai test double yang direkomendasikan, biayanya, jangan kembalikan `IQueryable`, in-memory provider "highly discouraged", mulai dari test ke database asli. Use for: debat Repository di atas EF Core (lesson 0011) dan strategi test (0010).
+- [EF Core API: DbContext Class](https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontext?view=efcore-8.0)
+  "DbContext is a combination of the Unit Of Work and Repository patterns." Use for: argumen kontra Repository.
+- [Microsoft Learn: Designing the infrastructure persistence layer (eBook .NET Microservices)](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design)
+  Repository per aggregate root, Unit of Work = `SaveChanges`, bagian "Repositories shouldn't be mandatory" (kutipan Jimmy Bogard). Use for: sisi "tidak wajib" dalam debat Repository.
