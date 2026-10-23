@@ -194,3 +194,25 @@ _Avoid_: Scope leak, lifetime mismatch
 Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateScopes`) yang melempar exception bila service Scoped di-inject ke Singleton atau di-resolve dari root provider.
 Padanan Node: tidak ada.
 _Avoid_: DI check, lifetime validation
+
+## EF Core
+
+**Change Tracker**:
+Bagian DbContext yang mencatat state setiap Entity (`Added`, `Unchanged`, `Modified`, `Deleted`, `Detached`) dan snapshot nilai aslinya, sehingga `SaveChanges` tahu SQL apa yang harus dikirim.
+Padanan Node: tidak ada di Prisma (update selalu eksplisit); mirip unit of work di TypeORM/MikroORM.
+_Avoid_: Dirty checking, state manager
+
+**N+1 Problem**:
+Satu query untuk daftar induk, lalu satu query tambahan per baris untuk relasinya; biasanya dari lazy loading atau query di dalam loop. Diatasi dengan eager loading (`Include`) atau projection `Select`.
+Padanan Node: `await` query Prisma di dalam loop, diatasi dengan `include`.
+_Avoid_: Select N+1, query loop
+
+**Eager Loading**:
+Memuat relasi sebagai bagian dari query awal lewat `Include`.
+Padanan Node: `include` di Prisma, `relations` di TypeORM.
+_Avoid_: Join loading, preload
+
+**No-Tracking Query**:
+Query dengan `AsNoTracking()` yang hasilnya tidak masuk change tracker; untuk skenario read-only, lebih cepat, dan perubahannya tidak disimpan oleh `SaveChanges`.
+Padanan Node: hasil query Prisma biasa (objek polos).
+_Avoid_: Read-only query (bukan istilah EF Core), detached query

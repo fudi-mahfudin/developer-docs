@@ -11,3 +11,5 @@
 - Lesson 0003 (async/Task + LINQ) dibangun dengan soal di `assets/questions/0003.js` (topik `csharp-async`, `linq-deferred`, `linq-queryable`) dan reference `reference/async-dan-linq.html`.
 - Lesson 0004 (Service Lifetime) dibangun: soal di `assets/questions/0004.js` (topik `di-lifetime`, `di-dbcontext`, `di-captive`), reference `reference/service-lifetime.html`. Istilah baru di GLOSSARY: Captive Dependency, Scope Validation.
 - v16.angular.io adalah SPA (kosong saat di-fetch agent). Ambil kutipan dari markdown sumbernya di repo angular/angular branch `16.2.x`, folder `aio/content/guide/`, lalu tautkan ke halaman v16.angular.io yang sesuai.
+- Lesson 0006 (EF Core + tugas STAR) dibangun: soal di `assets/questions/0006.js` (topik `ef-tracking`, `ef-migration`, `ef-n-plus-1`, `ef-no-tracking`), reference `reference/ef-core.html`. Istilah baru di GLOSSARY: Change Tracker, N+1 Problem, Eager Loading, No-Tracking Query.
+- Draf STAR disimpan di `star/draf-star.md` (template 4 tema ROADMAP + bonus "kenapa pindah stack"). Lesson 0018 membaca dan memoles file ini.

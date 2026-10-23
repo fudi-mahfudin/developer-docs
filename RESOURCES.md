@@ -62,6 +62,18 @@
   DbContext = satu unit-of-work, `AddDbContext` Scoped, tidak thread-safe, `AddDbContextFactory`. Use for: kenapa DbContext Scoped (lesson 0004, 0006).
 - [NestJS: Injection scopes](https://docs.nestjs.com/fundamentals/injection-scopes)
   DEFAULT/REQUEST/TRANSIENT dan "scope bubbles up". Use for: padanan Node untuk Service Lifetime.
+- [Microsoft Learn: Change Tracking in EF Core](https://learn.microsoft.com/en-us/ef/core/change-tracking/)
+  Kapan Entity dilacak, lima EntityState dan aksinya saat SaveChanges, tracking per property. Use for: change tracking (lesson 0006).
+- [Microsoft Learn: Efficient Querying (EF Core)](https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying)
+  Projection `Select`, eager loading, "Beware of lazy loading" (N+1), biaya snapshot tracking vs no-tracking. Use for: pertanyaan performa EF Core (lesson 0006).
+- [Microsoft Learn: Tracking vs. No-Tracking Queries](https://learn.microsoft.com/en-us/ef/core/querying/tracking)
+  `AsNoTracking` untuk read-only, identity resolution, projection tanpa Entity tidak dilacak. Use for: kapan memakai AsNoTracking.
+- [Microsoft Learn: Loading Related Data](https://learn.microsoft.com/en-us/ef/core/querying/related-data/) dan [Lazy Loading](https://learn.microsoft.com/en-us/ef/core/querying/related-data/lazy)
+  Definisi eager/explicit/lazy loading; lazy loading opt-in lewat Proxies. Use for: penyebab N+1.
+- [Microsoft Learn: Managing Database Schemas](https://learn.microsoft.com/en-us/ef/core/managing-schemas/), [Migrations Overview](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/), dan [Applying Migrations](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying)
+  Code-first (Migrations) vs reverse engineering, snapshot model, history table, SQL script untuk production. Use for: pertanyaan Migration.
+- [Prisma: Query optimization (Solving the n+1 problem)](https://www.prisma.io/docs/orm/prisma-client/queries/query-optimization-performance)
+  Definisi n+1 dan solusi `include`. Use for: padanan Node untuk N+1.
 
 ## Wisdom (Communities)
 
