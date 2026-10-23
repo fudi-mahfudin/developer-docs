@@ -295,3 +295,61 @@ _Avoid_: CORS error sebagai "error API" (yang memblokir adalah browser)
 Format standar (RFC 9457, dulu 7807) untuk body error HTTP API dengan field `type`, `title`, `status`, `detail`, `instance`; di .NET 8 dihasilkan lewat `AddProblemDetails` dan `IExceptionHandler`.
 Padanan Node: format JSON error yang Anda tentukan sendiri di error middleware Express.
 _Avoid_: Error object, error DTO
+## Testing (tambahan lesson 0010)
+
+**Test Double**:
+Istilah umum untuk objek pengganti objek produksi saat test; jenisnya dummy, stub, spy, mock, dan fake.
+Padanan Node: semua yang dibuat dengan `jest.fn()` / `jest.mock()` atau implementasi palsu buatan sendiri.
+_Avoid_: Mock (sebagai istilah umum; mock hanya salah satu jenisnya)
+
+**Stub**:
+Test double yang memberi jawaban siap (`Setup(...).Returns(...)` di Moq) dan tidak di-assert.
+Padanan Node: `jest.fn().mockReturnValue(...)`.
+_Avoid_: Mock (kalau tidak diverifikasi)
+
+**Fake**:
+Test double dengan implementasi kerja yang mengambil jalan pintas, mis. SQLite in-memory pengganti SQL Server. Catatan: dokumen .NET kadang memakai "fake" sebagai istilah umum.
+Padanan Node: repository berbasis array, SQLite `:memory:`.
+_Avoid_: Stub, mock
+
+**Testing Pyramid**:
+Pedoman komposisi test: banyak Unit Test, lebih sedikit Integration Test, sedikit sekali E2E Test; makin tinggi levelnya, makin sedikit jumlahnya.
+Padanan Node: sama (Jest banyak, Supertest sedikit, Playwright/Cypress paling sedikit).
+_Avoid_: Test ratio, coverage target
+
+**E2E Test**:
+Test dari UI (browser Angular) sampai database lewat aplikasi yang berjalan utuh; paling lambat dan paling rapuh.
+Padanan Node: Playwright / Cypress.
+_Avoid_: Integration test (berbeda: tanpa browser)
+
+**WebApplicationFactory**:
+Class `WebApplicationFactory<Program>` dari `Microsoft.AspNetCore.Mvc.Testing` yang menjalankan aplikasi ASP.NET Core di TestServer in-memory untuk Integration Test, dengan `CreateClient()` dan titik untuk mengganti service.
+Padanan Node: Supertest `request(app)`.
+_Avoid_: Test host (itu bagian di dalamnya), test server saja
+
+## Arsitektur
+
+**Clean Architecture**:
+Arsitektur yang menaruh aturan bisnis (Application Core) di pusat, dengan Infrastructure dan UI di luar yang bergantung ke dalam; nama lainnya Hexagonal, Ports-and-Adapters, Onion.
+Padanan Node: hexagonal / ports and adapters di NestJS, dengan Prisma sebagai adapter.
+_Avoid_: Onion layer, layered (layered tradisional arahnya UI → BLL → DAL)
+
+**Dependency Rule**:
+Aturan Clean Architecture bahwa dependency source code hanya boleh mengarah ke dalam; lingkaran dalam tidak tahu apa pun tentang lingkaran luar. Diwujudkan lewat DIP.
+Padanan Node: folder `domain/` yang tidak pernah meng-`import` Prisma atau Express.
+_Avoid_: Layer rule, call direction (alur runtime tetap boleh keluar)
+
+**Application Core**:
+Project pusat Clean Architecture berisi Entity, interface (mis. `IProductRepository`), domain service, dan DTO; tidak mereferensikan project lain.
+Padanan Node: folder `domain/` + `services/` tanpa dependency ke framework.
+_Avoid_: Domain layer saja, core library
+
+**Infrastructure**:
+Project Clean Architecture berisi detail teknis yang mengimplementasikan interface dari Application Core: `DbContext`, Migration, implementasi Repository, pengirim email.
+Padanan Node: adapter Prisma, Nodemailer, klien HTTP.
+_Avoid_: DAL, data layer (itu istilah N-Layer)
+
+**Unit of Work**:
+Pola yang mengumpulkan semua insert/update/delete satu aksi lalu menyimpannya dalam satu transaksi; di EF Core diwujudkan oleh `DbContext` dan dijalankan saat `SaveChanges`.
+Padanan Node: `prisma.$transaction([...])`, atau unit of work di MikroORM.
+_Avoid_: Transaction (lebih sempit), batch save
