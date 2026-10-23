@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0018 · STAR + mock interview final</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0018 · Mock interview final · ±15 menit persiapan + 60 menit dibatasi waktu · penutup Hari 3 · seam penguasaan</div>
+  <h1>STAR + mock interview final</h1>
+  <p class="subtitle">Tanpa materi baru. Poles cerita STAR yang sudah dicicil sejak malam Hari 1, lalu jalani satu interview latihan 60 menit: konsep acak, live coding, dan 2 cerita STAR.</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> melewati satu interview latihan penuh dengan batas waktu yang sama seperti ROADMAP (20 + 25 + 15 menit),
+  lalu keluar dengan daftar pendek <em>"ulang sebelum interview"</em> yang berisi hanya topik yang belum menempel.
+</div>
+
+<h2>Aturan main</h2>
+<ol>
+  <li><strong>Jangan buka catatan, lesson lama, atau reference</strong> selama timer berjalan. Pengecualian: <code>star/draf-star.md</code> boleh dibuka hanya di tahap persiapan, sebelum timer dimulai.</li>
+  <li><strong>Soal kuis:</strong> pilih satu jawaban. <strong>Soal lisan:</strong> jawab dengan suara keras (boleh direkam di ponsel) <em>sebelum</em> membuka checklist, lalu centang hanya poin yang benar-benar Anda sebut.</li>
+  <li><strong>Kriteria lulus per topik (sama seperti review 0007 dan 0012):</strong> soal kuis acak dijawab benar, dan jawaban lisan memenuhi minimal 4 dari 6 poin checklist. Satu kesalahan di topik itu = topik lemah. Topik yang kuisnya benar tapi tidak mendapat soal lisan tampil sebagai <em>Kuis lulus, lisan belum diuji</em> dan belum dihitung lulus.</li>
+  <li><strong>Waktu habis = lanjut.</strong> Timer berpindah bagian sendiri, seperti pewawancara yang memotong. Soal yang belum dijawab saat waktunya habis boleh diselesaikan setelah mock, tapi catat nomornya: topik itu dihitung lemah.</li>
+  <li>Setiap bagian punya seed sendiri. Kerjakan <strong>set pertama</strong>. Untuk mengulang set yang sama nanti, tambahkan <code>?seed=NNN</code> di URL (semua bagian memakai seed itu).</li>
+</ol>
+
+<h2>Persiapan sebelum timer (±15 menit): poles STAR</h2>
+<p>
+  Buka <code>star/draf-star.md</code>, yang Anda cicil sejak lesson 0006. Tugasnya <strong>memoles</strong>, bukan menulis dari nol:
+  setiap cerita harus muat diucapkan dalam ±2 menit. Kalau ada cerita yang masih kosong, isi dulu poin S/T/A/R-nya. Saya (agent) tidak bisa mengarang pengalaman Anda,
+  tapi bisa membantu memadatkan draf yang sudah ada.
+</p>
+<section class="exercise">
+  <h3>Checklist poles untuk setiap cerita</h3>
+  <ul>
+    <li><strong>Porsi:</strong> Situation ±20%, Task ±10%, <strong>Action ±60%</strong>, Result ±10%. Pewawancara tidak perlu semua detail konteks. <sup class="cite"><a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1]</a></sup></li>
+    <li><strong>"Saya", bukan "kami".</strong> Kalimat "kami" menyulitkan pewawancara melihat kontribusi Anda sendiri. <sup class="cite"><a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1]</a></sup></li>
+    <li><strong>Result terukur:</strong> minimal satu angka (menit downtime, persen, jumlah bug, lama review). <sup class="cite"><a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1]</a></sup></li>
+    <li><strong>Satu kait teknis per cerita:</strong> insiden → cara menemukan akar masalah; refactor → SRP/DIP atau test yang menjaga perilaku; konflik → keputusan berbasis trade-off; belajar cepat → jembatan ke mini project .NET/Angular.</li>
+    <li>Ucapkan sekali dengan suara keras dan ukur waktunya. Lebih dari 2,5 menit → pangkas bagian S.</li>
+  </ul>
+</section>
+
+<h3>Jawaban "kenapa pindah ke .NET/Angular?"</h3>
+<p>Tulis versi Anda di bagian <em>Bonus</em> <code>star/draf-star.md</code> dengan kerangka empat langkah ini (60–90 detik):</p>
+<ol>
+  <li><strong>Alasan menuju sesuatu</strong>, bukan lari dari stack lama. Pakai alasan Anda yang sebenarnya.</li>
+  <li><strong>Transfer skill:</strong> Angular ditulis dengan TypeScript, dan DI/decorator-nya mirip NestJS. Di backend, Controller → Service → Repository, DI, middleware, dan testing sudah saya pakai di Express; yang baru adalah nama dan perilaku khas .NET-nya.</li>
+  <li><strong>Bukti:</strong> mini project Product Catalog (.NET 8 + SQL Server + Angular 16, dengan unit test dan integration test) yang bisa ditunjukkan di GitHub.</li>
+  <li><strong>Jujur dan kaitkan:</strong> sebut satu hal yang masih diperdalam beserta caranya, lalu kaitkan ke posisi ini.</li>
+</ol>
+
+<h2>Mock interview (60 menit)</h2>
+<p class="note">Tekan <strong>Mulai</strong> saat siap. Timer menempel di atas layar saat Anda menggulir. Kalau ada teman yang mau berperan sebagai pewawancara, minta dia membacakan soal dan memegang checklist.</p>
+
+<div class="timer" data-segments="Konsep:20,Live coding:25,STAR:15"></div>
+
+<h3>Bagian 1 · Konsep (20 menit)</h3>
+
+<h4>1a · Topik lemah dari review 0007 dan 0012 (porsi lebih)</h4>
+<!--
+  Topik lemah dari review sebelumnya masuk di sini supaya dapat porsi lebih (satu soal kuis per topik, dijamin),
+  sementara bagian 1b mengacak semua topik. Cara agent mengisinya:
+  - Gabungkan baris "Topik lemah 0007: …" dan "Topik lemah 0012: …" di NOTES. Topik 0007 yang sudah lulus di 0012 dibuang.
+    Ganti data-topics dengan daftar itu, set data-mc = jumlah slug, lalu node --test.
+    Semua file questions/0001–0017.js sudah dimuat, jadi tidak perlu menambah <script>.
+  - Kalau 0007/0012 belum dikerjakan, pakai default di bawah: empat jebakan Hari 1 (value vs reference type, async/await,
+    captive dependency, N+1) dan satu jebakan per lesson Hari 2 (DIP, kenapa red dulu, test double, Repository di atas EF Core).
+    Ini mengikuti pendekatan 0012: tetap ada pengulangan berjarak tanpa membengkakkan waktu 20 menit.
+  - Kalau 0007 dan 0012 sama-sama tanpa topik lemah, biarkan default.
+  - tests/review-0018.test.js memeriksa bahwa data-mc = jumlah topik, setiap slug punya soal kuis dari lesson 0001–0011.
+-->
+<div class="review" data-part="lemah" data-title="Mock 0018 · 1a topik lemah" data-lessons=""
+     data-topics="csharp-value-ref,csharp-async,di-captive,ef-n-plus-1,solid-dip,tdd-red,test-double,repo-ef-core" data-mc="8" data-oral="1"></div>
+
+<p class="note">
+  Isi bagian 1a: kalau review 0007 dan 0012 sudah dikerjakan, isinya topik yang lemah di sana. Kalau belum, isinya delapan jebakan default
+  (value vs reference type, async/await, captive dependency, N+1, DIP, kenapa test harus gagal dulu, test double, Repository di atas EF Core).
+  Agent memperbaruinya setelah hasil review dicatat.
+</p>
+
+<h4>1b · Acak dari semua lesson 0001–0017</h4>
+<div class="review" data-part="acak" data-title="Mock 0018 · 1b konsep acak" data-lessons="0001,0002,0003,0004,0005,0006,0008,0009,0010,0011,0013,0014,0015,0016,0017"
+     data-topics="" data-mc="8" data-oral="2"></div>
+
+<h3>Bagian 2 · Live coding (25 menit)</h3>
+<p>
+  Soal dari ROADMAP Hari 3: tambah endpoint <code>GET /api/products?categoryId=&amp;minPrice=</code> dengan TDD <strong>dan</strong> filter di Angular product list.
+  Kerjakan di mini project Product Catalog Anda. Baca soal di bawah, kerjakan sampai timer pindah ke STAR, lalu nilai diri dengan checklist.
+</p>
+<div class="review" data-part="live" data-title="Mock 0018 · 2 live coding" data-lessons=""
+     data-topics="mock-live-coding" data-mc="0" data-oral="1"></div>
+
+<h3>Bagian 3 · STAR (15 menit)</h3>
+<p>Dua dari empat cerita diacak, seperti pewawancara yang memilih sendiri. Karena itu keempatnya harus siap. Setelah itu, satu pertanyaan yang hampir pasti muncul untuk kandidat pindah stack.</p>
+<div class="review" data-part="star" data-title="Mock 0018 · 3 STAR" data-lessons=""
+     data-topics="star-insiden,star-refactor,star-konflik,star-belajar" data-mc="0" data-oral="2"></div>
+<div class="review" data-part="pindah" data-title="Mock 0018 · 3 kenapa pindah stack" data-lessons=""
+     data-topics="star-pindah-stack" data-mc="0" data-oral="1"></div>
+
+<section class="exercise">
+  <h2>Setelah selesai: laporkan hasilnya ke agent</h2>
+  <ol>
+    <li>Setiap bagian menampilkan ringkasan per topik setelah semua soalnya dijawab.</li>
+    <li>Tekan <strong>Salin</strong> di kelima ringkasan (1a, 1b, 2, 3 STAR, 3 pindah stack), tempel semuanya sekaligus ke agent di terminal,
+      dan sebut nomor soal yang dijawab setelah waktunya habis. Misalnya: <em>"Ini hasil mock 0018, soal 1b nomor 7 lewat waktu."</em></li>
+    <li>Agent menulis learning record <strong>hanya</strong> untuk topik yang lulus, lalu mengisi bagian "Topik lemah dari mock 0018" di
+      <a href="../reference/ulang-sebelum-interview.html">daftar ulang sebelum interview</a>.</li>
+    <li><strong>Cetak</strong> halaman ini (tabel ringkasan ikut tercetak, timer dan tombol tidak) atau cetak daftar ulang sebelum interview.</li>
+  </ol>
+  <p class="note">Hanya hasil review 0007, 0012, dan mock interview ini yang dicatat sebagai bukti penguasaan. Skor kuis di lesson biasa tidak dihitung.</p>
+</section>
+
+<h2>Kalau ada topik lemah</h2>
+<p>
+  Jangan baca ulang seluruh lesson. Buka <a href="../reference/ulang-sebelum-interview.html">daftar ulang sebelum interview</a>, baca hanya reference topik itu (±5 menit),
+  tutup, lalu jelaskan lagi dengan suara keras. Ulangi sekali lagi di pagi hari interview, juga tanpa melihat catatan dulu.
+</p>
+
+<div class="source">
+  <span class="kicker">Bacaan utama</span>
+  <a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1] MIT Career Advising &amp; Professional Development: The STAR method for behavioral interviews</a>.
+  Untuk topik konsep yang lemah, sumber resminya dikutip di masing-masing reference; daftarnya ada di
+  <a href="../reference/ulang-sebelum-interview.html">ulang sebelum interview</a>.
+</div>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada cerita STAR yang terasa terlalu panjang, atau jawaban yang menurut Anda benar tapi dinilai salah? Tempel drafnya ke saya (agent) di terminal, misalnya: "tolong padatkan cerita insiden saya jadi 2 menit".</p>
+
+<nav class="lesson-nav">
+  <a href="0017-fullstack-auth-cors-error.html">← 0017 · JWT, CORS, dan error handling</a>
+  <a href="../index.html">Indeks lesson →</a>
+</nav>
+
+</main>
+<script src="../assets/timer.js"></script>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0001.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../assets/questions/0004.js"></script>
+<script src="../assets/questions/0005.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../assets/questions/0009.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../assets/questions/0015.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../assets/questions/0018.js"></script>
+<script src="../assets/review.js"></script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · async/Task dan LINQ</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Fondasi C#</div>
+<h1>async/Task dan LINQ</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0003-async-task-dan-linq.html">Lesson 0003</a>.</p>
+
+<h2>Task vs Promise <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-return-types">[1]</a></sup></h2>
+<table>
+  <thead><tr><th>C#</th><th>TypeScript</th><th>Catatan</th></tr></thead>
+  <tbody>
+    <tr><td><code>async Task&lt;Product&gt; GetByIdAsync()</code></td><td><code>async getById(): Promise&lt;Product&gt;</code></td><td>Akhiran <code>Async</code> = konvensi TAP</td></tr>
+    <tr><td><code>async Task SaveAsync()</code></td><td><code>Promise&lt;void&gt;</code></td><td>Bukan <code>async void</code></td></tr>
+    <tr><td><code>await Task.WhenAll(a, b)</code></td><td><code>await Promise.all([a, b])</code></td><td>Jangan di DbContext yang sama <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/async">[3]</a></sup></td></tr>
+    <tr><td><code>.Result</code>, <code>.Wait()</code></td><td>tidak ada</td><td>Memblokir thread. Jangan.</td></tr>
+  </tbody>
+</table>
+
+<h2>Dua larangan di ASP.NET Core <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0#avoid-blocking-calls">[2]</a></sup></h2>
+<ul>
+  <li><strong><code>.Result</code> / <code>.Wait()</code>:</strong> memblokir thread, banyak blocking call → thread pool starvation. Buat seluruh call stack async.</li>
+  <li><strong><code>async void</code>:</strong> tidak bisa di-await, exception tidak bisa ditangkap pemanggil, request selesai pada <code>await</code> pertama. Hanya untuk event handler; selain itu <code>Task</code>.</li>
+</ul>
+
+<h2>Kapan query dieksekusi <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/how-query-works#when-queries-are-executed">[4]</a></sup></h2>
+<table>
+  <thead><tr><th>Deferred (membangun query)</th><th>Eksekusi sekarang (SQL dikirim)</th></tr></thead>
+  <tbody>
+    <tr><td><code>Where</code>, <code>Select</code>, <code>OrderBy</code>, <code>Skip</code>, <code>Take</code>, <code>Include</code></td>
+        <td><code>foreach</code>, <code>ToList(Async)</code>, <code>ToArray(Async)</code>, <code>First</code>, <code>Single</code>, <code>Count</code>, <code>Any</code>, <code>Max</code></td></tr>
+  </tbody>
+</table>
+<p>Tidak ada <code>WhereAsync</code>: hanya operator yang mengeksekusi query yang punya versi async. Enumerasi dua kali = query dua kali.</p>
+
+<h2>IEnumerable vs IQueryable <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.iqueryable-1?view=net-8.0#remarks">[5]</a></sup></h2>
+<table>
+  <thead><tr><th></th><th><code>IEnumerable&lt;T&gt;</code></th><th><code>IQueryable&lt;T&gt;</code></th></tr></thead>
+  <tbody>
+    <tr><td>Lambda</td><td>delegate</td><td>expression tree</td></tr>
+    <tr><td>Jalan di</td><td>memori .NET</td><td>database (diterjemahkan ke SQL)</td></tr>
+    <tr><td>Padanan Node</td><td><code>array.filter</code></td><td><code>prisma.findMany({ where })</code></td></tr>
+  </tbody>
+</table>
+<pre><code>// ❌ semua baris ditarik, filter di memori (AsEnumerable / variabel IEnumerable)
+IEnumerable&lt;Product&gt; s = _db.Products; s.Where(p =&gt; p.Price &gt; 100).ToList();
+// ✅ filter, proyeksi, paging selagi IQueryable; ToListAsync terakhir
+await _db.Products.Where(p =&gt; p.Price &gt; 100).Select(...).ToListAsync();</code></pre>
+
+<h2>Jawaban 60 detik</h2>
+<p>
+  <code>Where</code> hanya membangun <code>IQueryable</code> (expression tree); itu deferred execution. SQL baru dikirim saat hasil dikonsumsi,
+  di sini oleh <code>ToListAsync</code>, dan karena masih <code>IQueryable</code> filternya jadi <code>WHERE</code> di database.
+  <code>await</code> tidak memblokir thread selama I/O; <code>.Result</code> memblokir dan bisa menyebabkan thread pool starvation.
+  Jadi call stack async dari Controller sampai Repository, seperti async/await di Express.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-return-types">[1] Async return types</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0">[2] ASP.NET Core Best Practices</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/async">[3] EF Core: Asynchronous Programming</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/how-query-works">[4] EF Core: How Queries Work</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.iqueryable-1?view=net-8.0">[5] IQueryable&lt;T&gt;</a></p>
+</main>
+</body>
+</html>

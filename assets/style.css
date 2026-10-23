@@ -75,6 +75,8 @@ th { font-weight: 600; border-bottom: 2px solid var(--ink); }
   border-left: 2px solid var(--accent);
   padding-left: .9rem; margin: 1.2rem 0;
 }
+/* Daftar sumber di akhir lesson: catatan kecil. Pakai bersama .note */
+.note.sources { font-size: .8rem; }
 
 blockquote {
   margin: 1.2rem 0; padding-left: 1rem;

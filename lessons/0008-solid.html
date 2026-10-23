@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0008 · Prinsip SOLID: SRP &amp; DIP mendalam, OCP/LSP/ISP lewat Product Catalog</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0008 · Hari 2 · Desain · ±14 menit</div>
+  <h1>SOLID, dari kode Product Catalog</h1>
+  <p class="subtitle">SRP dan DIP dibahas paling dalam; OCP, LSP, dan ISP lewat satu contoh masing-masing</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Prinsip SOLID mana yang paling sering Anda terapkan?"</em> dalam 60 detik, dengan SRP dan DIP plus contoh dari Product Catalog.
+  Sebagai bonus, Anda bisa menunjuk prinsip mana yang dilanggar oleh sebuah potongan kode.
+</div>
+
+<h2>1. Lima prinsip, lima kalimat</h2>
+<p>
+  Rumusan di bawah adalah versi ringkas dari Robert C. Martin sendiri, yang memperkenalkan SOLID.
+  <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html">[4]</a></sup>
+  Hafalkan kolom "Contoh"; itu yang membuat jawaban Anda terdengar berpengalaman, bukan hafalan.
+</p>
+
+<table>
+  <thead><tr><th>Prinsip</th><th>Satu kalimat <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html">[4]</a></sup></th><th>Contoh di Product Catalog</th><th>Padanan Node/React</th></tr></thead>
+  <tbody>
+    <tr><td><strong>S</strong>ingle Responsibility</td><td>"Gather together the things that change for the same reasons. Separate things that change for different reasons."</td><td>Controller = HTTP, Service = aturan bisnis, Repository = akses data</td><td>Route handler Express yang tipis; logika di <code>services/</code></td></tr>
+    <tr><td><strong>O</strong>pen/Closed</td><td>"A Module should be open for extension but closed for modification."</td><td><code>IDiscountStrategy</code>: diskon baru = class baru</td><td>Object map strategi <code>{ member: p =&gt; p * 0.9 }</code></td></tr>
+    <tr><td><strong>L</strong>iskov Substitution</td><td>"A program that uses an interface must not be confused by an implementation of that interface."</td><td><code>IProductRepository</code> versi SQL Server dan in-memory berperilaku sama</td><td>Fake repo in-memory di Jest yang setia pada kontrak</td></tr>
+    <tr><td><strong>I</strong>nterface Segregation</td><td>"Keep interfaces small so that users don't end up depending on things they don't need."</td><td><code>IProductReader</code> terpisah dari <code>IProductWriter</code></td><td>Props komponen <code>Pick&lt;Store, "products"&gt;</code>, bukan seluruh store</td></tr>
+    <tr><td><strong>D</strong>ependency Inversion</td><td>"Depend in the direction of abstraction. High level modules should not depend upon low level details."</td><td><code>ProductService</code> bergantung pada <code>IProductRepository</code>, bukan <code>AppDbContext</code></td><td>Provider NestJS, atau <code>createProductService(repo)</code></td></tr>
+  </tbody>
+</table>
+
+<h2>2. SRP: satu alasan untuk berubah</h2>
+<p>
+  Martin: "each software module should have one and only one reason to change". Lalu ia menjelaskan apa itu "alasan":
+  "This principle is about <em>people</em>."
+  <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html">[2]</a></sup>
+  Jadi pertanyaannya bukan "berapa method?", tapi "siapa saja yang bisa meminta class ini diubah?".
+</p>
+
+<pre><code>// ✗ Tiga pihak bisa meminta perubahan: tim produk, tim laporan, tim marketing
+public class ProductService(IProductRepository repo)
+{
+    public Task CreateAsync(CreateProductRequest r)  { /* harga &gt; 0, stok ≥ 0, nama unik */ }
+    public string ExportToCsv(IEnumerable&lt;Product&gt; ps) { /* urutan kolom laporan */ }
+    public void SendLowStockEmail(Product p)          { /* template HTML + SMTP */ }
+}
+
+// ✓ Satu class per alasan berubah
+public class ProductService(IProductRepository repo)        { /* aturan bisnis saja */ }
+public class ProductCsvExporter                             { /* format laporan */ }
+public class StockAlertNotifier(IEmailSender email)         { /* isi email */ }</code></pre>
+
+<p>
+  Di level arsitektur, SRP yang sama memberi Anda pembagian layer dari
+  <a href="0001-layer-dan-alur-request.html">lesson 0001</a>: Microsoft menyebut SRP "similar to separation of concerns", dengan
+  presentation, data access, dan business logic dipisah.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles#single-responsibility">[1]</a></sup>
+  Keuntungannya juga mereka tulis: "Adding new classes is always safer than changing existing classes, since no code yet depends on the new classes."
+</p>
+
+<p class="note">
+  <strong>Gejala yang bisa Anda sebut di interview:</strong> constructor yang gemuk.
+  "If a class has many injected dependencies, it might be a sign that the class has too many responsibilities and violates the Single Responsibility Principle (SRP)."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0#design-services-for-dependency-injection">[5]</a></sup>
+  Padanan Express: route handler 200 baris yang memvalidasi, query Prisma, membuat CSV, dan mengirim email sekaligus.
+</p>
+
+<h2>3. DIP: arah dependency ke abstraksi</h2>
+<p>
+  Tanpa DIP, dependency compile-time mengikuti arah eksekusi: Service memanggil Repository, jadi Service bergantung pada Repository.
+  Dengan DIP, Service memanggil <em>interface</em>, dan Repository-lah yang bergantung pada interface itu:
+  B "depend[s] on an interface controlled by A at compile time (thus, <em>inverting</em> the typical compile-time dependency)".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles#dependency-inversion">[1]</a></sup>
+</p>
+
+<div class="flow">
+  <span class="box">ProductService</span><span class="arrow">→</span><span class="box">IProductRepository</span><span class="arrow">←</span><span class="box">ProductRepository</span>
+</div>
+<p class="note">
+  Panah = "bergantung pada" saat compile. "At run time, the flow of program execution remains unchanged":
+  Service tetap memanggil Repository. Yang terbalik hanya arah dependency-nya.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles#dependency-inversion">[1]</a></sup>
+</p>
+
+<pre><code>// ✗ Service (level tinggi) membuat detailnya sendiri
+public class ProductService
+{
+    private readonly ProductRepository _repo = new ProductRepository(new AppDbContext(/* … */));
+}
+
+// ✓ Service hanya kenal abstraksi; composition root memilih implementasinya
+public class ProductService(IProductRepository repo) : IProductService { /* … */ }
+
+// Program.cs
+builder.Services.AddScoped&lt;IProductRepository, ProductRepository&gt;();</code></pre>
+
+<h3>Kenapa ini jawaban terkuat Anda</h3>
+<p>
+  Versi ✗ "is difficult to unit test because it directly creates" dependency-nya; versi ✓ memakai interface, registrasi di container, dan injeksi.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0#overview-of-dependency-injection">[5]</a></sup>
+  Hasilnya, unit test cukup <code>new ProductService(mockRepo.Object)</code> dengan Moq, persis seperti memberi <code>jest.fn()</code> ke service di Node.
+  Microsoft merangkumnya: aplikasi hasil DIP "are more testable, modular, and maintainable".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles#dependency-inversion">[1]</a></sup>
+  Itulah sebabnya ROADMAP menyarankan menjawab "SRP dan DIP": keduanya yang membuat test Hari 2 mungkin.
+</p>
+
+<p class="note">
+  <strong>Jebakan istilah:</strong> Dependency <em>Inversion</em> adalah prinsip (arah dependency). Dependency <em>Injection</em> adalah tekniknya:
+  "The practice of dependency injection is made possible by following the dependency inversion principle."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles#dependency-inversion">[1]</a></sup>
+  DI container ASP.NET Core dan composition root (<code>Program.cs</code>) adalah alat untuk menerapkan DIP.
+</p>
+
+<h2>4. OCP, LSP, ISP: satu contoh masing-masing</h2>
+
+<h3>OCP: tambah perilaku tanpa membuka class lama</h3>
+<p>
+  "You should be able to extend the behavior of a system without having to modify that system."
+  <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html">[3]</a></sup>
+</p>
+<pre><code>public interface IDiscountStrategy { decimal Apply(decimal price); }
+public class NoDiscount     : IDiscountStrategy { public decimal Apply(decimal p) =&gt; p; }
+public class MemberDiscount : IDiscountStrategy { public decimal Apply(decimal p) =&gt; p * 0.9m; }
+
+public class PriceCalculator(IDiscountStrategy strategy)
+{
+    public decimal Final(decimal price) =&gt; strategy.Apply(price);   // tidak berubah saat ada promo baru
+}</code></pre>
+<p>Pelanggarannya: <code>switch (customerType)</code> yang bertambah satu <code>case</code> setiap ada promo.</p>
+
+<h3>LSP: implementasi tidak boleh mengejutkan</h3>
+<p>
+  "A program that uses an interface must not be confused by an implementation of that interface."
+  <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html">[4]</a></sup>
+  Kalau <code>GetByIdAsync</code> versi SQL Server mengembalikan <code>null</code> untuk id yang tidak ada, versi in-memory untuk test juga harus begitu.
+  Dua gejala klasik: implementasi yang melempar <code>NotImplementedException</code>, atau melempar exception di tempat kontraknya mengembalikan <code>null</code>.
+</p>
+
+<h3>ISP: interface sekecil kebutuhan konsumennya</h3>
+<p>
+  "Keep interfaces small so that users don't end up depending on things they don't need."
+  <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html">[4]</a></sup>
+</p>
+<pre><code>public interface IProductReader { Task&lt;Product?&gt; GetByIdAsync(int id); Task&lt;IReadOnlyList&lt;Product&gt;&gt; GetAllAsync(); }
+public interface IProductWriter { Task AddAsync(Product p); Task SaveChangesAsync(); }
+public class ProductRepository(AppDbContext db) : IProductReader, IProductWriter { /* … */ }
+
+public class ProductReportService(IProductReader reader) { /* hanya membaca */ }</code></pre>
+<p class="note">
+  ISP dan LSP sering muncul bersama: <code>ReadOnlyProductRepository</code> yang melempar <code>NotImplementedException</code> di <code>AddAsync</code>
+  melanggar LSP, dan akar masalahnya adalah interface yang terlalu besar (ISP).
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1: Prinsip mana yang dilanggar?</h2>
+  <p>Baca potongan kodenya, lalu pilih satu prinsip. Jangan scroll ke atas dulu. Soal ini muncul lagi, diacak, di review campuran 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0012-review-hari-2.html">review campuran 0012</a>.</p>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="solid-violation"></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2: Alasannya</h2>
+  <p>Pertanyaan "kenapa" yang biasa menyusul setelah Anda menyebut sebuah prinsip.</p>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="solid-srp" data-stack></div>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="solid-dip" data-stack></div>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="solid-ocp" data-stack></div>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="solid-lsp" data-stack></div>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="solid-isp" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3: Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik dan jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Prinsip SOLID mana yang paling sering Anda terapkan?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Paling sering SRP dan DIP, karena keduanya yang membuat kode saya bisa di-unit-test.
+      SRP: satu class, satu alasan untuk berubah. Di Product Catalog, Controller hanya mengurus HTTP, <code>ProductService</code> memegang aturan bisnis
+      seperti harga harus lebih dari nol, dan Repository mengurus akses data lewat EF Core. Kalau ada permintaan export CSV, saya buat class baru, bukan menambah method di Service.
+      DIP: <code>ProductService</code> bergantung pada <code>IProductRepository</code>, bukan pada <code>AppDbContext</code> atau <code>new ProductRepository()</code>.
+      Implementasinya didaftarkan di <code>Program.cs</code> lewat <code>AddScoped</code>, dan DI container menyuntikkannya lewat constructor.
+      Hasilnya, di unit test saya cukup memberi mock <code>IProductRepository</code> dengan Moq, mirip <code>jest.fn()</code> di Node.
+      Tandanya SRP mulai dilanggar biasanya constructor dengan terlalu banyak dependency."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>SRP dan DIP, dengan alasan: keduanya membuat kode bisa di-unit-test?</li>
+      <li>SRP = satu alasan untuk berubah, dengan pembagian Controller / Service / Repository?</li>
+      <li>contoh SRP konkret (export CSV atau email jadi class terpisah)?</li>
+      <li>DIP = Service bergantung pada <code>IProductRepository</code>, bukan class konkret atau <code>new</code>?</li>
+      <li>implementasi didaftarkan di <code>Program.cs</code> (composition root) dan diinjeksi lewat constructor?</li>
+      <li>unit test memakai mock (Moq), dengan padanan <code>jest.fn()</code> atau gejala constructor gemuk?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kalau kurang, ulangi besok pagi sebelum review 0012 (spacing).</p>
+  </details>
+
+  <h3>Bonus (90 detik)</h3>
+  <blockquote>"Sebutkan kelima prinsip SOLID, masing-masing dengan satu contoh dari Product Catalog."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "S: Controller hanya HTTP, Service aturan bisnis, Repository akses data.
+      O: <code>PriceCalculator</code> menerima <code>IDiscountStrategy</code>, jadi diskon baru cukup class baru.
+      L: implementasi SQL Server dan in-memory dari <code>IProductRepository</code> berperilaku sama, misalnya sama-sama mengembalikan null kalau id tidak ada.
+      I: konsumen read-only bergantung pada <code>IProductReader</code>, bukan interface gemuk.
+      D: <code>ProductService</code> bergantung pada <code>IProductRepository</code> yang disuntikkan DI container dari <code>Program.cs</code>."
+    </p>
+    <p><strong>Checklist:</strong></p>
+    <ul>
+      <li>SRP dengan pembagian Controller / Service / Repository</li>
+      <li>OCP dengan <code>IDiscountStrategy</code> tanpa mengubah <code>PriceCalculator</code></li>
+      <li>LSP: implementasi repository saling menggantikan tanpa perilaku mengejutkan</li>
+      <li>ISP: interface kecil seperti <code>IProductReader</code> / <code>IProductWriter</code></li>
+      <li>DIP: Service bergantung pada abstraksi yang diinjeksi lewat DI</li>
+      <li>kelimanya urut dan selesai dalam 90 detik tanpa melihat catatan</li>
+    </ul>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles">Microsoft Learn: Architectural principles</a>.
+  Baca bagian "Dependency inversion", "Explicit dependencies", dan "Single responsibility". Untuk OCP/LSP/ISP, lanjut ke
+  <a href="https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html">Robert C. Martin: Solid Relevance</a> (pendek).
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/solid.html">Reference: Prinsip SOLID di Product Catalog</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa bedanya SRP dengan separation of concerns?" atau "kalau Repository di atas EF Core, apakah itu masih DIP?" (yang terakhir dibahas lagi di lesson 0011).</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles">[1] Microsoft Learn: Architectural principles</a> ·
+  <a href="https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html">[2] Robert C. Martin: The Single Responsibility Principle</a> ·
+  <a href="https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html">[3] Robert C. Martin: The Open Closed Principle</a> ·
+  <a href="https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html">[4] Robert C. Martin: Solid Relevance</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0">[5] Dependency injection in ASP.NET Core</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0007-review-hari-1.html">← 0007 · Review campuran Hari 1</a>
+  <a href="0009-red-green-refactor.html">0009 · Red-Green-Refactor →</a>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

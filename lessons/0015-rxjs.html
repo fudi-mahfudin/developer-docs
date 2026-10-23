@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0015 · RxJS untuk interview: Observable vs Promise, switchMap, unsubscribe</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0015 · Frontend · ±15 menit</div>
+  <h1>RxJS yang ditanyakan di interview Angular</h1>
+  <p class="subtitle">Observable vs Promise, Subject/BehaviorSubject, operator inti, dan cara mencegah memory leak</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Apa beda Observable dan Promise, kapan Anda memakai <code>switchMap</code>, dan bagaimana Anda mencegah memory leak di Angular?"</em>
+  dalam 60 detik, lalu memilih operator yang tepat untuk skenario search box, request paralel, dan tombol Simpan.
+</div>
+
+<h2>1. Observable vs Promise</h2>
+<p>
+  Anda sudah kenal Promise dari <code>fetch()</code>. RxJS menyebut Observable sebagai
+  "lazy Push collections of multiple values"
+  <sup class="cite"><a href="https://rxjs.dev/guide/observable">[1]</a></sup>:
+  sama-sama <em>push</em> seperti Promise, tapi lazy dan bisa berisi banyak nilai.
+  Dokumentasi Angular v16 merangkum bedanya <sup class="cite"><a href="https://v16.angular.io/guide/comparing-observables">[2]</a></sup>:
+</p>
+
+<table>
+  <thead><tr><th></th><th>Promise (yang Anda kenal)</th><th>Observable</th></tr></thead>
+  <tbody>
+    <tr><td>Kapan jalan</td><td>"Promises execute immediately on creation."</td><td>"computation does not start until subscription."</td></tr>
+    <tr><td>Jumlah nilai</td><td>"Promises provide one."</td><td>"Observables provide many values."</td></tr>
+    <tr><td>Batal</td><td>"Promises are not cancellable."</td><td>"Observable subscriptions are cancellable."</td></tr>
+    <tr><td>Chaining</td><td><code>.then()</code> / <code>.catch()</code></td><td><code>.pipe(operator...)</code> lalu <code>.subscribe()</code></td></tr>
+  </tbody>
+</table>
+
+<p>
+  Akibat praktisnya di Angular: <code>HttpClient</code> mengembalikan Observable, dan
+  "the method doesn't begin its HTTP request until you call <code>subscribe()</code>".
+  Sebaliknya, "Subscribing twice results in two HTTP requests"
+  <sup class="cite"><a href="https://v16.angular.io/guide/http-request-data-from-server">[3]</a></sup>.
+  Lupa <code>subscribe</code> berarti tidak ada request sama sekali, sesuatu yang tidak pernah terjadi dengan <code>fetch</code>.
+</p>
+
+<pre><code>// React + fetch: langsung jalan
+useEffect(() =&gt; { fetch('/api/products').then(r =&gt; r.json()).then(setProducts); }, []);
+
+// Angular: baru jalan saat subscribe
+this.http.get&lt;Product[]&gt;('/api/products')
+  .pipe(map(list =&gt; list.filter(p =&gt; p.stock &gt; 0)))   // seperti .then(transform)
+  .subscribe(list =&gt; (this.products = list));          // seperti .then(setProducts)</code></pre>
+
+<h2>2. Subject dan BehaviorSubject: state bersama di service</h2>
+<p>
+  "An RxJS Subject is a special type of Observable that allows values to be multicasted to many Observers".
+  "Every Subject is an Observable" dan "Every Subject is an Observer", jadi Anda bisa <code>subscribe</code> sekaligus memanggil <code>next(v)</code>.
+  <code>BehaviorSubject</code> "has a notion of 'the current value'": ia "stores the latest value emitted to its consumers"
+  dan langsung mengirimkannya ke subscriber baru
+  <sup class="cite"><a href="https://rxjs.dev/guide/subject">[4]</a></sup>.
+</p>
+<p>
+  Inilah pola Angular Service untuk state bersama (padanan React: state di Context Provider, atau store Zustand):
+</p>
+<pre><code>@Injectable({ providedIn: 'root' })
+export class CartService {
+  private readonly items = new BehaviorSubject&lt;Product[]&gt;([]);   // wajib nilai awal
+  readonly items$ = this.items.asObservable();                     // luar hanya bisa subscribe
+
+  add(p: Product) { this.items.next([...this.items.value, p]); }  // seperti setState
+}</code></pre>
+<p class="note">
+  Pakai <code>Subject</code> biasa untuk <em>event</em> (subscriber baru tidak butuh nilai lama), <code>BehaviorSubject</code> untuk <em>state</em>.
+  <code>ReplaySubject</code> mengulang beberapa nilai lama ke subscriber baru <sup class="cite"><a href="https://rxjs.dev/guide/subject">[4]</a></sup>.
+</p>
+
+<h2>3. Operator inti: empat yang hampir pasti ditanyakan</h2>
+<p>
+  "Operators are functions" yang dirangkai di dalam <code>pipe()</code>
+  <sup class="cite"><a href="https://v16.angular.io/guide/rx-library">[5]</a></sup>.
+  <code>map</code> sama seperti <code>Array.map</code>, tapi untuk setiap nilai yang lewat. Yang membedakan kandidat adalah keluarga <em>flattening</em>:
+  operator yang memetakan setiap nilai ke Observable baru (biasanya request HTTP).
+</p>
+
+<table>
+  <thead><tr><th>Operator</th><th>Saat nilai baru datang dan request lama belum selesai…</th><th>Skenario khas</th></tr></thead>
+  <tbody>
+    <tr><td><code>switchMap</code></td><td>"stops emitting items from the earlier-emitted inner Observable and begins emitting items from the new one" <sup class="cite"><a href="https://rxjs.dev/api/operators/switchMap">[6]</a></sup> (request lama dibatalkan)</td><td>Search box, route param berubah</td></tr>
+    <tr><td><code>mergeMap</code></td><td>Semua jalan bersamaan; parameter <code>concurrent</code> = "Maximum number of <code>ObservableInput</code>s being subscribed to concurrently" <sup class="cite"><a href="https://rxjs.dev/api/operators/mergeMap">[7]</a></sup></td><td>Hapus/upload massal, urutan tidak penting</td></tr>
+    <tr><td><code>concatMap</code></td><td>Mengantre: "equivalent to <code>mergeMap</code> with concurrency parameter set to <code>1</code>" <sup class="cite"><a href="https://rxjs.dev/api/operators/concatMap">[8]</a></sup></td><td>Simpan berurutan, urutan penting</td></tr>
+    <tr><td><code>exhaustMap</code></td><td>"ignores every new projected Observable if the previous projected Observable has not yet completed" <sup class="cite"><a href="https://rxjs.dev/api/operators/exhaustMap">[9]</a></sup></td><td>Tombol Simpan / Login yang diklik berkali-kali</td></tr>
+  </tbody>
+</table>
+
+<p>Tiga operator lain yang melengkapi jawaban:</p>
+<ul>
+  <li><strong><code>debounceTime(ms)</code></strong>: "Emits a notification from the source Observable only after a particular time span has passed without another source emission" <sup class="cite"><a href="https://rxjs.dev/api/operators/debounceTime">[10]</a></sup>. Padanan React: hook <code>useDebounce</code>.</li>
+  <li><strong><code>catchError</code></strong>: "Catches errors on the observable to be handled by returning a new observable or throwing an error" <sup class="cite"><a href="https://rxjs.dev/api/operators/catchError">[11]</a></sup>. Padanan: <code>.catch()</code> pada Promise.</li>
+  <li><strong><code>forkJoin</code></strong>: "Wait for Observables to complete and then combine last values they emitted" <sup class="cite"><a href="https://rxjs.dev/api/index/function/forkJoin">[12]</a></sup>. Padanan: <code>Promise.all</code>. Kalau satu error, <code>forkJoin</code> ikut error.</li>
+</ul>
+
+<p>Search box di dokumentasi Angular v16 memakai rangkaian ini <sup class="cite"><a href="https://v16.angular.io/guide/practical-observable-usage">[13]</a></sup> (disesuaikan ke Product Catalog):</p>
+<pre><code>this.results$ = this.searchControl.valueChanges.pipe(
+  filter(text =&gt; text.length &gt; 2),
+  debounceTime(300),                 // tunggu user berhenti mengetik
+  distinctUntilChanged(),            // abaikan kata kunci yang sama
+  switchMap(term =&gt; this.products.search(term).pipe(
+    catchError(() =&gt; of([]))         // satu request gagal tidak mematikan stream
+  )),
+);</code></pre>
+<p class="note">
+  Kenapa <code>catchError</code> ditaruh di dalam <code>switchMap</code>? Kalau error sampai ke stream luar, stream itu selesai dan search box berhenti bekerja.
+</p>
+
+<h2>4. Mencegah memory leak: <code>async</code> pipe dulu, <code>takeUntil</code> kalau perlu</h2>
+<p>
+  Lesson 0013 sudah mengutip aturan Angular di <code>ngOnDestroy</code>: "Unsubscribe Observables and detach event handlers to avoid memory leaks"
+  <sup class="cite"><a href="https://v16.angular.io/guide/lifecycle-hooks">[14]</a></sup>.
+  Subscription manual ke stream yang tidak pernah selesai (<code>interval</code>, <code>valueChanges</code>, <code>BehaviorSubject</code> di service) tetap hidup setelah component dihancurkan.
+  Padanan React: <code>useEffect</code> tanpa fungsi cleanup.
+</p>
+<ol>
+  <li>
+    <strong><code>async</code> pipe (pilihan utama).</strong> Ia "subscribes to an <code>Observable</code> or <code>Promise</code> and returns the latest value it has emitted", dan
+    "When the component gets destroyed, the <code>async</code> pipe unsubscribes automatically to avoid potential memory leaks"
+    <sup class="cite"><a href="https://v16.angular.io/api/common/AsyncPipe">[15]</a></sup>.
+<pre><code>&lt;li *ngFor="let p of results$ | async"&gt;{{ p.name }}&lt;/li&gt;</code></pre>
+  </li>
+  <li>
+    <strong><code>takeUntil</code> (kalau harus subscribe di class).</strong> Ia meneruskan nilai "until a <code>notifier</code> Observable emits a value", lalu complete
+    <sup class="cite"><a href="https://rxjs.dev/api/operators/takeUntil">[16]</a></sup>.
+<pre><code>private readonly destroy$ = new Subject&lt;void&gt;();
+
+ngOnInit() {
+  this.cart.items$.pipe(takeUntil(this.destroy$))   // taruh di akhir pipe
+    .subscribe(items =&gt; (this.count = items.length));
+}
+ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }</code></pre>
+  </li>
+</ol>
+<p class="note">
+  Di v16 juga ada <code>takeUntilDestroyed()</code> dari <code>@angular/core/rxjs-interop</code>, "Operator which completes the Observable when the calling context (component, directive, service, etc) is destroyed",
+  tapi statusnya masih <em>developer preview</em> <sup class="cite"><a href="https://v16.angular.io/api/core/rxjs-interop/takeUntilDestroyed">[17]</a></sup>.
+  Sebut sebagai alternatif baru; jawab dengan <code>async</code> pipe dan <code>takeUntil</code> dulu.
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Kuis konsep</h2>
+  <p>Jawab tanpa scroll ke atas; kalau ragu, tebak dulu, lalu baca penjelasannya.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0018-star-mock-interview.html">mock interview 0018</a>.</p>
+  <div class="quiz" data-bank-lesson="0015" data-bank-topic="rx-observable,rx-subject,rx-unsubscribe" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Pilih operatornya</h2>
+  <p>Setiap soal adalah skenario dari Product Catalog. Sebelum mengklik, ucapkan alasannya dalam satu kalimat: "karena request lama harus…".</p>
+  <div class="quiz" data-bank-lesson="0015" data-bank-topic="rx-operator"></div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik. Jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Apa beda Observable dan Promise, kapan Anda memakai <code>switchMap</code>, dan bagaimana Anda mencegah memory leak di Angular?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Promise langsung jalan saat dibuat, hanya menghasilkan satu nilai, dan tidak bisa dibatalkan.
+      Observable lazy, baru jalan saat <code>subscribe</code>, bisa memancarkan banyak nilai, dan bisa dibatalkan dengan <code>unsubscribe</code>.
+      <code>HttpClient</code> mengembalikan Observable. Untuk state bersama saya pakai <code>BehaviorSubject</code> di service,
+      karena subscriber baru langsung dapat nilai terakhir. Operator saya rangkai di <code>pipe</code>: <code>map</code> untuk transformasi, <code>catchError</code> untuk error.
+      Di search box saya pakai <code>debounceTime</code> lalu <code>switchMap</code>, karena <code>switchMap</code> membatalkan request lama
+      sehingga hasil lama tidak menimpa yang baru. Kalau semua request harus jalan paralel saya pakai <code>mergeMap</code>,
+      dan <code>forkJoin</code> untuk menunggu beberapa request sekaligus, seperti <code>Promise.all</code>.
+      Untuk mencegah memory leak saya utamakan <code>async</code> pipe yang unsubscribe otomatis.
+      Kalau harus subscribe manual, saya pakai <code>takeUntil(destroy$)</code> yang di-<code>next()</code> di <code>ngOnDestroy</code>."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Observable lazy dan bisa banyak nilai, sedangkan Promise eager dan satu nilai?</li>
+      <li>Observable bisa dibatalkan (<code>unsubscribe</code>), Promise tidak?</li>
+      <li><code>BehaviorSubject</code> untuk state bersama karena menyimpan nilai terakhir?</li>
+      <li><code>switchMap</code> membatalkan request lama (search box), bersama <code>debounceTime</code>?</li>
+      <li>beda <code>switchMap</code> dengan <code>mergeMap</code> (paralel) atau <code>forkJoin</code> (tunggu semua)?</li>
+      <li><code>async</code> pipe atau <code>takeUntil</code> + <code>ngOnDestroy</code> untuk mencegah memory leak?</li>
+    </ul>
+    <p class="note">Kalau kurang dari 4 poin, ulangi sebelum lesson 0016. Soal ini juga akan muncul lagi di mock interview 0018.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://rxjs.dev/guide/observable">RxJS: Observable</a>, panduan resmi RxJS. Baca bagian "Pull versus Push" dan "Disposing Observable Executions".
+  Kalau masih ada waktu, lanjut ke <a href="https://v16.angular.io/guide/comparing-observables">Angular v16: Observables compared to other techniques</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/rxjs.html">Reference: RxJS untuk interview Angular 16</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apakah subscription ke <code>HttpClient</code> juga wajib di-unsubscribe?" atau "kapan saya pakai <code>combineLatest</code> dan bukan <code>forkJoin</code>?"</p>
+
+<nav class="lesson-nav">
+  <a href="0014-angular-di-routing.html">← 0014 · Angular Service &amp; DI + routing/guard</a>
+  <a href="0016-forms-http-interceptor.html">0016 · Reactive Forms + HttpClient + HTTP Interceptor →</a>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0015.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

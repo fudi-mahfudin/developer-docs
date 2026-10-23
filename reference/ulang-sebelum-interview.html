@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Ulang sebelum interview</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Pagi hari interview · cetak satu halaman</div>
+<h1>Ulang sebelum interview</h1>
+<p class="subtitle">Daftar akhir dari <a href="../lessons/0018-star-mock-interview.html">Lesson 0018</a>. Uji diri dulu dengan suara keras, baru buka reference kalau macet.</p>
+
+<h2>1 · Topik lemah dari mock 0018</h2>
+<!--
+  Diisi agent setelah user menempelkan hasil mock 0018: satu <li> per topik berstatus LEMAH,
+  dengan tautan ke reference topik itu (lihat tabel di bagian 3). Tanpa hasil, biarkan teks placeholder.
+-->
+<ul>
+  <li><em>Belum ada hasil mock 0018.</em> Setelah hasilnya ditempel ke agent, topik lemah dicatat di sini. Sebelum itu, pakai tabel di bagian 3 dan ulang baris yang ditandai ★ (jebakan default bagian 1a).</li>
+</ul>
+
+<h2>2 · Topik lemah dari review 0007 dan 0012</h2>
+<!-- Diisi agent dari baris "Topik lemah 0007: …" / "Topik lemah 0012: …" di NOTES. Hapus topik yang lulus di mock 0018. -->
+<ul>
+  <li><em>Belum ada hasil review 0007 dan 0012.</em></li>
+</ul>
+
+<h2>3 · Semua topik: pertanyaan uji diri → reference</h2>
+<table>
+  <thead><tr><th>Lesson</th><th>Uji diri (jawab 60 detik tanpa melihat)</th><th>Kalau macet, buka</th></tr></thead>
+  <tbody>
+    <tr><td>0001</td><td>Jelaskan alur request dari Controller sampai DbContext dan peran tiap layer.</td><td><a href="layered-architecture.html">Layered architecture</a></td></tr>
+    <tr><td>0002</td><td>★ Value type vs reference type; kenapa DTO cocok ditulis sebagai <code>record</code>?</td><td><a href="csharp-untuk-ts.html">C# untuk dev TS</a></td></tr>
+    <tr><td>0003</td><td>★ Kenapa <code>.Result</code> dan <code>async void</code> berbahaya? <code>IEnumerable</code> vs <code>IQueryable</code>?</td><td><a href="async-dan-linq.html">async &amp; LINQ</a></td></tr>
+    <tr><td>0004</td><td>★ Tiga Service Lifetime, kenapa DbContext Scoped, apa itu captive dependency?</td><td><a href="service-lifetime.html">Service Lifetime</a></td></tr>
+    <tr><td>0005</td><td>Kenapa urutan middleware penting? Di mana secret disimpan saat development?</td><td><a href="middleware-dan-options.html">Middleware &amp; Options</a></td></tr>
+    <tr><td>0006</td><td>★ Apa itu N+1 dan cara mencegahnya? Kapan pakai <code>AsNoTracking</code>?</td><td><a href="ef-core.html">EF Core</a></td></tr>
+    <tr><td>0008</td><td>★ SOLID mana yang paling sering Anda terapkan? Beri contoh DIP dari Product Catalog.</td><td><a href="solid.html">SOLID</a></td></tr>
+    <tr><td>0009</td><td>★ Demokan satu siklus red-green-refactor. Kenapa test harus gagal dulu?</td><td><a href="red-green-refactor.html">Red-Green-Refactor</a></td></tr>
+    <tr><td>0010</td><td>★ Unit vs integration test; mock vs stub vs fake; apa gunanya <code>WebApplicationFactory</code>?</td><td><a href="jenis-test.html">Jenis test</a></td></tr>
+    <tr><td>0011</td><td>★ Gambar Clean Architecture. Perlukah Repository di atas EF Core?</td><td><a href="clean-architecture.html">Clean Architecture</a></td></tr>
+    <tr><td>0013</td><td>NgModule, binding, dan Lifecycle Hook, dengan padanan React-nya.</td><td><a href="angular-dasar.html">Angular dasar</a></td></tr>
+    <tr><td>0014</td><td>Angular DI vs React Context; cara melindungi halaman dengan guard.</td><td><a href="angular-di-routing.html">Angular DI &amp; routing</a></td></tr>
+    <tr><td>0015</td><td>Observable vs Promise; kapan <code>switchMap</code>; cara mencegah memory leak subscription.</td><td><a href="rxjs.html">RxJS</a></td></tr>
+    <tr><td>0016</td><td>Reactive vs template-driven forms; apa yang dikerjakan HTTP Interceptor?</td><td><a href="forms-http-interceptor.html">Forms, HttpClient, Interceptor</a></td></tr>
+    <tr><td>0017</td><td>Jelaskan alur login aplikasi Anda: JWT, authentication vs authorization, CORS, error handling.</td><td><a href="auth-cors-error.html">Auth, CORS, error</a></td></tr>
+  </tbody>
+</table>
+
+<h2>4 · STAR dan pindah stack</h2>
+<ul>
+  <li>Ucapkan keempat cerita dari <code>star/draf-star.md</code> sekali, masing-masing ±2 menit: insiden, refactor, konflik, belajar cepat.</li>
+  <li>Cek: Action porsi terbesar (±60%), pakai "saya", Result punya angka. <sup class="cite"><a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1]</a></sup></li>
+  <li>"Kenapa pindah ke .NET/Angular?" dalam 60–90 detik: alasan menuju sesuatu → transfer skill → bukti mini project → yang masih diperdalam.</li>
+</ul>
+
+<h2>5 · Pagi hari interview (±30 menit)</h2>
+<ol>
+  <li>Bagian 1 dan 2: uji diri setiap topik lemah dengan suara keras, baru buka reference-nya.</li>
+  <li>Bagian 3: baca kolom uji diri saja; berhenti di pertanyaan yang membuat ragu.</li>
+  <li>Bagian 4: ucapkan satu cerita STAR dan jawaban pindah stack.</li>
+  <li>Buka repo mini project di GitHub, pastikan README dan test hijau siap ditunjukkan.</li>
+</ol>
+
+<p class="note">Sumber: <a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1] MIT CAPD: The STAR method for behavioral interviews</a>. Sumber topik teknis dikutip di masing-masing reference.</p>
+</main>
+</body>
+</html>

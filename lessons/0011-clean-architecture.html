@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0011 · Clean Architecture secara lisan + debat Repository di atas EF Core</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0011 · Hari 2 · Desain · ±14 menit</div>
+  <h1>Clean Architecture, dan perlukah Repository?</h1>
+  <p class="subtitle">Satu gambar, satu aturan, satu debat yang sering dipancing pewawancara</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Repository di atas EF Core, perlu atau tidak?"</em> dalam 60 detik, dengan pro, kontra, dan kapan tidak perlu.
+  Supaya jawabannya punya dasar, Anda juga bisa menggambar Clean Architecture dan menjelaskan bedanya dengan layered dari
+  <a href="0001-layer-dan-alur-request.html">lesson 0001</a>.
+</div>
+
+<h2>1. Satu gambar: Application Core di pusat</h2>
+<p>
+  Microsoft: "Clean architecture puts the business logic and application model at the center of the application."
+  Arah dependency-nya dibalik: "infrastructure and implementation details depend on the Application Core."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#clean-architecture">[1]</a></sup>
+  Nama lainnya Hexagonal Architecture, Ports-and-Adapters, dan Onion Architecture. Itu nama yang mungkin Anda kenal dari NestJS.
+</p>
+
+<pre><code>   ┌──────────────── UI (Web API) ─────────────────┐   ┌──────── Infrastructure ────────┐
+   │ Controllers, Middleware, Filters, Program.cs  │   │ AppDbContext, Migrations       │
+   │ (composition root)                            │   │ ProductRepository, SmtpNotifier│
+   └──────────────────────┬────────────────────────┘   └───────────────┬────────────────┘
+                          │ bergantung ke dalam                        │ bergantung ke dalam
+                          ▼                                            ▼
+                 ┌──────────────────────── Application Core ────────────────────────┐
+                 │ Entity (Product, Category) · interface IProductRepository        │
+                 │ domain service (ProductService) · DTO · custom exception         │
+                 │ tidak mereferensikan project lain, tidak tahu EF Core            │
+                 └───────────────────────────────────────────────────────────────────┘</code></pre>
+
+<table>
+  <thead><tr><th>Project</th><th>Isi <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#organizing-code-in-clean-architecture">[1]</a></sup></th><th>Mereferensikan</th><th>Padanan Node</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Application Core</strong></td><td>Entity, interface, domain service, DTO, custom exception</td><td>tidak ada</td><td>folder <code>domain/</code> dengan TS interface ("port")</td></tr>
+    <tr><td><strong>Infrastructure</strong></td><td><code>DbContext</code>, Migration, implementasi Repository, <code>SmtpNotifier</code></td><td>Application Core</td><td>adapter Prisma / Nodemailer</td></tr>
+    <tr><td><strong>UI</strong></td><td>Controller, filter, middleware, <code>Program.cs</code></td><td>Application Core (+ Infrastructure hanya untuk wiring DI)</td><td>route Express + <code>app.js</code></td></tr>
+  </tbody>
+</table>
+
+<h2>2. Satu aturan: dependency rule</h2>
+<p>
+  Robert C. Martin: "source code dependencies can only point inwards. Nothing in an inner circle can know anything at all about something in an outer circle."
+  <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">[2]</a></sup>
+  Di artikel aslinya ada empat lingkaran (Entities, Use Cases, Interface Adapters, Frameworks and Drivers), tapi "the circles are schematic". Microsoft meringkasnya menjadi tiga project di atas.
+</p>
+<p>
+  Masalahnya, saat runtime Service <em>memanggil keluar</em> ke database. Martin menyelesaikannya dengan DIP dari
+  <a href="0008-solid.html">lesson 0008</a>: "We usually resolve this apparent contradiction by using the Dependency Inversion Principle."
+  <sup class="cite"><a href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">[2]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">ProductService (Core)</span><span class="arrow">→</span><span class="box">IProductRepository (Core)</span><span class="arrow">←</span><span class="box">ProductRepository (Infrastructure)</span>
+</div>
+<p class="note">
+  Gambar DIP yang sama dengan lesson 0008, hanya sekarang setiap kotak tinggal di project yang berbeda.
+  Interface "are defined in the Application Core, which are then implemented by types defined in the Infrastructure layer."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#clean-architecture">[1]</a></sup>
+  Yang menyambungkan keduanya tetap composition root: UI boleh mereferensikan Infrastructure, tapi
+  "developers should limit actual references to types in the Infrastructure project to the app's composition root".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#ui-layer">[1]</a></sup>
+</p>
+
+<h2>3. Bedanya dengan layered</h2>
+<p>
+  Di N-Layer tradisional (UI → BLL → DAL), "compile-time dependencies run from the top to the bottom", sehingga BLL
+  "is dependent on data access implementation details (and often on the existence of a database). Testing business logic in such an architecture is often difficult, requiring a test database."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#traditional-n-layer-architecture-applications">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th>Layered (lesson 0001)</th><th>Clean Architecture</th></tr></thead>
+  <tbody>
+    <tr><td>Pusat</td><td>Data access di dasar tumpukan</td><td>Application Core (aturan bisnis)</td></tr>
+    <tr><td>Arah dependency</td><td>Atas ke bawah: UI → BLL → DAL</td><td>Semua ke dalam, ke Core</td></tr>
+    <tr><td>Interface repository</td><td>Opsional; kalau ada, di folder yang sama</td><td>Wajib, di Core; implementasi di Infrastructure</td></tr>
+    <tr><td>Penegak aturan</td><td>Disiplin tim (folder)</td><td>Referensi antar project (compiler)</td></tr>
+    <tr><td>Cocok untuk</td><td>CRUD kecil-menengah, seperti Product Catalog</td><td>"non-trivial monolithic applications" <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#clean-architecture">[1]</a></sup></td></tr>
+  </tbody>
+</table>
+<p class="note">
+  <strong>Jawaban jujur yang terdengar senior:</strong> layered Product Catalog Anda sudah memakai <code>IProductRepository</code> yang diinjeksi, jadi sudah setengah jalan.
+  Di satu project, "there's no clear indication of which classes in which folders should depend on which others"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#all-in-one-applications">[1]</a></sup>;
+  memecah ke project membuat compiler yang menjaga arahnya. Biayanya: lebih banyak project dan boilerplate. CQRS/MediatR cukup disebut namanya; bukan syarat Clean Architecture.
+</p>
+
+<h2>4. Debat: Repository di atas EF Core</h2>
+<p>
+  Pertanyaan ini memancing perdebatan karena dua sumber resmi Microsoft terdengar bertentangan. Kuncinya: keduanya benar, untuk situasi berbeda.
+</p>
+
+<h3>Kontra: EF Core sudah memberikannya</h3>
+<p>
+  Dokumentasi API: "DbContext is a combination of the Unit Of Work and Repository patterns."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontext?view=efcore-8.0">[3]</a></sup>
+  <code>DbSet&lt;Product&gt;</code> sudah seperti repository, dan <code>SaveChanges</code> sudah unit of work (ingat change tracker di <a href="0006-ef-core-dan-star.html">lesson 0006</a>).
+  Repository generik yang hanya meneruskan <code>Add</code>/<code>Find</code> menambah boilerplate tanpa manfaat.
+  Panduan arsitektur Microsoft bahkan menulis repository "isn't an essential pattern", lalu mengutip Jimmy Bogard (pembuat MediatR):
+  "they hide the important details of the underlying persistence mechanism."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design#repositories-shouldnt-be-mandatory">[4]</a></sup>
+</p>
+
+<h3>Pro: test double yang bisa dipercaya</h3>
+<p>
+  Dokumentasi testing EF Core: "If you've decided to use a test double, we recommend implementing the repository pattern".
+  Alternatifnya lebih buruk: mock <code>DbSet</code> untuk query sebaiknya dihindari, dan in-memory provider "highly discouraged".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#summary">[5]</a></sup>
+  Repository juga memastikan "all data access code is concentrated in one place".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#repository-pattern">[5]</a></sup>
+  Dan ini contoh paling nyata DIP: unit test <code>ProductService</code> cukup <code>new Mock&lt;IProductRepository&gt;()</code>, persis <code>jest.fn()</code> di Node.
+</p>
+
+<h3>Jebakan: Repository yang bocor</h3>
+<pre><code>// ✗ abstraksi bocor: pemanggil masih menyusun query LINQ, EF Core tetap terlibat
+public interface IProductRepository { IQueryable&lt;Product&gt; Query(); }
+
+// ✓ method spesifik, hasil jadi; mudah di-stub di unit test
+public interface IProductRepository
+{
+    Task&lt;Product?&gt; GetByIdAsync(int id);
+    Task&lt;IReadOnlyList&lt;Product&gt;&gt; GetLowStockAsync(int threshold);
+    Task AddAsync(Product product);
+}</code></pre>
+<p>
+  EF Core: mengembalikan <code>IQueryable</code> "would mean that query operators can still be composed over the result, requiring that EF Core still be involved in translating the query; this would defeat the purpose of having a repository in the first place."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/testing-without-the-database#repository-pattern">[6]</a></sup>
+  (Ini <code>IQueryable</code> dari <a href="0003-async-task-dan-linq.html">lesson 0003</a>: expression tree yang diterjemahkan provider.)
+</p>
+
+<h3>Kapan tidak perlu</h3>
+<p>
+  EF Core merekomendasikan test ke database produksi lebih dulu: "Since these tests are required in any case, it's a good idea to start there".
+  Repository "can incur significant cost to implement and maintain".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#summary">[5]</a></sup>
+  Jadi untuk CRUD kecil, atau tim yang memilih integration test dengan database nyata (Testcontainers, SQLite; lihat <a href="0010-jenis-test.html">lesson 0010</a>),
+  memakai <code>DbContext</code> langsung di Service itu sah.
+</p>
+<p class="note">
+  Padanan Node: membungkus Prisma client di <code>repositories/</code>. Banyak tim Node melewatkannya karena Prisma client sendiri sudah terasa seperti repository; argumennya sama persis.
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1: Gambar dan aturannya</h2>
+  <p>Coba gambar diagram di bagian 1 di kertas dulu tanpa melihat, lalu jawab. Soal ini muncul lagi, diacak, di review campuran 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0012-review-hari-2.html">review campuran 0012</a>.</p>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="ca-dependency-rule,ca-placement" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2: Clean vs layered</h2>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="ca-vs-layered" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3: Debat Repository</h2>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="repo-ef-core" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 4 ============ -->
+<section class="exercise">
+  <h2>Latihan 4: Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik dan jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Repository di atas EF Core, perlu atau tidak?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Tergantung. Pro-nya: dokumentasi EF Core sendiri merekomendasikan repository kalau kita mau test double, karena unit test Service cukup me-mock
+      <code>IProductRepository</code>, bukan me-mock <code>DbSet</code> atau memakai in-memory provider yang tidak setia pada database asli.
+      Semua query juga terkumpul di satu tempat, dan ini contoh nyata DIP.
+      Kontra-nya: <code>DbContext</code> sudah gabungan Unit of Work dan Repository, jadi repository generik sering cuma membungkus ulang dan menambah boilerplate.
+      Kalau repository mengembalikan <code>IQueryable</code>, abstraksinya bocor dan EF Core tetap terlibat.
+      Kapan tidak perlu: aplikasi CRUD kecil, atau tim yang memilih integration test ke database nyata, misalnya Testcontainers atau SQLite.
+      Di mini project saya tetap pakai repository spesifik per Entity, dengan method yang mengembalikan hasil jadi.
+      Padanannya di Node: membungkus Prisma client di data-access layer, padahal Prisma client sendiri sudah mirip repository."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>pro: mudah di-mock untuk unit test Service (rekomendasi dokumentasi EF Core)?</li>
+      <li>pro: query terkumpul di satu tempat / contoh DIP?</li>
+      <li>kontra: <code>DbContext</code> sudah Unit of Work + Repository, sehingga ada boilerplate?</li>
+      <li>kontra: repository yang mengembalikan <code>IQueryable</code> membocorkan abstraksi?</li>
+      <li>kapan tidak perlu: CRUD kecil atau integration test dengan database nyata?</li>
+      <li>posisi sendiri yang jelas, plus padanan Node (membungkus Prisma client)?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kalau kurang, ulangi besok pagi sebelum review 0012 (spacing).</p>
+  </details>
+
+  <h3>Pemanasan wajib (60 detik)</h3>
+  <blockquote>"Gambarkan Clean Architecture dan jelaskan bedanya dengan layered architecture."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Clean Architecture menaruh aturan bisnis di pusat: Application Core berisi entity, interface seperti <code>IProductRepository</code>, dan domain service.
+      Di luarnya ada Infrastructure, yang berisi <code>DbContext</code>, Migration, dan implementasi repository, serta UI yang berisi Controller dan <code>Program.cs</code>.
+      Dependency rule-nya: dependency source code hanya mengarah ke dalam, jadi Core tidak tahu EF Core.
+      Caranya lewat DIP: interface di Core, implementasi di Infrastructure, dan disambungkan di composition root.
+      Bedanya dengan layered tradisional: di sana UI bergantung ke BLL dan BLL ke DAL, sehingga logika bisnis bergantung pada akses data dan sulit dites tanpa database.
+      Trade-off-nya, Clean menambah project dan boilerplate, jadi saya pakai untuk domain kompleks yang berumur panjang.
+      Untuk CRUD kecil, layered satu project dengan interface sudah cukup.
+      Di Node, ini mirip hexagonal atau ports and adapters di NestJS, dengan Prisma sebagai adapter."
+    </p>
+    <p><strong>Checklist:</strong></p>
+    <ul>
+      <li>Application Core di pusat berisi entity dan interface (mis. <code>IProductRepository</code>)</li>
+      <li>Infrastructure berisi <code>DbContext</code> dan implementasi repository; UI berisi Controller</li>
+      <li>dependency rule: dependency source code hanya mengarah ke dalam</li>
+      <li>DIP sebagai caranya, disambungkan di composition root (<code>Program.cs</code>)</li>
+      <li>beda dengan layered: BLL bergantung pada DAL dan database</li>
+      <li>trade-off: boilerplate vs domain kompleks, plus padanan Node (hexagonal/ports and adapters)</li>
+    </ul>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#clean-architecture">Microsoft Learn: Common web application architectures, bagian "Clean architecture"</a>
+  sampai "UI Layer". Untuk debat Repository, lanjut ke
+  <a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#repository-pattern">EF Core: Choosing a testing strategy, bagian "Repository pattern" dan "Summary"</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/clean-architecture.html">Reference: Clean Architecture dan debat Repository</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "di Clean Architecture, DTO taruh di mana?" atau "kalau Service memakai DbContext langsung, bagaimana unit test-nya?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures">[1] Microsoft Learn: Common web application architectures</a> ·
+  <a href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">[2] Robert C. Martin: The Clean Architecture</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontext?view=efcore-8.0">[3] EF Core API: DbContext Class</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design">[4] Microsoft Learn: Designing the infrastructure persistence layer</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy">[5] EF Core: Choosing a testing strategy</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/testing/testing-without-the-database">[6] EF Core: Testing without your production database system</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0010-jenis-test.html">← 0010 · Jenis test</a>
+  <a href="0012-review-hari-2.html">0012 · Review campuran Hari 2 →</a>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

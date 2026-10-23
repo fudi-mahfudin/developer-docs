@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0016 · Reactive Forms, HttpClient, dan HTTP Interceptor</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0016 · Frontend · ±15 menit</div>
+  <h1>Reactive Forms, HttpClient, dan HTTP Interceptor</h1>
+  <p class="subtitle">Dari form edit Product, lewat request HTTP, sampai satu tempat untuk header dan error global</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Kapan Anda memilih Reactive Forms dibanding template-driven, apa yang dikembalikan <code>HttpClient</code>, dan apa yang Anda taruh di HTTP Interceptor?"</em>
+  dalam 60 detik.
+</div>
+
+<h2>1. Reactive vs template-driven forms</h2>
+<p>
+  Angular punya dua pendekatan form. Keduanya memakai kelas dasar yang sama:
+  <code>FormControl</code> "Tracks the value and validation status of an individual form control", dan
+  <code>FormGroup</code> melakukan hal yang sama "for a collection of form controls"
+  <sup class="cite"><a href="https://v16.angular.io/guide/forms-overview">[1]</a></sup>.
+  Bedanya ada di <em>siapa yang membuat</em> object itu:
+</p>
+
+<table>
+  <thead><tr><th></th><th>Reactive</th><th>Template-driven</th><th>Padanan React</th></tr></thead>
+  <tbody>
+    <tr><td>Form model</td><td>"Explicit, created in component class"</td><td>"Implicit, created by directives" (<code>ngModel</code>)</td><td>controlled input + state / React Hook Form</td></tr>
+    <tr><td>Data model</td><td>"Structured and immutable"</td><td>"Unstructured and mutable"</td><td>–</td></tr>
+    <tr><td>Data flow</td><td>"Synchronous"</td><td>"Asynchronous"</td><td>–</td></tr>
+    <tr><td>Validasi</td><td>"Functions"</td><td>"Directives"</td><td>fungsi validasi / schema Zod</td></tr>
+  </tbody>
+</table>
+<p class="note">Sumber tabel: <a href="https://v16.angular.io/guide/forms-overview#key-differences">Angular v16: Key differences</a> <sup class="cite"><a href="https://v16.angular.io/guide/forms-overview">[1]</a></sup>.</p>
+
+<p>
+  Alasan memilih yang harus Anda ucapkan: Reactive Forms "are more robust: they're more scalable, reusable, and testable",
+  sedangkan template-driven "are useful for adding a simple form to an app, such as an email list signup form"
+  <sup class="cite"><a href="https://v16.angular.io/guide/forms-overview">[1]</a></sup>.
+  Reactive Forms juga "can be tested without rendering the UI", sedangkan test template-driven
+  "requires a detailed knowledge of the change detection process" <sup class="cite"><a href="https://v16.angular.io/guide/forms-overview#testing">[1]</a></sup>.
+</p>
+
+<pre><code>// product-form.component.ts  (AppModule meng-import ReactiveFormsModule)
+export class ProductFormComponent {
+  form = this.fb.group({
+    name:  ['', Validators.required],
+    price: [0,  [Validators.required, Validators.min(0.01)]],   // validator = fungsi
+  });
+  constructor(private fb: FormBuilder, private products: ProductService) {}
+
+  save() {
+    if (this.form.invalid) return;
+    this.products.create(this.form.getRawValue()).subscribe();
+  }
+}</code></pre>
+<pre><code>&lt;form [formGroup]="form" (ngSubmit)="save()"&gt;
+  &lt;input formControlName="name"&gt;
+  &lt;input formControlName="price" type="number"&gt;
+  &lt;button type="submit" [disabled]="form.invalid"&gt;Simpan&lt;/button&gt;
+&lt;/form&gt;
+
+&lt;!-- template-driven (FormsModule): model implisit, two-way binding --&gt;
+&lt;input name="name" [(ngModel)]="product.name" required&gt;</code></pre>
+<p>
+  <code>FormBuilder</code> hanya pembuat singkat: "factory methods for generating instances" <code>control()</code>, <code>group()</code>, dan <code>array()</code>.
+  Setiap control punya <code>valueChanges</code>, Observable yang bisa Anda <code>pipe</code> dengan operator dari lesson 0015
+  <sup class="cite"><a href="https://v16.angular.io/guide/reactive-forms">[2]</a></sup>.
+</p>
+
+<h2>2. HttpClient: semuanya Observable</h2>
+<p>
+  "The <code>HttpClient</code> service makes use of observables for all transactions"
+  <sup class="cite"><a href="https://v16.angular.io/guide/http-setup-server-communication">[3]</a></sup>.
+  Di aplikasi NgModule, <code>HttpClientModule</code> di-import di <code>AppModule</code>, lalu <code>HttpClient</code> di-inject ke Angular Service.
+  Tiga hal yang membedakannya dari <code>fetch</code>/Axios:
+</p>
+<ol>
+  <li><strong>Lazy.</strong> "the method doesn't begin its HTTP request until you call <code>subscribe()</code>" <sup class="cite"><a href="https://v16.angular.io/guide/http-request-data-from-server">[4]</a></sup>. Pakai <code>async</code> pipe di template.</li>
+  <li><strong>Generic hanya untuk compiler.</strong> <code>get&lt;Product[]&gt;()</code> adalah type assertion: "This is a build-time check and doesn't guarantee that the server actually responds with an object of this type." Karena itu pakai <code>interface</code>, bukan class <sup class="cite"><a href="https://v16.angular.io/guide/http-request-data-from-server">[4]</a></sup>.</li>
+  <li><strong>Error = <code>HttpErrorResponse</code>.</strong> Error dari server (404, 500) dan error jaringan sama-sama ditangkap di <code>HttpErrorResponse</code>; error jaringan "have <code>status</code> set to <code>0</code>" <sup class="cite"><a href="https://v16.angular.io/guide/http-handle-request-errors">[5]</a></sup>.</li>
+</ol>
+<pre><code>@Injectable({ providedIn: 'root' })
+export class ProductService {
+  constructor(private http: HttpClient) {}
+
+  getAll(): Observable&lt;Product[]&gt; {
+    return this.http.get&lt;Product[]&gt;('/api/products').pipe(
+      retry(2),                                    // subscribe ulang = request ulang
+      catchError((e: HttpErrorResponse) =&gt; throwError(() =&gt; new Error(`Gagal (${e.status})`)))
+    );
+  }
+  create(dto: CreateProductDto) { return this.http.post&lt;Product&gt;('/api/products', dto); }
+}</code></pre>
+
+<h2>3. HTTP Interceptor: satu tempat untuk setiap request</h2>
+<p>
+  Interceptor "inspect and transform HTTP requests from your application to a server" dan juga response-nya.
+  Tanpa interceptor, tugas seperti autentikasi dan logging harus ditulis "<em>explicitly</em> for each <code>HttpClient</code> method call"
+  <sup class="cite"><a href="https://v16.angular.io/guide/http-intercept-requests-and-responses">[6]</a></sup>.
+  Dokumentasi Angular sendiri menyebutnya "a common middleware pattern found in frameworks such as Express.js"
+  <sup class="cite"><a href="https://v16.angular.io/guide/http-intercept-requests-and-responses">[6]</a></sup>.
+  Padanan React yang paling dekat: <code>axios.interceptors.request.use(...)</code> <sup class="cite"><a href="https://axios-http.com/docs/interceptors">[7]</a></sup>.
+</p>
+<pre><code>@Injectable()
+export class AuthInterceptor implements HttpInterceptor {
+  constructor(private auth: AuthService, private router: Router) {}
+
+  intercept(req: HttpRequest&lt;unknown&gt;, next: HttpHandler): Observable&lt;HttpEvent&lt;unknown&gt;&gt; {
+    const authReq = req.clone({ setHeaders: { Authorization: `Bearer ${this.auth.token}` } });
+    return next.handle(authReq).pipe(                // Observable response
+      catchError((e: HttpErrorResponse) =&gt; {
+        if (e.status === 401) this.router.navigate(['/login']);   // error global
+        return throwError(() =&gt; e);
+      })
+    );
+  }
+}
+
+// app.module.ts
+providers: [{ provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true }]</code></pre>
+<p>Empat aturan yang sering ditanyakan:</p>
+<ul>
+  <li><strong>Clone, jangan ubah.</strong> Property <code>HttpRequest</code> itu <code>readonly</code> karena request bisa di-retry: "Immutability ensures that interceptors see the same request for each try." Pola menambah header lewat <code>clone</code> "is so common that there's a <code>setHeaders</code> shortcut for it" <sup class="cite"><a href="https://v16.angular.io/guide/http-interceptor-use-cases">[8]</a></sup>.</li>
+  <li><strong><code>next.handle()</code>.</strong> "The final <code>next</code> in the chain is the <code>HttpClient</code> backend handler". Interceptor boleh tidak memanggilnya (mis. cache) <sup class="cite"><a href="https://v16.angular.io/guide/http-intercept-requests-and-responses">[6]</a></sup>. Padanan Express: <code>next()</code>.</li>
+  <li><strong><code>multi: true</code>.</strong> Membuat <code>HTTP_INTERCEPTORS</code> "a token for a <em>multiprovider</em> that injects an array of values"; interceptor harus disediakan di injector yang sama dengan <code>HttpClientModule</code>, biasanya <code>AppModule</code> <sup class="cite"><a href="https://v16.angular.io/guide/http-intercept-requests-and-responses">[6]</a></sup>.</li>
+  <li><strong>Urutan.</strong> "Angular applies interceptors in the order that you provide them." Request Auth → Logging, response Logging → Auth <sup class="cite"><a href="https://v16.angular.io/guide/http-intercept-requests-and-responses#interceptor-order">[6]</a></sup>.</li>
+</ul>
+<p class="note">
+  Angular 16 juga punya interceptor berbentuk fungsi (<code>HttpInterceptorFn</code>, didaftarkan lewat <code>provideHttpClient(withInterceptors([...]))</code>), yang
+  "are executed in an injection context" sehingga bisa memakai <code>inject()</code>
+  <sup class="cite"><a href="https://v16.angular.io/api/common/http/HttpInterceptorFn">[9]</a></sup>.
+  Itu pola aplikasi standalone; di proyek NgModule jawab dengan class + <code>HTTP_INTERCEPTORS</code> dulu.
+  Detail JWT, CORS, dan error handling di API dibahas di lesson 0017.
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Reactive atau template-driven?</h2>
+  <p>Jawab tanpa scroll ke atas; kalau ragu, tebak dulu, lalu baca penjelasannya.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0018-star-mock-interview.html">mock interview 0018</a>.</p>
+  <div class="quiz" data-bank-lesson="0016" data-bank-topic="ng-forms" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — HttpClient dan interceptor</h2>
+  <p>Sebelum mengklik, ucapkan alasannya dalam satu kalimat.</p>
+  <div class="quiz" data-bank-lesson="0016" data-bank-topic="ng-http,ng-interceptor" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik. Jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Kapan Anda memilih Reactive Forms dibanding template-driven, apa yang dikembalikan <code>HttpClient</code>, dan apa yang Anda taruh di HTTP Interceptor?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Reactive Forms membuat form model secara eksplisit di class component dengan <code>FormGroup</code> dan <code>FormControl</code>;
+      template-driven membuatnya implisit lewat <code>ngModel</code>. Untuk form besar dengan validasi dan field dinamis saya pilih Reactive:
+      alurnya sinkron, validatornya fungsi, dan bisa di-unit test tanpa render. Template-driven cukup untuk form kecil.
+      <code>HttpClient</code> mengembalikan Observable yang baru mengirim request saat di-subscribe; generic <code>get&lt;Product[]&gt;</code>
+      hanya type assertion saat compile. Error datang sebagai <code>HttpErrorResponse</code> dan saya tangani dengan <code>catchError</code>.
+      Interceptor adalah class yang mengimplementasikan <code>HttpInterceptor</code>: karena request immutable, saya <code>clone</code>
+      lalu <code>setHeaders</code> Authorization, kemudian <code>next.handle</code>. Saya daftarkan dengan <code>HTTP_INTERCEPTORS</code>
+      dan <code>multi: true</code>; urutannya mengikuti urutan provider. Di sana juga saya tangani 401 secara global.
+      Padanannya interceptor Axios, atau middleware Express di sisi backend."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Reactive: model eksplisit di class (<code>FormGroup</code>/<code>FormControl</code>); template-driven: implisit lewat <code>ngModel</code>?</li>
+      <li>alasan memilih: Reactive scalable, sinkron, validator berupa fungsi, mudah diuji; template-driven untuk form sederhana?</li>
+      <li><code>HttpClient</code> mengembalikan Observable yang baru request saat <code>subscribe</code>?</li>
+      <li>generic <code>get&lt;T&gt;</code> hanya type assertion compile-time; error = <code>HttpErrorResponse</code>, ditangani <code>catchError</code>?</li>
+      <li>interceptor: <code>clone</code> request (immutable) + <code>setHeaders</code> Authorization, lalu <code>next.handle</code>?</li>
+      <li>didaftarkan lewat <code>HTTP_INTERCEPTORS</code> <code>multi: true</code>, urutan = urutan provider; dipakai untuk error global (401), padanan interceptor Axios?</li>
+    </ul>
+    <p class="note">Kalau kurang dari 4 poin, ulangi sebelum lesson 0017. Soal ini juga akan muncul lagi di mock interview 0018.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://v16.angular.io/guide/http-intercept-requests-and-responses">Angular v16: HTTP - Intercept requests and responses</a>, dokumentasi resmi Angular 16.
+  Kalau masih ada waktu, baca tabel "Key differences" di <a href="https://v16.angular.io/guide/forms-overview">Angular v16: Introduction to forms</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/forms-http-interceptor.html">Reference: Forms, HttpClient, dan HTTP Interceptor</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana menulis unit test untuk interceptor dengan <code>HttpTestingController</code>?" atau "kapan saya pakai <code>patchValue</code> dan bukan <code>setValue</code>?"</p>
+
+<nav class="lesson-nav">
+  <a href="0015-rxjs.html">← 0015 · RxJS: Observable vs Promise, switchMap, unsubscribe</a>
+  <a href="0017-fullstack-auth-cors-error.html">0017 · JWT, authentication vs authorization, CORS, error handling →</a>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

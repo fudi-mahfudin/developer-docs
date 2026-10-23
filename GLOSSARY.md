@@ -68,6 +68,11 @@ Cara membaca konfigurasi `appsettings.json` ke kelas bertipe lewat `IOptions<T>`
 Padanan Node: `process.env` + modul `config/` yang divalidasi.
 _Avoid_: Env config, settings object
 
+**Composition root**:
+Satu tempat di awal aplikasi (`Program.cs`) yang menghubungkan setiap interface ke implementasinya di DI container.
+Padanan Node: `app.js` yang membuat semua instance, atau `providers` di module NestJS.
+_Avoid_: Startup wiring, bootstrap, DI config
+
 ## Testing
 
 **Red-Green-Refactor**:
@@ -75,7 +80,7 @@ Siklus TDD: tulis test yang gagal, buat lulus dengan kode minimal, lalu rapikan 
 _Avoid_: Test-first saja (tidak menyebut tahap refactor)
 
 **Unit Test**:
-Test untuk satu kelas (biasanya Service) dengan dependensi I/O di-mock.
+Test untuk satu kelas (biasanya Service) dengan dependensi I/O diganti test double.
 Padanan Node: test Jest dengan `jest.fn()` / `jest.mock()`.
 _Avoid_: Small test
 
@@ -85,9 +90,49 @@ Padanan Node: Supertest + database test.
 _Avoid_: E2E test (itu dari browser sampai ke DB)
 
 **Mock**:
-Pengganti dependensi yang bisa diverifikasi apakah dipanggil (Moq / `jasmine.createSpyObj`).
+Jenis test double yang diverifikasi apakah dipanggil (`Verify` di Moq / `jasmine.createSpyObj`); bukan sebutan umum untuk semua test double.
 Padanan Node: `jest.fn()`.
 _Avoid_: Fake, stub (berbeda: stub hanya mengembalikan nilai, fake punya implementasi ringan)
+
+**Arrange-Act-Assert**:
+Pola menyusun satu test: siapkan objek dan test double (Arrange), panggil satu method yang diuji (Act), periksa hasilnya (Assert).
+Padanan Node: susunan yang sama di dalam `it()` Jest; Red-Green-Refactor di Node = `jest --watch` merah, hijau, rapikan.
+_Avoid_: Given-When-Then (setara, tapi istilah BDD)
+
+**Test List**:
+Daftar skenario perilaku yang ingin dicakup, diambil satu per satu dalam siklus Red-Green-Refactor.
+Padanan Node: daftar `test.todo()` di Jest.
+_Avoid_: Test plan, test suite
+
+**Test Double**:
+Istilah umum untuk objek pengganti objek produksi saat test; jenisnya dummy, stub, spy, mock, dan fake.
+Padanan Node: semua yang dibuat dengan `jest.fn()` / `jest.mock()` atau implementasi palsu buatan sendiri.
+_Avoid_: Mock (sebagai istilah umum; mock hanya salah satu jenisnya)
+
+**Stub**:
+Test double yang memberi jawaban siap (`Setup(...).Returns(...)` di Moq) dan tidak di-assert.
+Padanan Node: `jest.fn().mockReturnValue(...)`.
+_Avoid_: Mock (kalau tidak diverifikasi)
+
+**Fake**:
+Test double dengan implementasi kerja yang mengambil jalan pintas, mis. SQLite in-memory pengganti SQL Server. Catatan: dokumen .NET kadang memakai "fake" sebagai istilah umum.
+Padanan Node: repository berbasis array, SQLite `:memory:`.
+_Avoid_: Stub, mock
+
+**Testing Pyramid**:
+Pedoman komposisi test: banyak Unit Test, lebih sedikit Integration Test, sedikit sekali E2E Test; makin tinggi levelnya, makin sedikit jumlahnya.
+Padanan Node: sama (Jest banyak, Supertest sedikit, Playwright/Cypress paling sedikit).
+_Avoid_: Test ratio, coverage target
+
+**E2E Test**:
+Test dari UI (browser Angular) sampai database lewat aplikasi yang berjalan utuh; paling lambat dan paling rapuh.
+Padanan Node: Playwright / Cypress.
+_Avoid_: Integration test (berbeda: tanpa browser)
+
+**WebApplicationFactory**:
+Class `WebApplicationFactory<Program>` dari `Microsoft.AspNetCore.Mvc.Testing` yang menjalankan aplikasi ASP.NET Core di TestServer in-memory untuk Integration Test, dengan `CreateClient()` dan titik untuk mengganti service.
+Padanan Node: Supertest `request(app)`.
+_Avoid_: Test host (itu bagian di dalamnya), test server saja
 
 ## Frontend (Angular 16)
 
@@ -125,3 +170,189 @@ _Avoid_: Middleware (itu istilah backend)
 Nilai reaktif (`signal`, `computed`); masih developer preview di Angular 16.
 Padanan React: `useState` / `useMemo`.
 _Avoid_: State, store
+
+**Data Binding**:
+Penghubung template dan class component: interpolation `{{ }}`, property binding `[ ]`, event binding `( )`, dan two-way binding `[( )]`.
+Padanan React: `{x}`, `prop={x}`, `onClick={f}`, serta pasangan `value` + `onChange`.
+_Avoid_: Data flow, wiring
+
+**Structural Directive**:
+Directive yang menambah atau menghapus elemen DOM, ditulis dengan awalan `*` (`*ngIf`, `*ngFor`) di Angular 16.
+Padanan React: `{cond && ...}` dan `array.map(...)` di JSX.
+_Avoid_: Control flow (itu sintaks `@if`/`@for` Angular 17)
+
+## Fondasi C#
+
+**Value Type**:
+Tipe yang variabelnya menyimpan datanya langsung, sehingga assignment menyalin data (`struct`, `enum`, `int`, `decimal`).
+Padanan TS: `number` / `boolean`.
+_Avoid_: Primitive (di C# `string` justru reference type)
+
+**Reference Type**:
+Tipe yang variabelnya menyimpan referensi ke objek di heap, sehingga assignment berbagi objek yang sama (`class`, array, `string`).
+Padanan TS: object dan array.
+_Avoid_: Pointer type
+
+**Record**:
+Modifier di atas `class` atau `struct` yang membuat compiler menyediakan value equality, `ToString`, dan `with`; bentuk default untuk DTO, bukan untuk Entity.
+Padanan TS: `Readonly<type>` + spread, tapi dibandingkan berdasarkan isi.
+_Avoid_: Data class, POCO (POCO bisa berarti class apa saja)
+
+**Nullable Reference Types**:
+Fitur compile-time C# di mana reference type non-nullable secara default dan `string?` menandai yang boleh null.
+Padanan TS: `strictNullChecks` + `string | null`.
+_Avoid_: Nullable type (itu `int?`, value type yang boleh null)
+
+**Abstract Class**:
+Base class yang tidak bisa di-instantiate dan boleh berisi field, constructor, serta method jadi di samping member abstract.
+Padanan TS: `abstract class` (sama).
+_Avoid_: Base interface
+
+**Task**:
+Objek yang mewakili operasi asinkron yang sedang berjalan (`Task`, atau `Task<T>` bila menghasilkan nilai); ditunggu dengan `await`, bukan `.Result`.
+Padanan TS: `Promise<T>`.
+_Avoid_: Thread, job, future
+
+**Deferred Execution**:
+Sifat LINQ di mana membuat query tidak menjalankannya; query baru dieksekusi saat hasilnya dikonsumsi (`foreach`, `ToList`, `Count`, `First`, atau versi async-nya).
+Padanan Node: query builder Knex/Prisma yang baru mengirim SQL saat di-`await`.
+_Avoid_: Lazy loading (itu fitur EF Core lain untuk navigation property)
+
+**IQueryable**:
+Query LINQ yang disimpan sebagai expression tree sehingga provider (EF Core) bisa menerjemahkannya ke SQL; berbeda dengan `IEnumerable` yang dijalankan di memori.
+Padanan Node: `prisma.product.findMany({ where })` vs `array.filter(...)`.
+_Avoid_: Query object, IEnumerable (berbeda: filternya jalan di memori)
+
+## Dependency Injection
+
+**Captive Dependency**:
+Kesalahan konfigurasi lifetime di mana service berumur panjang (mis. Singleton) memegang dependensi berumur lebih pendek (mis. DbContext yang Scoped), sehingga dependensi itu ikut hidup selamanya.
+Padanan Node: tidak ada bawaannya; di NestJS request scope justru merambat ke konsumennya secara otomatis.
+_Avoid_: Scope leak, lifetime mismatch
+
+**Scope Validation**:
+Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateScopes`) yang melempar exception bila service Scoped di-inject ke Singleton atau di-resolve dari root provider.
+Padanan Node: tidak ada.
+_Avoid_: DI check, lifetime validation
+
+## Pipeline dan konfigurasi
+
+**Short-circuit**:
+Middleware yang tidak memanggil `next`, sehingga sisa pipeline (termasuk endpoint) tidak dijalankan; middleware itu disebut terminal middleware.
+Padanan Node: mengirim `res.status(401).send()` tanpa memanggil `next()` di Express.
+_Avoid_: Early return, abort
+
+**User Secrets**:
+Penyimpanan secret untuk development (`dotnet user-secrets`) di profil user, di luar folder project dan tidak ikut source control; tidak terenkripsi dan hanya dibaca di environment Development.
+Padanan Node: file `.env` yang masuk `.gitignore`.
+_Avoid_: Secret store, vault (itu untuk production, mis. Azure Key Vault)
+
+## EF Core
+
+**Change Tracker**:
+Bagian DbContext yang mencatat state setiap Entity (`Added`, `Unchanged`, `Modified`, `Deleted`, `Detached`) dan snapshot nilai aslinya, sehingga `SaveChanges` tahu SQL apa yang harus dikirim.
+Padanan Node: tidak ada di Prisma (update selalu eksplisit); mirip unit of work di TypeORM/MikroORM.
+_Avoid_: Dirty checking, state manager
+
+**N+1 Problem**:
+Satu query untuk daftar induk, lalu satu query tambahan per baris untuk relasinya; biasanya dari lazy loading atau query di dalam loop. Diatasi dengan eager loading (`Include`) atau projection `Select`.
+Padanan Node: `await` query Prisma di dalam loop, diatasi dengan `include`.
+_Avoid_: Select N+1, query loop
+
+**Eager Loading**:
+Memuat relasi sebagai bagian dari query awal lewat `Include`.
+Padanan Node: `include` di Prisma, `relations` di TypeORM.
+_Avoid_: Join loading, preload
+
+**No-Tracking Query**:
+Query dengan `AsNoTracking()` yang hasilnya tidak masuk change tracker; untuk skenario read-only, lebih cepat, dan perubahannya tidak disimpan oleh `SaveChanges`.
+Padanan Node: hasil query Prisma biasa (objek polos).
+_Avoid_: Read-only query (bukan istilah EF Core), detached query
+
+## RxJS (Angular 16)
+
+**Subject**:
+Observable yang sekaligus Observer: bisa di-`subscribe` dan diberi nilai lewat `next()`, lalu meneruskannya ke banyak subscriber.
+Padanan Node: `EventEmitter`.
+_Avoid_: Event bus, channel
+
+**BehaviorSubject**:
+Subject yang wajib punya nilai awal, menyimpan nilai terakhir, dan langsung mengirimkannya ke subscriber baru; bentuk default state bersama di Angular Service.
+Padanan React: state di Context Provider / store Zustand.
+_Avoid_: Store (kecuali memang NgRx), state subject
+
+**Operator**:
+Fungsi RxJS yang dirangkai di dalam `pipe()` untuk mengubah aliran Observable (`map`, `switchMap`, `catchError`, `debounceTime`).
+Padanan Node: method array (`map`, `filter`) atau `.then()` berantai, tapi untuk banyak nilai.
+_Avoid_: Pipe (itu istilah template Angular, mis. `async` pipe)
+
+**Async Pipe**:
+Pipe template `| async` yang subscribe ke Observable, menampilkan nilai terakhirnya, dan unsubscribe otomatis saat component dihancurkan.
+Padanan React: `useEffect` + `useState` + cleanup yang ditulis otomatis.
+_Avoid_: Auto-subscribe
+
+## Forms (Angular 16)
+
+**Reactive Forms**:
+Pendekatan form Angular (`ReactiveFormsModule`) di mana form model (`FormGroup`/`FormControl`) dibuat eksplisit di class component, alur datanya sinkron, dan validatornya berupa fungsi.
+Padanan React: controlled input dengan state, atau React Hook Form.
+_Avoid_: Model-driven form, dynamic form (itu pola lain di atas Reactive Forms)
+
+**Template-driven Forms**:
+Pendekatan form Angular (`FormsModule`) di mana form model dibuat implisit oleh directive `ngModel` di template, dengan two-way binding dan alur data asinkron.
+Padanan React: tidak ada padanan langsung; paling dekat input dengan `value` + `onChange` di JSX.
+_Avoid_: HTML form, simple form
+
+## Auth dan error handling (lesson 0017)
+
+**JWT**:
+Token ringkas `header.payload.signature` (tiap bagian base64url) berisi claims seperti `sub`, role, dan `exp`; ditandatangani sehingga tidak bisa diubah, tapi isinya bisa dibaca siapa saja. Dikirim di header `Authorization: Bearer …`.
+Padanan Node: token dari `jsonwebtoken.sign()`, divalidasi passport-jwt / express-jwt.
+_Avoid_: Session token (session disimpan di server), encrypted token (JWS tidak dienkripsi)
+
+**Authentication**:
+Proses menentukan identitas user (di .NET: `UseAuthentication` mengisi `HttpContext.User`); gagal = 401.
+Padanan Node: passport mengisi `req.user`.
+_Avoid_: Login (itu salah satu langkahnya saja), auth (ambigu)
+
+**Authorization**:
+Proses menentukan apakah user yang sudah dikenal boleh mengakses resource (`[Authorize]`, role, policy); gagal = 403.
+Padanan Node: middleware pengecek role sesudah passport.
+_Avoid_: Auth (ambigu), permission check
+
+**CORS**:
+Mekanisme server untuk melonggarkan same-origin policy browser lewat header `Access-Control-*`, termasuk menjawab preflight `OPTIONS`; bukan fitur keamanan.
+Padanan Node: package `cors` di Express.
+_Avoid_: CORS error sebagai "error API" (yang memblokir adalah browser)
+
+**ProblemDetails**:
+Format standar (RFC 9457, dulu 7807) untuk body error HTTP API dengan field `type`, `title`, `status`, `detail`, `instance`; di .NET 8 dihasilkan lewat `AddProblemDetails` dan `IExceptionHandler`.
+Padanan Node: format JSON error yang Anda tentukan sendiri di error middleware Express.
+_Avoid_: Error object, error DTO
+
+## Arsitektur
+
+**Clean Architecture**:
+Arsitektur yang menaruh aturan bisnis (Application Core) di pusat, dengan Infrastructure dan UI di luar yang bergantung ke dalam; nama lainnya Hexagonal, Ports-and-Adapters, Onion.
+Padanan Node: hexagonal / ports and adapters di NestJS, dengan Prisma sebagai adapter.
+_Avoid_: Onion layer, layered (layered tradisional arahnya UI → BLL → DAL)
+
+**Dependency Rule**:
+Aturan Clean Architecture bahwa dependency source code hanya boleh mengarah ke dalam; lingkaran dalam tidak tahu apa pun tentang lingkaran luar. Diwujudkan lewat DIP.
+Padanan Node: folder `domain/` yang tidak pernah meng-`import` Prisma atau Express.
+_Avoid_: Layer rule, call direction (alur runtime tetap boleh keluar)
+
+**Application Core**:
+Project pusat Clean Architecture berisi Entity, interface (mis. `IProductRepository`), domain service, dan DTO; tidak mereferensikan project lain.
+Padanan Node: folder `domain/` + `services/` tanpa dependency ke framework.
+_Avoid_: Domain layer saja, core library
+
+**Infrastructure**:
+Project Clean Architecture berisi detail teknis yang mengimplementasikan interface dari Application Core: `DbContext`, Migration, implementasi Repository, pengirim email.
+Padanan Node: adapter Prisma, Nodemailer, klien HTTP.
+_Avoid_: DAL, data layer (itu istilah N-Layer)
+
+**Unit of Work**:
+Pola yang mengumpulkan semua insert/update/delete satu aksi lalu menyimpannya dalam satu transaksi; di EF Core diwujudkan oleh `DbContext` dan dijalankan saat `SaveChanges`.
+Padanan Node: `prisma.$transaction([...])`, atau unit of work di MikroORM.
+_Avoid_: Transaction (lebih sempit), batch save
