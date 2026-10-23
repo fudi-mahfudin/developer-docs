@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0013 · Angular 16 untuk developer React: NgModule, binding, Lifecycle Hook</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0013 · Frontend · ±14 menit</div>
+  <h1>Component Angular, dilihat dari React</h1>
+  <p class="subtitle">NgModule (dan sekilas standalone component), data binding, structural directive v16, dan Lifecycle Hook</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Anda dari React. Jelaskan bagaimana component Angular 16 disusun dan hidup: NgModule, binding, dan Lifecycle Hook."</em>
+  dalam 60 detik, dengan padanan React untuk setiap bagian.
+</div>
+
+<h2>1. Component = class + template + selector</h2>
+<p>
+  Di React, component adalah function yang mengembalikan JSX. Di Angular, component terdiri dari
+  "An HTML template that declares what renders on the page", "A TypeScript class that defines behavior",
+  dan "A CSS selector that defines how the component is used in a template"
+  <sup class="cite"><a href="https://v16.angular.io/guide/component-overview">[1]</a></sup>.
+  Template dan logika dipisah, lalu disambungkan oleh decorator <code>@Component</code>.
+</p>
+
+<pre><code>// product-card.component.ts
+@Component({
+  selector: 'app-product-card',            // dipakai sebagai &lt;app-product-card&gt;
+  templateUrl: './product-card.component.html',
+  styleUrls: ['./product-card.component.css'],
+})
+export class ProductCardComponent {
+  @Input() product!: Product;              // parent → child (seperti props)
+  @Output() deleted = new EventEmitter&lt;number&gt;();  // child → parent (seperti callback prop)
+}</code></pre>
+
+<h2>2. NgModule: wadah yang tidak ada di React</h2>
+<p>
+  "An NgModule is a class marked by the <code>@NgModule</code> decorator", dan NgModule
+  "configure the injector and the compiler and help organize related things together"
+  <sup class="cite"><a href="https://v16.angular.io/guide/ngmodules">[2]</a></sup>.
+  Di React, Anda cukup <code>import</code> component lalu memakainya. Di Angular berbasis NgModule, template
+  hanya mengenal component, directive, dan pipe yang terdaftar di module-nya.
+</p>
+
+<table>
+  <thead><tr><th>Array</th><th>Isinya</th><th>Padanan Node/React</th></tr></thead>
+  <tbody>
+    <tr><td><code>declarations</code></td><td>Component, directive, pipe <em>milik</em> module ini</td><td>Daftar file component di folder fitur</td></tr>
+    <tr><td><code>imports</code></td><td>Module lain yang dibutuhkan template (mis. <code>FormsModule</code>)</td><td><code>import</code> paket npm</td></tr>
+    <tr><td><code>providers</code></td><td>Service untuk DI (dibahas di 0014)</td><td>Context Provider; <code>providers</code> di NestJS</td></tr>
+    <tr><td><code>bootstrap</code></td><td>Root component, biasanya <code>AppComponent</code></td><td><code>createRoot(...).render(&lt;App /&gt;)</code></td></tr>
+  </tbody>
+</table>
+
+<pre><code>@NgModule({
+  declarations: [AppComponent, ProductCardComponent],
+  imports: [BrowserModule, FormsModule, HttpClientModule],
+  providers: [],
+  bootstrap: [AppComponent],
+})
+export class AppModule {}</code></pre>
+
+<p>
+  Peran keempat array ini dirangkum di dokumentasi v16: declarations "Declares which components, directives, and pipes belong to the module",
+  imports mengambil "other modules with the components, directives, and pipes that components in the current module need",
+  dan "<code>@NgModule</code> can also add service providers to the application dependency injectors"
+  <sup class="cite"><a href="https://v16.angular.io/guide/ngmodules">[2]</a></sup>.
+</p>
+
+<p class="note">
+  <strong>Sekilas standalone component.</strong> Di v16, component juga bisa ditandai <code>standalone: true</code>:
+  "Standalone components specify their dependencies directly instead of getting them through <code>NgModule</code>s",
+  dan aplikasi bisa di-bootstrap tanpa NgModule lewat <code>bootstrapApplication</code>
+  <sup class="cite"><a href="https://v16.angular.io/guide/standalone-components">[3]</a></sup>.
+  Ini lebih mirip function component React. Tapi <code>ng new</code> di v16 baru menghasilkan aplikasi standalone kalau diberi flag <code>--standalone</code>
+  <sup class="cite"><a href="https://blog.ninja-squad.com/2023/05/03/angular-cli-16.0">[4]</a></sup>,
+  jadi codebase v16 di perusahaan kemungkinan besar masih memakai <code>AppModule</code>. Kuasai NgModule dulu.
+</p>
+
+<pre><code>@Component({
+  selector: 'app-product-card',
+  standalone: true,
+  imports: [CommonModule],                 // dependensi disebut di component itu sendiri
+  templateUrl: './product-card.component.html',
+})
+export class ProductCardComponent {}</code></pre>
+
+<h2>3. Data binding: empat bentuk, dua arah</h2>
+<p>
+  Setiap binding punya "a <em>target</em> which will receive the bound value" dan "a <em>template expression</em> which produces a value from the model"
+  <sup class="cite"><a href="https://v16.angular.io/guide/binding-overview">[5]</a></sup>.
+  Kuncinya ada di bentuk kurungnya:
+</p>
+
+<table>
+  <thead><tr><th>Sintaks</th><th>Nama</th><th>Arah data</th><th>Padanan JSX</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{ product.name }}</code></td><td>Interpolation</td><td>class → tampilan</td><td><code>{product.name}</code></td></tr>
+    <tr><td><code>[disabled]="isSaving"</code></td><td>Property binding</td><td>class → elemen</td><td><code>disabled={isSaving}</code></td></tr>
+    <tr><td><code>(click)="save()"</code></td><td>Event binding</td><td>elemen → class</td><td><code>onClick={save}</code></td></tr>
+    <tr><td><code>[(ngModel)]="name"</code></td><td>Two-way binding</td><td>dua arah</td><td><code>value={name} onChange={e =&gt; setName(...)}</code></td></tr>
+  </tbody>
+</table>
+
+<p>
+  Property binding "moves a value in one direction, from a component's property into a target element property"
+  <sup class="cite"><a href="https://v16.angular.io/guide/property-binding">[6]</a></sup>.
+  Event binding "lets you listen for and respond to user actions such as keystrokes, mouse movements, clicks, and touches"
+  <sup class="cite"><a href="https://v16.angular.io/guide/event-binding">[7]</a></sup>.
+  Two-way binding "is a combination of square brackets and parentheses, <code>[()]</code>" (sering disebut <em>banana in a box</em>),
+  dan untuk elemen form ia "requires <code>NgModel</code>"
+  <sup class="cite"><a href="https://v16.angular.io/guide/two-way-binding">[8]</a></sup>,
+  yang datang dari <code>FormsModule</code>
+  <sup class="cite"><a href="https://v16.angular.io/guide/built-in-directives">[9]</a></sup>.
+</p>
+<p>
+  Antar component: "<code>@Input()</code> lets a parent component update data in the child component.
+  Conversely, <code>@Output()</code> lets the child send data to a parent component"
+  <sup class="cite"><a href="https://v16.angular.io/guide/inputs-outputs">[10]</a></sup>.
+  Ini sama dengan props dan callback prop di React. Bedanya, child Angular memanggil <code>this.deleted.emit(id)</code>, lalu parent mendengarnya dengan
+  <code>(deleted)="onDelete($event)"</code>.
+</p>
+
+<h2>4. Structural directive (sintaks v16)</h2>
+<p>
+  "Structural directives are directives which change the DOM layout by adding and removing DOM elements"
+  <sup class="cite"><a href="https://v16.angular.io/guide/structural-directives">[11]</a></sup>.
+  Tanda bintang adalah singkatan: "Angular transforms the asterisk in front of a structural directive into an <code>&lt;ng-template&gt;</code>".
+</p>
+
+<pre><code>&lt;p *ngIf="products.length === 0; else list"&gt;Belum ada Product.&lt;/p&gt;   &lt;!-- {cond &amp;&amp; ...} / ternary --&gt;
+&lt;ng-template #list&gt;
+  &lt;ul&gt;
+    &lt;li *ngFor="let p of products; trackBy: trackById"&gt;{{ p.name }}&lt;/li&gt;  &lt;!-- products.map(p =&gt; &lt;li key={p.id}&gt;) --&gt;
+  &lt;/ul&gt;
+&lt;/ng-template&gt;
+
+&lt;ng-container *ngIf="isAdmin"&gt;          &lt;!-- seperti &lt;&gt;...&lt;/&gt; Fragment: tanpa elemen tambahan --&gt;
+  &lt;app-product-card *ngFor="let p of products" [product]="p" (deleted)="onDelete($event)"&gt;&lt;/app-product-card&gt;
+&lt;/ng-container&gt;
+
+&lt;div [ngSwitch]="product.status"&gt;
+  &lt;span *ngSwitchCase="'active'"&gt;Aktif&lt;/span&gt;
+  &lt;span *ngSwitchDefault&gt;Nonaktif&lt;/span&gt;
+&lt;/div&gt;</code></pre>
+
+<ul>
+  <li><strong>Satu per elemen.</strong> "You may apply only one structural directive to an element" <sup class="cite"><a href="https://v16.angular.io/guide/structural-directives">[11]</a></sup>. Butuh <code>*ngIf</code> dan <code>*ngFor</code> sekaligus? Bungkus dengan <code>&lt;ng-container&gt;</code>, yaitu "a grouping element that doesn't interfere with styles or layout" <sup class="cite"><a href="https://v16.angular.io/guide/built-in-directives">[9]</a></sup>.</li>
+  <li><strong><code>trackBy</code></strong> adalah padanan <code>key</code> di React: Angular hanya merender ulang item yang berubah <sup class="cite"><a href="https://v16.angular.io/guide/built-in-directives">[9]</a></sup>.</li>
+  <li><strong>Jangan pakai <code>@if</code> / <code>@for</code> di jawaban.</strong> Itu control flow Angular 17. Kalau Anda menyebutnya, sebutkan juga bahwa itu sintaks versi yang lebih baru.</li>
+</ul>
+
+<h2>5. Lifecycle Hook vs <code>useEffect</code></h2>
+<table>
+  <thead><tr><th>Angular</th><th>Kapan dipanggil</th><th>Padanan React</th></tr></thead>
+  <tbody>
+    <tr><td><code>constructor</code></td><td>Saat class dibuat. Hanya untuk inject dependency.</td><td>Badan function sebelum hook</td></tr>
+    <tr><td><code>ngOnChanges(changes)</code></td><td>"Called before <code>ngOnInit()</code> (if the component has bound inputs) and whenever one or more data-bound input properties change"</td><td><code>useEffect(..., [productId])</code></td></tr>
+    <tr><td><code>ngOnInit()</code></td><td>"Called once, after the first <code>ngOnChanges()</code>"</td><td><code>useEffect(..., [])</code> (mount)</td></tr>
+    <tr><td><code>ngOnDestroy()</code></td><td>"Called immediately before Angular destroys the directive or component"</td><td>fungsi cleanup yang di-return <code>useEffect</code></td></tr>
+  </tbody>
+</table>
+<p>
+  Kutipan di tabel berasal dari dokumentasi Lifecycle Hook v16 <sup class="cite"><a href="https://v16.angular.io/guide/lifecycle-hooks">[12]</a></sup>.
+  Dua aturan yang sering ditanyakan berasal dari halaman yang sama:
+  "You should not, for example, fetch data in a component constructor" dan
+  "An <code>ngOnInit()</code> is a good place for a component to fetch its initial data".
+  Di <code>ngOnDestroy</code>, "Unsubscribe Observables and detach event handlers to avoid memory leaks"
+  <sup class="cite"><a href="https://v16.angular.io/guide/lifecycle-hooks">[12]</a></sup>
+  (detail unsubscribe dibahas di 0015).
+</p>
+
+<pre><code>export class ProductDetailComponent implements OnChanges, OnInit, OnDestroy {
+  @Input() productId!: number;
+  private sub?: Subscription;
+
+  constructor(private products: ProductService) {}       // inject saja, jangan fetch
+
+  ngOnChanges(changes: SimpleChanges) {                   // input berubah
+    if (changes['productId'] &amp;&amp; !changes['productId'].firstChange) this.load();
+  }
+  ngOnInit() { this.load(); }                             // data awal
+  ngOnDestroy() { this.sub?.unsubscribe(); }              // cleanup
+
+  private load() {
+    this.sub?.unsubscribe();
+    this.sub = this.products.getById(this.productId).subscribe(p =&gt; (this.product = p));
+  }
+  product?: Product;
+}</code></pre>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Kuis campuran</h2>
+  <p>Topiknya sengaja diselang-seling. Jawab tanpa scroll ke atas; kalau ragu, tebak dulu, lalu baca penjelasannya.</p>
+  <div class="quiz" data-bank-lesson="0013" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik. Jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Anda dari React. Jelaskan bagaimana component Angular 16 disusun dan hidup: NgModule, binding, dan Lifecycle Hook."</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Di Angular 16 component adalah class TypeScript dengan decorator <code>@Component</code> yang berisi selector, template, dan style.
+      Component itu dideklarasikan di sebuah <strong>NgModule</strong>: <code>declarations</code> untuk component milik module,
+      <code>imports</code> untuk module lain seperti <code>FormsModule</code>, <code>providers</code> untuk service.
+      Di v16 juga ada <strong>standalone component</strong> yang mengisi <code>imports</code> sendiri, lebih mirip function component React.
+      Template terhubung ke class lewat binding: <code>{{ }}</code> interpolation, <code>[prop]</code> property binding,
+      <code>(event)</code> event binding, dan <code>[(ngModel)]</code> two-way.
+      Parent ke child lewat <code>@Input()</code> seperti props, child ke parent lewat <code>@Output()</code> dan <code>EventEmitter</code> seperti callback prop.
+      Untuk kondisi dan list saya pakai <code>*ngIf</code> dan <code>*ngFor</code> dengan <code>trackBy</code>.
+      Lifecycle-nya: constructor hanya untuk inject dependency, <code>ngOnInit</code> untuk ambil data awal,
+      <code>ngOnChanges</code> saat input berubah, dan <code>ngOnDestroy</code> untuk unsubscribe,
+      mirip mount, dependency, dan cleanup di <code>useEffect</code>."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>isi <code>@Component</code> (selector, template, style) dan perannya sebagai class?</li>
+      <li><code>declarations</code> / <code>imports</code> / <code>providers</code> di NgModule?</li>
+      <li>standalone component sebagai alternatif, dan padanannya di React?</li>
+      <li>empat bentuk binding dan arah datanya?</li>
+      <li><code>@Input</code>/<code>@Output</code> serta <code>*ngIf</code>/<code>*ngFor</code> (sintaks v16)?</li>
+      <li>constructor vs <code>ngOnInit</code> / <code>ngOnChanges</code> / <code>ngOnDestroy</code> dengan padanan <code>useEffect</code>?</li>
+    </ul>
+    <p class="note">Kalau kurang dari 4 poin, ulangi sebelum lesson 0014. Soal ini juga akan muncul lagi di mock interview 0018.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://v16.angular.io/guide/lifecycle-hooks">Angular v16: Component lifecycle</a>,
+  dokumentasi resmi versi 16. Baca bagian "Lifecycle event sequence", "Initializing a component or directive", dan "Cleaning up on instance destruction".
+  Kalau masih ada waktu, lanjut ke <a href="https://v16.angular.io/guide/ngmodules">NgModules</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/angular-dasar.html">Reference: Angular 16 dasar untuk developer React</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan saya butuh <code>ngOnChanges</code> kalau sudah ada <code>ngOnInit</code>?" atau "apa bedanya attribute dan DOM property di property binding?"</p>
+
+<nav class="lesson-nav">
+  <a href="0012-review-hari-2.html">← 0012 · Review campuran Hari 2</a>
+  <a href="0014-angular-di-routing.html">0014 · Angular Service &amp; DI + routing/guard →</a>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>
