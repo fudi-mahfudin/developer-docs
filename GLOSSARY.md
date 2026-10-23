@@ -68,6 +68,11 @@ Cara membaca konfigurasi `appsettings.json` ke kelas bertipe lewat `IOptions<T>`
 Padanan Node: `process.env` + modul `config/` yang divalidasi.
 _Avoid_: Env config, settings object
 
+**Composition root**:
+Satu tempat di awal aplikasi (`Program.cs`) yang menghubungkan setiap interface ke implementasinya di DI container.
+Padanan Node: `app.js` yang membuat semua instance, atau `providers` di module NestJS.
+_Avoid_: Startup wiring, bootstrap, DI config
+
 ## Testing
 
 **Red-Green-Refactor**:

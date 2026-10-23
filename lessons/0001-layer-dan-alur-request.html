@@ -3,29 +3,34 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>0001 · Di mana kode ini tinggal? Layer & alur request di ASP.NET Core</title>
+<title>0001 · Di mana kode ini tinggal? Layer &amp; alur request di ASP.NET Core</title>
 <link rel="stylesheet" href="../assets/style.css">
 </head>
 <body>
 <main>
 
 <header class="lesson-head">
-  <div class="kicker">Lesson 0001 · Backend · ±12 menit</div>
+  <div class="kicker">Lesson 0001 · Hari 1 · Backend · ±13 menit</div>
   <h1>Di mana kode ini tinggal?</h1>
   <p class="subtitle">Layer &amp; alur request di ASP.NET Core Web API, dilihat dari kacamata Express</p>
 </header>
 
 <div class="win">
   <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
-  <em>"Bagaimana Anda menstruktur project ASP.NET Core Web API?"</em> dalam 60 detik,
-  dan bisa menentukan layer yang tepat untuk sepotong kode yang ditunjukkan pewawancara.
+  <em>"Bagaimana Anda menstruktur project ASP.NET Core Web API, dan kenapa?"</em> dalam 60 detik,
+  dan bisa menentukan layer yang tepat (Controller, Service, Repository, atau composition root) untuk potongan kode yang ditunjukkan pewawancara.
 </div>
+
+<p class="note">
+  Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan. Soal yang sama akan muncul lagi secara acak di
+  <a href="../index.html">review campuran 0007</a> besok pagi, dan hanya hasil di sana yang dicatat.
+</p>
 
 <h2>1. Anda sudah tahu 80%-nya</h2>
 <p>
   Di Express Anda mungkin sudah memisahkan <code>routes/</code>, <code>controllers/</code>,
   <code>services/</code>, dan <code>models/</code>. ASP.NET Core memakai ide yang sama.
-  Yang berbeda: pemisahan ini <em>diharapkan</em> oleh pewawancara, dan semuanya disambungkan oleh
+  Bedanya, pemisahan ini <em>diharapkan</em> oleh pewawancara, dan semuanya disambungkan oleh
   <strong>dependency injection bawaan</strong>, bukan oleh <code>require</code>/<code>import</code> manual.
 </p>
 
@@ -34,17 +39,17 @@
   <tbody>
     <tr><td><code>routes/</code> + <code>controllers/</code></td><td><code>Controllers/</code></td><td>Menerjemahkan HTTP ↔ panggilan method. Tidak berisi aturan bisnis.</td></tr>
     <tr><td>schema Zod / Joi</td><td><code>DTOs/</code></td><td>Bentuk data yang masuk/keluar API.</td></tr>
-    <tr><td><code>services/</code></td><td><code>Services/</code></td><td>Aturan bisnis: "harga harus &gt; 0", "nama tidak boleh duplikat".</td></tr>
+    <tr><td><code>services/</code></td><td><code>Services/</code></td><td>Aturan bisnis: "harga harus &gt; 0", "nama Product tidak boleh duplikat".</td></tr>
     <tr><td>data-access di atas Prisma</td><td><code>Repositories/</code></td><td>Query &amp; simpan data untuk satu Entity.</td></tr>
-    <tr><td>model Prisma + Prisma client</td><td><code>Models/</code> + <code>Data/AppDbContext</code></td><td>Entity yang dipetakan ke tabel, dan sesi ke database.</td></tr>
-    <tr><td><code>config/</code> + <code>.env</code></td><td><code>appsettings.json</code> + <code>Config/</code></td><td>Konfigurasi bertipe lewat Options pattern.</td></tr>
-    <tr><td><code>app.js</code> / <code>server.js</code></td><td><code>Program.cs</code></td><td>Mendaftarkan service ke DI container dan menyusun middleware.</td></tr>
+    <tr><td>model Prisma + Prisma client</td><td><code>Models/</code> + <code>Data/AppDbContext</code></td><td>Entity yang dipetakan ke tabel, dan DbContext sebagai sesi ke database.</td></tr>
+    <tr><td><code>config/</code> + <code>.env</code></td><td><code>appsettings.json</code> + <code>Config/</code></td><td>Konfigurasi bertipe lewat Options Pattern.</td></tr>
+    <tr><td><code>app.js</code> / <code>server.js</code></td><td><code>Program.cs</code></td><td>Composition root: mendaftarkan service ke DI container dan menyusun Middleware.</td></tr>
   </tbody>
 </table>
 
 <p class="note">
-  Template baru ASP.NET Core memang dimulai sebagai satu project, dengan pemisahan lewat folder.
-  Microsoft menyebutnya <em>all-in-one</em>: "separation of concerns is achieved through the use of folders."
+  Project ASP.NET Core baru memang dimulai sebagai satu project. Microsoft menyebutnya <em>all-in-one</em>:
+  "In a single project scenario, separation of concerns is achieved through the use of folders."
   <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#all-in-one-applications">[1]</a></sup>
 </p>
 
@@ -63,24 +68,42 @@
 <p>
   Hasilnya kembali ke arah sebaliknya: Entity diubah menjadi DTO di Service, lalu Controller membungkusnya
   menjadi <code>Ok(...)</code>, <code>NotFound()</code>, atau <code>CreatedAtAction(...)</code>.
+  Urutan Middleware sendiri dibahas di lesson 0005.
 </p>
 
 <p>
-  Aturannya, setiap layer hanya bicara dengan layer di bawahnya. Microsoft menulis:
-  "The UI layer shouldn't make any requests to the DAL directly"
-  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#traditional-n-layer-architecture-applications">[1]</a></sup>.
-  Artinya Controller tidak boleh menyentuh <code>DbContext</code> secara langsung.
+  Controller sengaja dibuat tipis. Dokumentasi resmi menulis bahwa Controller adalah abstraksi tingkat UI, dan
+  "In well-factored apps, it doesn't directly include data access or business logic. Instead, the controller delegates to services handling these responsibilities."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/mvc/controllers/actions?view=aspnetcore-8.0#what-is-a-controller">[2]</a></sup>
 </p>
 
-<h2>3. Kenapa ada interface di antara layer</h2>
+<p>
+  Aturan arahnya juga jelas: setiap layer hanya bicara dengan layer di bawahnya.
+  "The UI layer shouldn't make any requests to the DAL directly"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#traditional-n-layer-architecture-applications">[1]</a></sup>.
+  Artinya Controller tidak memakai <code>DbContext</code> secara langsung.
+</p>
+
+<h2>3. DTO: kontrak API, bukan tabel</h2>
+<p>
+  Padanannya di Node adalah schema Zod/Joi untuk body dan response. Microsoft menyebut DTO sebagai
+  "subset of a model" dan mendaftar kegunaannya: mencegah <em>over-posting</em>, menyembunyikan property yang tidak boleh dilihat client,
+  mengurangi ukuran payload, dan meratakan object graph yang bersarang
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-web-api?view=aspnetcore-8.0#prevent-over-posting">[4]</a></sup>.
+  Over-posting artinya client mengisi field yang seharusnya tidak boleh ia isi, misalnya <code>Id</code> atau <code>IsAdmin</code>.
+</p>
+
+<h2>4. Interface dan composition root</h2>
 <p>
   Di N-layer klasik, Service bergantung langsung pada kelas data access. Akibatnya, menurut Microsoft,
   "Testing business logic in such an architecture is often difficult, requiring a test database."
   <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#traditional-n-layer-architecture-applications">[1]</a></sup>
+  Dokumentasi DI menjelaskan solusinya: memakai interface untuk mengabstraksi implementasi, mendaftarkannya di service container
+  (biasanya di file <code>Program</code>), lalu menyuntikkannya ke kelas yang memakainya
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0#overview-of-dependency-injection">[3]</a></sup>.
 </p>
-<p>Solusinya, Service bergantung pada <strong>interface</strong>, dan implementasinya dipasang dari luar:</p>
 
-<pre><code>// Services/ProductService.cs — hanya tahu kontraknya
+<pre><code>// Services/ProductService.cs — hanya tahu kontraknya, tanpa new
 public class ProductService(IProductRepository repo) : IProductService { ... }
 
 // Program.cs — satu-satunya tempat yang tahu implementasi konkret
@@ -91,117 +114,43 @@ builder.Services.AddScoped&lt;IProductService, ProductService&gt;();</code></pre
   Tempat penyambungan ini disebut <strong>composition root</strong>:
   "The place where this logic is performed is known as the app's composition root"
   <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#ui-layer">[1]</a></sup>.
-  Di unit test, Anda tinggal memberikan <em>mock</em> <code>IProductRepository</code> tanpa database.
-  Ini adalah huruf <strong>D</strong> di SOLID, yang akan dibahas di lesson berikutnya.
+  Di Unit Test, Anda tinggal memberikan Mock <code>IProductRepository</code> tanpa database.
+  Ini huruf <strong>D</strong> di SOLID (lesson 0008). Arti <code>AddScoped</code> dibahas di lesson 0004.
 </p>
 
 <p class="note">
-  Kalau Anda pernah memakai NestJS, ini sama dengan <code>providers</code> di module dan constructor injection.
-  Kalau hanya Express, bayangkan <code>app.js</code> yang membuat semua instance sekali lalu menyerahkannya ke constructor.
-  Bedanya, di .NET framework yang melakukannya untuk Anda.
+  Padanan Node: di NestJS ini sama dengan <code>providers</code> di module plus constructor injection.
+  Di Express polos, bayangkan <code>app.js</code> yang membuat semua instance sekali lalu menyerahkannya ke constructor.
+  Bedanya, di .NET framework yang membuat dan membuang instance-nya untuk Anda.
+</p>
+
+<h2>5. Options Pattern, sekilas</h2>
+<p>
+  Konfigurasi dari <code>appsettings.json</code> tidak dibaca dengan string di mana-mana, tapi di-bind ke kelas bertipe:
+  "The options pattern uses classes to provide strongly typed access to groups of related settings."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0">[5]</a></sup>
+  Registrasinya juga di composition root, misalnya <code>builder.Services.Configure&lt;JwtSettings&gt;(builder.Configuration.GetSection("Jwt"))</code>.
+  Padanan Node: <code>process.env</code> yang dibaca sekali oleh modul <code>config/</code> yang divalidasi. Detailnya di lesson 0005.
 </p>
 
 <!-- ============ EXERCISE 1 ============ -->
 <section class="exercise">
-  <h2>Latihan 1 — Kode ini milik layer mana?</h2>
+  <h2>Latihan 1: Kode ini milik layer mana?</h2>
   <p>Pewawancara sering menunjukkan potongan kode lalu bertanya, "Ini seharusnya ada di mana?" Jawab tanpa scroll ke atas.</p>
-
-  <div class="quiz">
-    <div class="q" data-answer="a">
-      <p class="prompt"><code>return product is null ? NotFound() : Ok(product);</code></p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">Memilih status HTTP (404/200) adalah urusan HTTP, jadi tempatnya di Controller.</p>
-    </div>
-    <div class="q" data-answer="b">
-      <p class="prompt"><code>if (request.Price &lt;= 0) throw new ValidationException("Price must be greater than 0.");</code></p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">"Harga harus &gt; 0" adalah aturan bisnis. Aturan ini tetap berlaku walaupun request datang dari selain HTTP (misalnya background job), jadi tempatnya di Service.</p>
-    </div>
-    <div class="q" data-answer="c">
-      <p class="prompt"><code>return await _db.Products.AnyAsync(p =&gt; p.Name == name);</code></p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">Query langsung ke <code>DbContext</code> adalah akses data. Service cukup memanggil <code>repo.ExistsByNameAsync(name)</code>.</p>
-    </div>
-    <div class="q" data-answer="d">
-      <p class="prompt"><code>builder.Services.AddScoped&lt;IProductService, ProductService&gt;();</code></p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">Menghubungkan interface ke implementasi adalah tugas composition root. Bisa dipindah ke extension method di <code>Config/</code>, tapi tetap dipanggil dari Program.cs.</p>
-    </div>
-    <div class="q" data-answer="a">
-      <p class="prompt"><code>[HttpPost] public async Task&lt;ActionResult&lt;ProductResponse&gt;&gt; Create(CreateProductRequest req)</code></p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">Attribute <code>[HttpPost]</code> dan <code>ActionResult</code> adalah konsep HTTP. Ini action method di Controller.</p>
-    </div>
-    <div class="q" data-answer="b">
-      <p class="prompt">"Kalau jumlah yang diminta melebihi Stock, tolak dengan pesan error."</p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">Ini aturan bisnis tentang Stock, jadi tempatnya di Service. Repository hanya mengambil dan menyimpan angkanya.</p>
-    </div>
-    <div class="q" data-answer="d">
-      <p class="prompt"><code>builder.Services.Configure&lt;JwtSettings&gt;(builder.Configuration.GetSection("Jwt"));</code></p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">Ini Options pattern: bagian <code>Jwt</code> dari appsettings di-bind ke kelas <code>JwtSettings</code> (yang tinggal di <code>Config/</code>). Registrasinya dilakukan di composition root.</p>
-    </div>
-    <div class="q" data-answer="c">
-      <p class="prompt"><code>_db.Products.Add(product); await _db.SaveChangesAsync();</code></p>
-      <div class="opts"><button data-key="a">Controller</button><button data-key="b">Service</button><button data-key="c">Repository</button><button data-key="d">Program.cs</button></div>
-      <p class="explain">Menyimpan lewat <code>DbContext</code> adalah akses data, jadi tempatnya di Repository.</p>
-    </div>
-  </div>
+  <div class="quiz" data-bank-lesson="0001" data-bank-topic="layer"></div>
 </section>
 
 <!-- ============ EXERCISE 2 ============ -->
 <section class="exercise">
-  <h2>Latihan 2 — Alasannya</h2>
+  <h2>Latihan 2: Alasannya</h2>
   <p>Pewawancara mid-level jarang berhenti di "di mana". Mereka biasanya lanjut bertanya "kenapa".</p>
-
-  <div class="quiz">
-    <div class="q" data-answer="b">
-      <p class="prompt">Sebuah Controller langsung memakai <code>_db.Products</code> untuk menyimpan produk baru. Apa masalah utamanya?</p>
-      <div class="opts stack">
-        <button data-key="a">Performa query EF Core jadi lambat</button>
-        <button data-key="b">Controller melewati Service, aturan bisnis terlewati</button>
-        <button data-key="c">DbContext tidak bisa dipakai di Controller</button>
-        <button data-key="d">Swagger tidak dapat membaca endpoint tersebut</button>
-      </div>
-      <p class="explain">Secara teknis kode ini bisa jalan (jadi C salah). Masalahnya, validasi harga dan cek duplikat di Service ikut dilewati, dan Controller jadi sulit di-unit-test.</p>
-    </div>
-    <div class="q" data-answer="d">
-      <p class="prompt">Di N-layer klasik tanpa interface, kenapa business logic sulit di-unit-test?</p>
-      <div class="opts stack">
-        <button data-key="a">xUnit hanya bisa menguji method yang static</button>
-        <button data-key="b">C# tidak mendukung mocking untuk class konkret</button>
-        <button data-key="c">Controller selalu harus dijalankan lewat browser sungguhan</button>
-        <button data-key="d">Service bergantung langsung pada implementasi data access</button>
-      </div>
-      <p class="explain">Dependensi compile-time mengalir dari atas ke bawah, sehingga test Service ikut menyeret database. Interface dan DI memutus rantai itu.</p>
-    </div>
-    <div class="q" data-answer="a">
-      <p class="prompt">Di mana <code>IProductRepository</code> dihubungkan ke <code>ProductRepository</code>?</p>
-      <div class="opts stack">
-        <button data-key="a">Di Program.cs, yaitu composition root aplikasi</button>
-        <button data-key="b">Di constructor Controller lewat keyword new</button>
-        <button data-key="c">Di file appsettings.json bagian ConnectionStrings utama</button>
-        <button data-key="d">Di DbContext melalui method OnModelCreating otomatis</button>
-      </div>
-      <p class="explain">Composition root. Memakai <code>new</code> di constructor justru bertentangan dengan DI. <code>OnModelCreating</code> mengatur pemetaan tabel, bukan DI.</p>
-    </div>
-    <div class="q" data-answer="c">
-      <p class="prompt">Kenapa API mengembalikan DTO, bukan Entity secara langsung?</p>
-      <div class="opts stack">
-        <button data-key="a">Entity tidak bisa diserialisasi menjadi JSON</button>
-        <button data-key="b">DTO membuat query database lebih cepat</button>
-        <button data-key="c">Kontrak API terlepas dari skema database</button>
-        <button data-key="d">ASP.NET Core mewajibkan DTO di Controller</button>
-      </div>
-      <p class="explain">Dengan DTO, kolom baru di tabel tidak otomatis bocor ke API, dan client tidak bisa mengisi field yang tidak boleh (over-posting). Entity sebenarnya bisa diserialisasi, tapi berisiko circular reference.</p>
-    </div>
-  </div>
+  <div class="quiz" data-bank-lesson="0001" data-bank-topic="composition-root" data-stack></div>
+  <div class="quiz" data-bank-lesson="0001" data-bank-topic="dto" data-stack></div>
 </section>
 
 <!-- ============ EXERCISE 3 ============ -->
 <section class="exercise">
-  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <h2>Latihan 3: Ucapkan dengan suara keras</h2>
   <p>
     Pasang timer 60 detik. Jawab pertanyaan ini dengan suara keras, seolah sedang interview.
     Jangan buka jawaban contoh sebelum selesai. Mengingat tanpa melihat inilah yang membuat materi menempel.
@@ -211,26 +160,24 @@ builder.Services.AddScoped&lt;IProductService, ProductService&gt;();</code></pre
   <details>
     <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
     <p>
-      "Untuk API ukuran kecil–menengah saya pakai layered architecture dalam satu project.
-      <strong>Controller</strong> hanya menangani HTTP: binding request, memanggil service, dan mengembalikan status code yang tepat.
-      <strong>Service</strong> berisi aturan bisnis.
-      <strong>Repository</strong> membungkus akses data lewat EF Core <code>DbContext</code>.
-      Data keluar-masuk API lewat <strong>DTO</strong>, jadi skema database tidak bocor.
-      Setiap layer bergantung pada <strong>interface</strong>, dan semuanya didaftarkan di <code>Program.cs</code> sebagai composition root.
-      Karena itu Service bisa di-unit-test dengan mock repository.
-      Konfigurasi ada di <code>appsettings.json</code> dan dibaca lewat Options pattern.
-      Kalau domainnya makin kompleks, saya akan memecahnya menjadi Clean Architecture dengan beberapa project."
+      "Untuk API kecil sampai menengah saya pakai layered architecture dalam satu project.
+      <strong>Controller</strong> hanya mengurus HTTP: binding request, memanggil Service, dan memilih status code.
+      <strong>Service</strong> berisi aturan bisnis. <strong>Repository</strong> membungkus akses data lewat EF Core <code>DbContext</code>.
+      Data keluar-masuk API lewat <strong>DTO</strong>, jadi skema database tidak bocor dan over-posting tercegah.
+      Setiap layer bergantung pada <strong>interface</strong>, dan semuanya didaftarkan di <code>Program.cs</code> sebagai composition root,
+      sehingga Service bisa di-unit-test dengan Mock repository. Konfigurasi dibaca dari <code>appsettings.json</code> lewat Options Pattern.
+      Kalau domainnya makin kompleks, saya pecah menjadi Clean Architecture dengan beberapa project."
     </p>
-    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
-    <ul>
-      <li>tanggung jawab Controller / Service / Repository masing-masing?</li>
-      <li>DTO dan <em>alasannya</em>?</li>
-      <li>interface + DI + composition root?</li>
-      <li>manfaatnya untuk testing?</li>
-      <li>config/Options pattern?</li>
-      <li>kapan Anda akan memilih struktur lain (trade-off)?</li>
-    </ul>
-    <p class="note">Kalau kurang dari 4 poin, ulangi besok pagi sebelum lesson berikutnya. Jeda waktu itu memang sengaja (spacing).</p>
+    <p><strong>Checklist (6 poin):</strong> apakah Anda menyebut…</p>
+    <ol>
+      <li>tanggung jawab Controller, Service, dan Repository masing-masing?</li>
+      <li>DTO beserta <em>alasannya</em> (skema DB tidak bocor / over-posting)?</li>
+      <li>interface + DI + composition root (<code>Program.cs</code>)?</li>
+      <li>manfaatnya untuk testing (Service di-unit-test dengan Mock)?</li>
+      <li>konfigurasi lewat Options Pattern?</li>
+      <li>trade-off: kapan memilih struktur lain (mis. Clean Architecture, lesson 0011)?</li>
+    </ol>
+    <p class="note">Kurang dari 4 poin? Ulangi besok pagi sebelum review 0007. Jeda waktu itu memang sengaja (spacing).</p>
   </details>
 </section>
 
@@ -238,20 +185,32 @@ builder.Services.AddScoped&lt;IProductService, ProductService&gt;();</code></pre
   <span class="kicker">Bacaan utama (±15 menit)</span>
   <a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures">Microsoft Learn: Common web application architectures</a>,
   bagian dari eBook resmi <em>Architect Modern Web Applications with ASP.NET Core and Azure</em>.
-  Baca bagian "All-in-one applications", "Traditional N-Layer", dan "Clean architecture".
+  Baca bagian "All-in-one applications", "What are layers?", "Traditional N-Layer", dan "Clean architecture".
   Bagian Azure/Docker bisa dilewati.
 </div>
 
+<p class="note">
+  Sumber:
+  [1] <a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures">Common web application architectures</a> ·
+  [2] <a href="https://learn.microsoft.com/en-us/aspnet/core/mvc/controllers/actions?view=aspnetcore-8.0">Handle requests with controllers in ASP.NET Core MVC</a> ·
+  [3] <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0">Dependency injection in ASP.NET Core</a> ·
+  [4] <a href="https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-web-api?view=aspnetcore-8.0#prevent-over-posting">Tutorial: Create a controller-based web API (Prevent over-posting)</a> ·
+  [5] <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0">Options pattern in ASP.NET Core</a>
+</p>
+
 <p>Ringkasan untuk dicetak: <a href="../reference/layered-architecture.html">Reference: Layered architecture ASP.NET Core</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
 
-<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kenapa Options pattern lebih baik dari membaca IConfiguration langsung?"</p>
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kalau Service sudah memakai EF Core, Repository masih perlu?" atau "apa bedanya layer dan tier?"</p>
 
 <nav class="lesson-nav">
   <span class="disabled">← (lesson pertama)</span>
-  <span class="disabled">0002 · C# untuk developer TypeScript (segera) →</span>
+  <a href="../index.html">0002 · C# untuk developer TS (lihat indeks) →</a>
 </nav>
 
 </main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0001.js"></script>
+<script src="../assets/bank-quiz.js"></script>
 <script src="../assets/quiz.js"></script>
 </body>
 </html>
