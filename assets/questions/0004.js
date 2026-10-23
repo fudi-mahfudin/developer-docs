@@ -1,0 +1,140 @@
+// Soal lesson 0004 · Service Lifetime dan captive dependency. Format: assets/README.md.
+QuestionBank.labelTopics({
+  "di-lifetime": "Service Lifetime (Transient / Scoped / Singleton)",
+  "di-dbcontext": "Kenapa DbContext Scoped",
+  "di-captive": "Captive dependency dan scope validation",
+});
+
+QuestionBank.register([
+  {
+    id: "0004-01", lesson: "0004", topic: "di-lifetime", type: "mc",
+    prompt: "Di ASP.NET Core, service yang didaftarkan dengan <code>AddScoped</code> dibuat…",
+    options: {
+      a: "sekali per HTTP request",
+      b: "setiap kali diminta container",
+      c: "sekali selama aplikasi hidup",
+      d: "sekali per thread aktif",
+    },
+    answer: "a",
+    explain: "Microsoft: \"For web applications, a scoped lifetime indicates that services are created once per client request (connection).\" Instance itu di-dispose di akhir request. \"Setiap kali diminta\" adalah Transient; \"selama aplikasi hidup\" adalah Singleton.",
+  },
+  {
+    id: "0004-02", lesson: "0004", topic: "di-lifetime", type: "mc",
+    prompt: "<code>PriceFormatter</code> hanya mengubah <code>decimal</code> menjadi teks \"Rp 12.500\". Tanpa state, tanpa dependensi, murah dibuat. Registrasi paling wajar?",
+    options: { a: "AddSingleton", b: "AddScoped", c: "AddTransient", d: "AddHostedService" },
+    answer: "c",
+    explain: "Service stateless yang ringan cocok sebagai Transient. Panduan Microsoft: \"Avoid using singleton lifetime for services that have no state themself\" dan \"a stateless transient service is very cheap to create and destroy.\" (Singleton juga akan jalan, tapi tidak ada alasan memakainya.)",
+  },
+  {
+    id: "0004-03", lesson: "0004", topic: "di-lifetime", type: "mc",
+    prompt: "<code>CategoryCache</code> memuat daftar Category sekali (mahal), lalu dibaca oleh semua request. Isinya disimpan di <code>ConcurrentDictionary</code>. Registrasi paling wajar?",
+    options: { a: "AddScoped", b: "AddSingleton", c: "AddTransient", d: "AddHostedService" },
+    answer: "b",
+    explain: "Microsoft: pakai Singleton hanya untuk \"services with their own state that is expensive to create or globally shared.\" Syaratnya: \"Singleton services must be thread safe\", karena itu <code>ConcurrentDictionary</code>. Padanan Node: objek di level module yang di-<code>export</code>, dipakai bersama semua request.",
+  },
+  {
+    id: "0004-04", lesson: "0004", topic: "di-lifetime", type: "mc",
+    prompt: "<code>CurrentUser</code> menyimpan user dari JWT milik request ini. Beberapa Service membacanya; nilainya harus sama selama satu request, tetapi berbeda untuk request lain. Registrasi?",
+    options: { a: "AddSingleton", b: "AddTransient", c: "AddHostedService", d: "AddScoped" },
+    answer: "d",
+    explain: "\"Sama di dalam satu request, beda antar request\" adalah definisi Scoped. Transient memberi instance berbeda ke setiap Service; Singleton akan membocorkan user satu request ke request lain. Padanan Express: data yang ditempel ke <code>req</code> / <code>res.locals</code> oleh middleware.",
+  },
+  {
+    id: "0004-05", lesson: "0004", topic: "di-lifetime", type: "mc",
+    prompt: "Dalam <em>satu</em> request, <code>ProductsController</code> dan <code>ProductService</code> sama-sama meng-inject <code>IOperationTransient</code> dan <code>IOperationScoped</code>. Berapa instance yang dibuat untuk masing-masing?",
+    options: {
+      a: "Transient dua, Scoped satu",
+      b: "Transient satu, Scoped dua",
+      c: "Keduanya satu instance saja",
+      d: "Keduanya dua instance berbeda",
+    },
+    answer: "a",
+    explain: "Contoh <code>OperationId</code> di dokumentasi ASP.NET Core: \"Transient objects are always different\", sedangkan \"Scoped objects are the same for a given request but differ across new requests.\" Dua konsumen = dua Transient, tapi tetap satu Scoped.",
+  },
+  {
+    id: "0004-06", lesson: "0004", topic: "di-dbcontext", type: "mc",
+    prompt: "Kenapa <code>AddDbContext&lt;AppDbContext&gt;()</code> mendaftarkan DbContext sebagai Scoped secara default?",
+    options: {
+      a: "Koneksi database hanya boleh satu",
+      b: "Scoped lebih cepat dari Singleton",
+      c: "Satu request setara satu unit-of-work",
+      d: "EF Core melarang lifetime lainnya",
+    },
+    answer: "c",
+    explain: "Microsoft: \"web app database operations are normally scoped to the client request.\" DbContext dirancang untuk satu unit-of-work yang pendek, dan di web app satu HTTP request biasanya satu unit-of-work. Lifetime lain tetap boleh lewat overload <code>AddDbContext</code>.",
+  },
+  {
+    id: "0004-07", lesson: "0004", topic: "di-dbcontext", type: "mc",
+    prompt: "Seseorang mengganti registrasi menjadi DbContext Singleton supaya \"hemat\". Apa risiko utamanya?",
+    options: {
+      a: "Dipakai bersamaan, tidak thread-safe",
+      b: "Migration tidak bisa dijalankan",
+      c: "Connection string tidak terbaca",
+      d: "Compiler menolak registrasi itu",
+    },
+    answer: "a",
+    explain: "EF Core: \"DbContext is Not thread-safe. Don't share contexts between threads.\" Satu instance untuk semua request berarti dipakai paralel oleh banyak request, dan change tracker-nya terus menumpuk Entity dari request lain. Compiler tidak menolak; masalahnya baru muncul saat runtime.",
+  },
+  {
+    id: "0004-08", lesson: "0004", topic: "di-captive", type: "mc",
+    prompt: "<code>builder.Services.AddDbContext&lt;AppDbContext&gt;(...); // Scoped</code><br><code>builder.Services.AddSingleton&lt;PriceCache&gt;();</code><br><code>public class PriceCache(AppDbContext db) { ... }</code><br>Apa nama masalah ini, dan apa yang mendeteksinya saat <code>dotnet run</code> di Development?",
+    options: {
+      a: "Memory leak, compiler memperingatkan",
+      b: "N+1, EF Core memperingatkan",
+      c: "Deadlock, runtime menunggu selamanya",
+      d: "Captive dependency, scope validation",
+    },
+    answer: "d",
+    explain: "Captive dependency: \"a longer-lived service holds a shorter-lived service captive.\" Singleton <code>PriceCache</code> dibuat sekali dan memegang DbContext selamanya. Di Development, scope validation melempar <code>InvalidOperationException</code>: \"Cannot consume scoped service … from singleton …\".",
+  },
+  {
+    id: "0004-09", lesson: "0004", topic: "di-captive", type: "mc",
+    prompt: "<code>PriceCache</code> memang harus Singleton, tetapi sesekali perlu membaca database. Perbaikan yang benar?",
+    options: {
+      a: "Matikan ValidateScopes di Development",
+      b: "Inject IServiceScopeFactory, buat scope",
+      c: "Jadikan AppDbContext Singleton juga",
+      d: "Panggil Dispose di constructor",
+    },
+    answer: "b",
+    explain: "Microsoft: \"It's acceptable to resolve a scoped service within a singleton if you create and use an explicit scope with IServiceScopeFactory.\" Buat <code>using var scope = factory.CreateScope();</code>, ambil DbContext dari <code>scope.ServiceProvider</code>, selesai, scope di-dispose. Kalau Singleton tidak wajib, perbaikan paling sederhana adalah menurunkan <code>PriceCache</code> menjadi Scoped.",
+  },
+  {
+    id: "0004-10", lesson: "0004", topic: "di-captive", type: "mc",
+    prompt: "Mana kombinasi constructor injection yang <strong>aman</strong>?",
+    options: {
+      a: "Singleton menerima service Scoped",
+      b: "Singleton menerima DbContext langsung",
+      c: "Scoped menerima service Singleton",
+      d: "Middleware constructor menerima Scoped",
+    },
+    answer: "c",
+    explain: "Aturannya: dependensi harus hidup <em>sama lama atau lebih lama</em> dari konsumennya. Microsoft: \"It's also fine to resolve a singleton service from a scoped or transient service.\" Middleware dibuat sekali, jadi service Scoped harus diterima di parameter <code>InvokeAsync</code>, bukan constructor.",
+  },
+  {
+    id: "0004-oral-1", lesson: "0004", topic: "di-captive", type: "oral",
+    prompt: "Apa beda Transient, Scoped, dan Singleton di ASP.NET Core, dan apa itu captive dependency? (60–90 detik)",
+    sample: "\"Ketiganya menentukan berapa lama DI container menyimpan sebuah instance. Transient dibuat baru setiap kali diminta, cocok untuk service ringan tanpa state. Scoped dibuat sekali per HTTP request dan di-dispose di akhir request; contoh utamanya DbContext, karena satu request adalah satu unit of work. Singleton dibuat sekali seumur aplikasi, jadi harus thread-safe, misalnya cache. Captive dependency terjadi kalau service berumur panjang memegang dependensi berumur lebih pendek, misalnya Singleton yang meng-inject DbContext lewat constructor. DbContext itu jadi ikut hidup selamanya dan dipakai bersama oleh banyak request, padahal tidak thread-safe. Di Development, scope validation langsung melempar exception 'Cannot consume scoped service from singleton'. Perbaikannya: turunkan lifetime konsumennya, atau inject <code>IServiceScopeFactory</code> dan buat scope sendiri. Bedanya dengan NestJS: di sana request scope merambat ke atas otomatis, di .NET tidak.\"",
+    checklist: [
+      "Transient = instance baru setiap kali diminta",
+      "Scoped = satu instance per HTTP request, di-dispose di akhir request",
+      "Singleton = satu instance seumur aplikasi, harus thread-safe",
+      "captive dependency = service berumur panjang memegang dependensi berumur lebih pendek (contoh Singleton + DbContext)",
+      "akibatnya: state/DbContext bocor antar request dan dipakai paralel",
+      "deteksi lewat scope validation (default di Development); perbaiki dengan menurunkan lifetime atau IServiceScopeFactory",
+    ],
+  },
+  {
+    id: "0004-oral-2", lesson: "0004", topic: "di-dbcontext", type: "oral",
+    prompt: "Kenapa DbContext didaftarkan sebagai Scoped, bukan Singleton atau Transient? (60 detik)",
+    sample: "\"DbContext dirancang untuk satu unit of work yang pendek: dibuat, melacak perubahan Entity, <code>SaveChanges</code>, lalu di-dispose. Di web app, satu HTTP request biasanya satu unit of work, jadi <code>AddDbContext</code> mendaftarkannya sebagai Scoped secara default. Hasilnya Repository dan Service dalam request yang sama berbagi satu DbContext dan satu change tracker, sehingga satu <code>SaveChanges</code> menyimpan semuanya. Singleton berbahaya karena DbContext tidak thread-safe dan akan dipakai paralel oleh semua request. Ini beda dari Prisma client di Node yang biasanya satu instance global: DbContext lebih mirip satu transaksi per request daripada connection pool.\"",
+    checklist: [
+      "DbContext = satu unit of work yang pendek (dibuat, melacak, SaveChanges, dispose)",
+      "di web app, satu HTTP request = satu unit of work",
+      "AddDbContext mendaftarkan Scoped secara default",
+      "Repository dan Service dalam satu request berbagi DbContext / change tracker yang sama",
+      "DbContext tidak thread-safe, jadi tidak boleh Singleton",
+      "padanan Node: bukan Prisma client global, tapi unit of work per request",
+    ],
+  },
+]);

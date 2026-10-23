@@ -1,0 +1,158 @@
+// Soal lesson 0003 · async/Task + LINQ. Format: assets/README.md.
+QuestionBank.labelTopics({
+  "csharp-async": "Task, async/await, .Result, async void",
+  "linq-deferred": "LINQ deferred execution (kapan query dieksekusi)",
+  "linq-queryable": "IEnumerable vs IQueryable",
+});
+
+QuestionBank.register([
+  {
+    id: "0003-01", lesson: "0003", topic: "csharp-async", type: "mc",
+    prompt: "<code>Task&lt;Product&gt; GetByIdAsync(int id)</code> paling mirip dengan tipe apa di TypeScript?",
+    options: {
+      a: "<code>Promise&lt;Product&gt;</code>",
+      b: "<code>Observable&lt;Product&gt;</code>",
+      c: "<code>Iterable&lt;Product&gt;</code>",
+      d: "<code>Generator&lt;Product&gt;</code>",
+    },
+    answer: "a",
+    explain: "<code>Task&lt;T&gt;</code> mewakili satu operasi asinkron yang nanti selesai dengan satu nilai (atau gagal), sama seperti <code>Promise&lt;T&gt;</code>. <code>await</code> di C# dipakai dengan cara yang sama seperti di TS.",
+  },
+  {
+    id: "0003-02", lesson: "0003", topic: "csharp-async", type: "mc",
+    prompt: "<code>var t = _repo.GetByIdAsync(1);</code> (tanpa <code>await</code>). Apakah operasinya sudah dimulai?",
+    options: {
+      a: "Belum; baru jalan saat di-await",
+      b: "Belum; harus panggil <code>t.Start()</code> dulu",
+      c: "Sudah; task-nya sudah berjalan (hot)",
+      d: "Tidak; tanpa await langsung dibatalkan",
+    },
+    answer: "c",
+    explain: "Task yang dikembalikan method TAP selalu \"hot\": operasinya sudah dimulai, dan Anda tidak boleh memanggil <code>Start()</code>. Persis seperti Promise JS yang mewakili proses yang \"already happening\". Karena itu Anda bisa memulai beberapa task dulu, lalu meng-<code>await</code> semuanya (mis. <code>Task.WhenAll</code>).",
+  },
+  {
+    id: "0003-03", lesson: "0003", topic: "csharp-async", type: "mc",
+    prompt: "Sebuah action Controller memanggil <code>_service.GetAllAsync().Result</code>. Kenapa ini berbahaya di ASP.NET Core?",
+    options: {
+      a: "Hasilnya selalu null saat dipanggil controller",
+      b: "Memblokir thread; thread pool bisa kehabisan",
+      c: "Compiler menolak <code>.Result</code> di dalam controller",
+      d: "Query database dijalankan dua kali berturut-turut",
+    },
+    answer: "b",
+    explain: "<code>.Result</code> adalah properti yang memblokir thread sampai task selesai. Microsoft: \"Do not block asynchronous execution by calling Task.Wait or Task&lt;TResult&gt;.Result\" karena banyak blocking call menyebabkan thread pool starvation. Solusinya: <code>await</code>, dan buat seluruh call stack async.",
+  },
+  {
+    id: "0003-04", lesson: "0003", topic: "csharp-async", type: "mc",
+    prompt: "<code>public async void SaveAsync(Product p)</code> melempar exception setelah <code>await</code> pertama. Apa yang terjadi pada pemanggilnya?",
+    options: {
+      a: "Exception tersimpan di Task yang dikembalikan",
+      b: "Pemanggil bisa menangkapnya dengan try/catch biasa",
+      c: "Compiler menolak <code>async void</code> untuk service",
+      d: "Pemanggil tak bisa menangkap; aplikasi crash",
+    },
+    answer: "d",
+    explain: "Method <code>async void</code> tidak bisa di-await, dan \"The caller of a void-returning async method can't catch exceptions thrown from the method\"; exception itu bisa membuat aplikasi gagal. Dengan <code>async Task</code>, exception disimpan di task dan dilempar ulang saat di-await.",
+  },
+  {
+    id: "0003-05", lesson: "0003", topic: "csharp-async", type: "mc",
+    prompt: "Kapan <code>async void</code> boleh dipakai menurut Microsoft?",
+    options: {
+      a: "Hanya untuk event handler",
+      b: "Method Repository tanpa nilai",
+      c: "Action controller tanpa response",
+      d: "Semua method fire-and-forget biasa",
+    },
+    answer: "a",
+    explain: "<code>void</code> hanya untuk async event handler (yang memang wajib mengembalikan void). Method lain yang tidak mengembalikan nilai harus mengembalikan <code>Task</code>. Di ASP.NET Core, Microsoft menyebut <code>async void</code> \"ALWAYS a bad practice\".",
+  },
+  {
+    id: "0003-06", lesson: "0003", topic: "linq-deferred", type: "mc",
+    prompt: "<code>var murah = _db.Products.Where(p =&gt; p.Price &lt; 10);</code> &nbsp;// (1)<br><code>var list = await murah.ToListAsync();</code> &nbsp;// (2)<br><code>var n = list.Count;</code> &nbsp;// (3)<br>Di baris mana SQL dikirim ke database?",
+    options: { a: "Baris (1)", b: "Baris (3)", c: "Baris (2)", d: "Tidak pernah" },
+    answer: "c",
+    explain: "Operator seperti <code>Where</code> hanya membangun representasi query di memori. \"The query is only sent to the database when the results are consumed\": saat di-iterasi, atau lewat <code>ToList</code>/<code>ToArray</code>/<code>Single</code>/<code>Count</code> dan versi async-nya. Baris (3) membaca <code>List</code> yang sudah ada di memori.",
+  },
+  {
+    id: "0003-07", lesson: "0003", topic: "linq-deferred", type: "mc",
+    prompt: "<code>var nums = new List&lt;int&gt; { 1, 2, 3 };</code><br><code>var besar = nums.Where(n =&gt; n &gt; 1);</code><br><code>nums.Add(4);</code><br><code>Console.WriteLine(besar.Count());</code><br>Apa outputnya?",
+    options: { a: "2", b: "1", c: "4", d: "3" },
+    answer: "d",
+    explain: "Deferred execution: <code>Where</code> tidak dijalankan saat dideklarasikan, tapi saat di-enumerasi (di sini oleh <code>Count()</code>). Hasilnya bergantung pada isi sumber saat itu: 2, 3, 4. Kalau ingin snapshot, panggil <code>.ToList()</code> sebelum <code>Add</code>.",
+  },
+  {
+    id: "0003-08", lesson: "0003", topic: "linq-queryable", type: "mc",
+    prompt: "<code>IEnumerable&lt;Product&gt; semua = _db.Products;</code><br><code>var mahal = semua.Where(p =&gt; p.Price &gt; 100).ToList();</code><br>Apa yang terjadi?",
+    options: {
+      a: "WHERE diterjemahkan ke SQL di database",
+      b: "Semua baris diambil, difilter di memori",
+      c: "Compiler menolak karena tipe tidak cocok",
+      d: "EF Core melempar exception saat runtime",
+    },
+    answer: "b",
+    explain: "Karena tipe variabelnya <code>IEnumerable</code>, yang dipanggil adalah <code>Enumerable.Where</code> (LINQ to Objects), bukan <code>Queryable.Where</code>. Efeknya sama dengan <code>AsEnumerable()</code>: EF Core mengambil seluruh tabel, lalu filter jalan di .NET. Biarkan tipe tetap <code>IQueryable</code> sampai filter selesai.",
+  },
+  {
+    id: "0003-09", lesson: "0003", topic: "linq-queryable", type: "mc",
+    prompt: "Apa yang dibawa <code>IQueryable&lt;T&gt;</code> tetapi tidak dibawa <code>IEnumerable&lt;T&gt;</code> biasa?",
+    options: {
+      a: "Expression tree yang diterjemahkan provider",
+      b: "Hasil query yang sudah di-cache",
+      c: "Koneksi database yang selalu terbuka",
+      d: "Daftar entity yang sudah dilacak",
+    },
+    answer: "a",
+    explain: "Query <code>IQueryable</code> direpresentasikan sebagai expression tree, dan query provider (EF Core) menerjemahkannya ke bahasa sumber datanya, yaitu SQL. <code>IEnumerable</code> memakai delegate biasa yang jalan di memori. <code>IQueryable&lt;T&gt;</code> mewarisi <code>IEnumerable&lt;T&gt;</code>.",
+  },
+  {
+    id: "0003-10", lesson: "0003", topic: "linq-deferred", type: "mc",
+    prompt: "EF Core punya <code>ToListAsync</code> dan <code>SingleAsync</code>, tetapi tidak punya <code>WhereAsync</code>. Kenapa?",
+    options: {
+      a: "Where selalu berjalan secara sinkron",
+      b: "Where hanya untuk List lokal",
+      c: "EF Core belum selesai mendukungnya",
+      d: "Where hanya membangun expression tree",
+    },
+    answer: "d",
+    explain: "Microsoft: <code>Where</code> dan <code>OrderBy</code> \"only build up the LINQ expression tree and don't cause the query to be executed in the database. Only operators which cause query execution have async counterparts.\"",
+  },
+  {
+    id: "0003-oral-1", lesson: "0003", topic: "linq-deferred", type: "oral",
+    prompt: "Kenapa query EF Core di Service Anda ditulis <code>await _db.Products.Where(...).ToListAsync()</code>, bukan <code>.ToList()</code> atau <code>.ToListAsync().Result</code>? (60 detik)",
+    sample: "\"<code>Where</code> belum menjalankan apa-apa: ia hanya membangun <code>IQueryable</code>, yaitu expression tree. Itu deferred execution, mirip query builder yang baru jalan saat di-<code>await</code> di Node. Query baru dikirim ke database saat hasilnya dikonsumsi, misalnya lewat <code>ToList</code>, <code>Single</code>, <code>Count</code>, <code>foreach</code>, atau versi async-nya. Karena masih <code>IQueryable</code>, EF Core menerjemahkan filter ke <code>WHERE</code> di SQL. <code>ToListAsync</code> dipakai karena I/O database tidak memblokir thread; selama menunggu, thread bisa melayani request lain. <code>.Result</code> atau <code>.Wait()</code> memblokir thread, dan di ASP.NET Core itu bisa menyebabkan thread pool starvation. Jadi seluruh call stack saya buat async, dari Controller sampai Repository, mirip <code>async</code>/<code>await</code> di Express.\"",
+    checklist: [
+      "Where hanya membangun IQueryable/expression tree, belum mengeksekusi (deferred execution)",
+      "query dikirim saat hasil dikonsumsi: ToList/Single/Count/foreach (atau versi async)",
+      "karena IQueryable, filter diterjemahkan ke SQL dan dijalankan di database",
+      "ToListAsync + await tidak memblokir thread selama I/O database",
+      ".Result/.Wait() memblokir thread dan bisa menyebabkan thread pool starvation",
+      "seluruh call stack async (Controller sampai Repository), dengan padanan Promise/await di Node",
+    ],
+  },
+  {
+    id: "0003-oral-2", lesson: "0003", topic: "linq-queryable", type: "oral",
+    prompt: "Apa beda <code>IEnumerable&lt;T&gt;</code> dan <code>IQueryable&lt;T&gt;</code>, dan kapan bedanya terasa di EF Core? (60 detik)",
+    sample: "\"Keduanya sama-sama bisa di-<code>foreach</code>, dan <code>IQueryable</code> mewarisi <code>IEnumerable</code>. Bedanya: LINQ di atas <code>IEnumerable</code> memakai delegate biasa dan jalan di memori, seperti <code>array.filter</code> di JS. LINQ di atas <code>IQueryable</code> menyimpan expression tree yang diterjemahkan provider, di sini EF Core, ke SQL. Keduanya deferred: baru dieksekusi saat di-enumerasi. Bedanya terasa kalau <code>DbSet</code> terlanjur jadi <code>IEnumerable</code>, misalnya lewat <code>AsEnumerable()</code> atau tipe return Repository: filter berikutnya jalan di .NET setelah seluruh tabel ditarik. Jadi saya filter, proyeksikan, dan paging selagi masih <code>IQueryable</code>, lalu baru <code>ToListAsync</code>.\"",
+    checklist: [
+      "IQueryable mewarisi IEnumerable; keduanya bisa di-enumerasi",
+      "IEnumerable: delegate biasa, jalan di memori (LINQ to Objects, mirip array.filter)",
+      "IQueryable: expression tree yang diterjemahkan provider (EF Core) ke SQL",
+      "keduanya deferred: dieksekusi saat di-enumerasi atau ToList",
+      "jebakan: AsEnumerable/tipe IEnumerable membuat filter berikutnya jalan di memori setelah semua baris diambil",
+      "filter/proyeksi/paging dulu selagi IQueryable, baru ToListAsync",
+    ],
+  },
+  {
+    id: "0003-oral-3", lesson: "0003", topic: "csharp-async", type: "oral",
+    prompt: "Bandingkan <code>Task</code> dengan <code>Promise</code>, lalu jelaskan kenapa <code>.Result</code> dan <code>async void</code> berbahaya. (60 detik)",
+    sample: "\"<code>Task&lt;T&gt;</code> itu padanan <code>Promise&lt;T&gt;</code>: mewakili operasi asinkron yang sudah berjalan dan nanti selesai dengan nilai atau exception. <code>await</code> di C# bekerja seperti di TS: tidak memblokir thread, dan exception dari task yang gagal dilempar ulang sehingga bisa di-try/catch. Bedanya, C# punya cara untuk menunggu secara sinkron, yaitu <code>.Result</code> dan <code>.Wait()</code>. Itu memblokir thread; di ASP.NET Core banyak blocking call menyebabkan thread pool starvation, jadi saya selalu <code>await</code>. <code>async void</code> tidak bisa di-await dan exception-nya tidak bisa ditangkap pemanggil, sehingga bisa membuat proses crash. <code>async void</code> hanya untuk event handler; selain itu kembalikan <code>Task</code>.\"",
+    checklist: [
+      "Task<T> = padanan Promise<T>; operasi asinkron yang sudah berjalan (hot)",
+      "await tidak memblokir thread; exception dilempar ulang saat di-await",
+      ".Result/.Wait() memblokir thread sampai task selesai",
+      "di ASP.NET Core blocking call menyebabkan thread pool starvation",
+      "async void tidak bisa di-await dan exception-nya tidak bisa ditangkap pemanggil",
+      "async void hanya untuk event handler; method lain mengembalikan Task",
+    ],
+  },
+]);
