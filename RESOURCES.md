@@ -173,3 +173,8 @@
   "DbContext is a combination of the Unit Of Work and Repository patterns." Use for: argumen kontra Repository.
 - [Microsoft Learn: Designing the infrastructure persistence layer (eBook .NET Microservices)](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design)
   Repository per aggregate root, Unit of Work = `SaveChanges`, bagian "Repositories shouldn't be mandatory" (kutipan Jimmy Bogard). Use for: sisi "tidak wajib" dalam debat Repository.
+
+## Knowledge (tambahan lesson 0018)
+
+- [MIT CAPD: The STAR method for behavioral interviews](https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/)
+  Porsi S 20% / T 10% / A 60% / R 10%, pakai "saya" bukan "kami", hasil terukur. Use for: memoles 4 cerita STAR (lesson 0018).

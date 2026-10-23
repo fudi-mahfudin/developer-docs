@@ -11,6 +11,7 @@ Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetc
 | `bank-quiz.js` | Merender soal kuis dari bank ke markup `quiz.js` di halaman lesson. |
 | `review.js` | Review campuran: tarik + acak soal dari beberapa lesson/topik, ringkasan per topik. |
 | `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/order.test.js`. |
+| `timer.js` | Timer bersegmen untuk latihan dibatasi waktu: `<div class="timer" data-segments="Konsep:20,Live coding:25,STAR:15">`. Mulai/Jeda/Reset, segmen berganti otomatis, tersembunyi saat dicetak. Logic diuji di `tests/timer.test.js`. Contoh: lesson 0018. |
 
 ## Format soal (`assets/questions/NNNN.js`)
 
