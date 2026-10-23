@@ -125,3 +125,30 @@ _Avoid_: Middleware (itu istilah backend)
 Nilai reaktif (`signal`, `computed`); masih developer preview di Angular 16.
 Padanan React: `useState` / `useMemo`.
 _Avoid_: State, store
+
+## Fondasi C#
+
+**Value Type**:
+Tipe yang variabelnya menyimpan datanya langsung, sehingga assignment menyalin data (`struct`, `enum`, `int`, `decimal`).
+Padanan TS: `number` / `boolean`.
+_Avoid_: Primitive (di C# `string` justru reference type)
+
+**Reference Type**:
+Tipe yang variabelnya menyimpan referensi ke objek di heap, sehingga assignment berbagi objek yang sama (`class`, array, `string`).
+Padanan TS: object dan array.
+_Avoid_: Pointer type
+
+**Record**:
+Modifier di atas `class` atau `struct` yang membuat compiler menyediakan value equality, `ToString`, dan `with`; bentuk default untuk DTO, bukan untuk Entity.
+Padanan TS: `Readonly<type>` + spread, tapi dibandingkan berdasarkan isi.
+_Avoid_: Data class, POCO (POCO bisa berarti class apa saja)
+
+**Nullable Reference Types**:
+Fitur compile-time C# di mana reference type non-nullable secara default dan `string?` menandai yang boleh null.
+Padanan TS: `strictNullChecks` + `string | null`.
+_Avoid_: Nullable type (itu `int?`, value type yang boleh null)
+
+**Abstract Class**:
+Base class yang tidak bisa di-instantiate dan boleh berisi field, constructor, serta method jadi di samping member abstract.
+Padanan TS: `abstract class` (sama).
+_Avoid_: Base interface
