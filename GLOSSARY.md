@@ -194,3 +194,15 @@ _Avoid_: Scope leak, lifetime mismatch
 Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateScopes`) yang melempar exception bila service Scoped di-inject ke Singleton atau di-resolve dari root provider.
 Padanan Node: tidak ada.
 _Avoid_: DI check, lifetime validation
+
+## Pipeline dan konfigurasi
+
+**Short-circuit**:
+Middleware yang tidak memanggil `next`, sehingga sisa pipeline (termasuk endpoint) tidak dijalankan; middleware itu disebut terminal middleware.
+Padanan Node: mengirim `res.status(401).send()` tanpa memanggil `next()` di Express.
+_Avoid_: Early return, abort
+
+**User Secrets**:
+Penyimpanan secret untuk development (`dotnet user-secrets`) di profil user, di luar folder project dan tidak ikut source control; tidak terenkripsi dan hanya dibaca di environment Development.
+Padanan Node: file `.env` yang masuk `.gitignore`.
+_Avoid_: Secret store, vault (itu untuk production, mis. Azure Key Vault)

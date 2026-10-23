@@ -10,6 +10,7 @@ Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetc
 | `questions/NNNN.js` | **Satu file per lesson** yang mendaftarkan soal lesson itu ke bank. |
 | `bank-quiz.js` | Merender soal kuis dari bank ke markup `quiz.js` di halaman lesson. |
 | `review.js` | Review campuran: tarik + acak soal dari beberapa lesson/topik, ringkasan per topik. |
+| `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/order.test.js`. |
 
 ## Format soal (`assets/questions/NNNN.js`)
 
@@ -55,6 +56,23 @@ Tulis soal sekali di `questions/NNNN.js`, lalu render di lesson (urutan sesuai r
 ```
 
 Soal `oral` tidak dirender oleh `bank-quiz.js`; latihan lisan di lesson tetap ditulis sebagai `<details>` + checklist seperti 0001, tapi daftarkan juga ke bank supaya bisa ditarik review.
+
+## Latihan susun urutan (`order.js`)
+
+Tulis item dalam urutan **benar**; komponen mengacaknya saat halaman dibuka (tidak pernah langsung benar). Contoh: lesson 0005 (urutan middleware, prioritas konfigurasi).
+
+```html
+<div class="order">
+  <ol>
+    <li><code>app.UseExceptionHandler()</code></li>
+    <li><code>app.UseRouting()</code></li>
+  </ol>
+  <p class="explain">Muncul setelah urutan benar atau setelah "Lihat jawaban".</p>
+</div>
+<script src="../assets/order.js"></script>
+```
+
+Latihan urutan tidak masuk bank soal (bank hanya `mc`/`oral`); ubah materinya menjadi soal `mc` kalau perlu ditarik review.
 
 ## Halaman review (0007, 0012, 0018)
 
