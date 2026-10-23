@@ -85,3 +85,16 @@
   Dokumentasi resmi React. Use for: padanan React untuk DI hierarkis Angular (Provider terdekat) dan lazy loading route (lesson 0014).
 - [Sumber kode Angular v16 `packages/router/src/models.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/router/src/models.ts)
   JSDoc yang menjadi halaman API v16.angular.io/api/router/*, termasuk tanda `@deprecated` class-based guard. Use for: mengutip status deprecated `CanActivate` di v16.
+
+## Knowledge (tambahan lesson 0016)
+
+- [Angular v16: Introduction to forms](https://v16.angular.io/guide/forms-overview) dan [Reactive forms](https://v16.angular.io/guide/reactive-forms)
+  Tabel "Key differences" reactive vs template-driven (setup, data model, data flow, validasi, testing), `FormBuilder`, `valueChanges`. Use for: memilih pendekatan form (lesson 0016).
+- [Angular v16: HTTP - Intercept requests and responses](https://v16.angular.io/guide/http-intercept-requests-and-responses) dan [Interceptor use-cases](https://v16.angular.io/guide/http-interceptor-use-cases)
+  `HttpInterceptor`, `next.handle()`, `HTTP_INTERCEPTORS` + `multi: true`, urutan interceptor, immutability + `clone`/`setHeaders`. Use for: HTTP Interceptor (lesson 0016, 0017).
+- [Angular v16: Handle request errors](https://v16.angular.io/guide/http-handle-request-errors) dan [Setup for server communication](https://v16.angular.io/guide/http-setup-server-communication)
+  `HttpErrorResponse` (status 0 untuk error jaringan), `retry`, `HttpClientModule`. Use for: HttpClient dan error handling di Angular.
+- [Sumber kode Angular v16 `packages/common/http/src/interceptor.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/common/http/src/interceptor.ts)
+  JSDoc halaman API `HttpInterceptorFn` (interceptor fungsi, injection context). Use for: menyebut interceptor fungsi sebagai alternatif standalone di v16.
+- [Axios: Interceptors](https://axios-http.com/docs/interceptors)
+  Dokumentasi resmi request/response interceptor Axios. Use for: padanan React untuk HTTP Interceptor.
