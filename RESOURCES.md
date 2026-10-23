@@ -89,3 +89,14 @@
   Dokumentasi resmi React. Use for: padanan React untuk DI hierarkis Angular (Provider terdekat) dan lazy loading route (lesson 0014).
 - [Sumber kode Angular v16 `packages/router/src/models.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/router/src/models.ts)
   JSDoc yang menjadi halaman API v16.angular.io/api/router/*, termasuk tanda `@deprecated` class-based guard. Use for: mengutip status deprecated `CanActivate` di v16.
+
+## Knowledge (tambahan lesson 0009)
+
+- [Kent Beck: Canon TDD](https://newsletter.kentbeck.com/p/canon-tdd)
+  Langkah TDD versi pencetusnya (test list → satu test → pass → refactor opsional → ulangi) beserta daftar kesalahan per langkah. Use for: siklus red-green-refactor dan jebakannya (lesson 0009).
+- [Martin Fowler: Test Driven Development](https://martinfowler.com/bliki/TestDrivenDevelopment.html) dan [Self Testing Code](https://martinfowler.com/bliki/SelfTestingCode.html)
+  Rangkuman "Red - Green - Refactor", kesalahan paling umum (melewatkan refactor), dan "write a test that exposes the bug" sebelum memperbaiki. Use for: menjelaskan siklus dan kenapa merah dulu.
+- [Microsoft Learn: Unit testing C# with xUnit](https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit)
+  Tutorial resmi dengan pendekatan TDD ("write a test that's known to fail"), `[Fact]`, `[Theory]` + `[InlineData]`. Use for: contoh siklus di xUnit.
+- [Jest: Globals API (`test`, `test.each`)](https://jestjs.io/docs/api#testeachtablename-fn-timeout)
+  Use for: padanan Node untuk `[Fact]`/`[Theory]`.

@@ -216,3 +216,13 @@ _Avoid_: Pipe (itu istilah template Angular, mis. `async` pipe)
 Pipe template `| async` yang subscribe ke Observable, menampilkan nilai terakhirnya, dan unsubscribe otomatis saat component dihancurkan.
 Padanan React: `useEffect` + `useState` + cleanup yang ditulis otomatis.
 _Avoid_: Auto-subscribe
+
+**Arrange-Act-Assert**:
+Pola menyusun satu test: siapkan objek dan mock (Arrange), panggil satu method yang diuji (Act), periksa hasilnya (Assert).
+Padanan Node: susunan yang sama di dalam `it()` Jest; Red-Green-Refactor di Node = `jest --watch` merah, hijau, rapikan.
+_Avoid_: Given-When-Then (setara, tapi istilah BDD)
+
+**Test List**:
+Daftar skenario perilaku yang ingin dicakup, diambil satu per satu dalam siklus Red-Green-Refactor.
+Padanan Node: daftar `test.todo()` di Jest.
+_Avoid_: Test plan, test suite

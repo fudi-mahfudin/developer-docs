@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0009 · Red-Green-Refactor: siklusnya, Arrange-Act-Assert, penamaan test</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0009 · Hari 2 · Testing · ±13 menit</div>
+  <h1>Red-Green-Refactor pada satu aturan Product</h1>
+  <p class="subtitle">Siklusnya, kenapa harus merah dulu, Arrange-Act-Assert, dan nama test yang bisa dibaca</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Jelaskan red-green-refactor. Kenapa test harus terlihat gagal dulu?"</em> dalam 60 detik,
+  dengan contoh aturan "harga Product harus lebih dari 0".
+  Sebagai bonus, Anda bisa mendemokan satu siklus lengkap di depan pewawancara tanpa catatan.
+</div>
+
+<h2>1. Tiga langkah, tiga warna</h2>
+<p>
+  Martin Fowler merangkum TDD menjadi tiga langkah yang "often summarized as <em>Red - Green - Refactor</em>".
+  <sup class="cite"><a href="https://martinfowler.com/bliki/TestDrivenDevelopment.html">[4]</a></sup>
+  Kent Beck, yang mempopulerkan TDD, menambahkan satu langkah di depan: tulis dulu <strong>test list</strong>, daftar skenario yang ingin Anda cakup,
+  lalu ambil satu per satu. <sup class="cite"><a href="https://newsletter.kentbeck.com/p/canon-tdd">[3]</a></sup>
+</p>
+
+<table>
+  <thead><tr><th>Langkah</th><th>Yang Anda lakukan</th><th>Kesalahan yang disebut Beck <sup class="cite"><a href="https://newsletter.kentbeck.com/p/canon-tdd">[3]</a></sup></th><th>Padanan Node</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Red</strong></td><td>"Turn exactly one item on the list into an actual, concrete, runnable test", jalankan, lihat gagal</td><td>Mengubah semua item list menjadi test sekaligus; test tanpa assertion</td><td>Satu <code>test()</code> baru, <code>jest --watch</code> merah</td></tr>
+    <tr><td><strong>Green</strong></td><td>"Change the code to make the test (&amp; all previous tests) pass"</td><td>Menghapus assertion; menyalin hasil hitungan ke nilai expected; "mixing refactoring into making the test pass"</td><td>Kode minimal di <code>services/</code></td></tr>
+    <tr><td><strong>Refactor</strong></td><td>"Optionally refactor to improve the implementation design", test tetap hijau</td><td>"abstracting too soon. Duplication is a hint, not a command."</td><td>Ekstrak fungsi, ganti nama</td></tr>
+  </tbody>
+</table>
+
+<p class="note">
+  <strong>Jebakan yang paling sering:</strong> "The most common way that I hear to screw up TDD is neglecting the third step."
+  <sup class="cite"><a href="https://martinfowler.com/bliki/TestDrivenDevelopment.html">[4]</a></sup>
+  Green boleh "jelek" justru karena ada Refactor sesudahnya. Kalau Refactor dilewati, yang tersisa hanya kode jelek yang kebetulan ber-test.
+</p>
+
+<h2>2. Satu siklus: "harga harus lebih dari 0"</h2>
+<p>
+  Test list untuk <code>ProductService.CreateAsync</code> (dari ROADMAP Hari 2): Product valid tersimpan, harga ≤ 0 ditolak, Stock negatif ditolak, nama duplikat ditolak.
+  Kita ambil satu: <strong>harga ≤ 0 ditolak</strong>.
+</p>
+
+<h3>🔴 Red: tulis test, jalankan, lihat gagal</h3>
+<pre><code>public class ProductServiceTests
+{
+    private readonly Mock&lt;IProductRepository&gt; _repo = new();
+    private readonly ProductService _sut;
+
+    public ProductServiceTests() =&gt; _sut = new ProductService(_repo.Object);
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    public async Task CreateAsync_PriceNotPositive_ThrowsValidationException(decimal price)
+    {
+        // Arrange
+        var request = new CreateProductRequest("Keyboard", price, 5, 1);
+
+        // Act
+        var act = () =&gt; _sut.CreateAsync(request);
+
+        // Assert
+        await Assert.ThrowsAsync&lt;ValidationException&gt;(act);
+        _repo.Verify(r =&gt; r.AddAsync(It.IsAny&lt;Product&gt;()), Times.Never);
+    }
+}</code></pre>
+<p>
+  <code>dotnet test</code> → <strong>merah</strong>: diharapkan <code>ValidationException</code>, tapi tidak ada exception yang dilempar.
+  Itu gagal karena alasan yang benar: perilakunya memang belum ada.
+  Tutorial xUnit Microsoft memakai pola yang sama: "With TDD, you write a test that's known to fail. Then you update the target code to make the test pass."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit#create-a-test">[2]</a></sup>
+</p>
+
+<h3>🟢 Green: kode paling sederhana</h3>
+<pre><code>public async Task&lt;ProductResponse&gt; CreateAsync(CreateProductRequest request)
+{
+    if (request.Price &lt;= 0) throw new ValidationException("Price must be greater than 0.");
+    // ... kode create dari siklus sebelumnya
+}</code></pre>
+<p>
+  "Using the TDD approach, write only enough code so this test passes."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit#create-a-test">[2]</a></sup>
+  <code>dotnet test</code> → test ini <em>dan semua test lama</em> hijau.
+</p>
+
+<h3>🔵 Refactor: rapikan, test tetap hijau</h3>
+<pre><code>// Setelah siklus Stock dan nama duplikat menambah dua if lagi:
+private async Task ValidateAsync(CreateProductRequest r)
+{
+    if (r.Price &lt;= 0) throw new ValidationException("Price must be greater than 0.");
+    if (r.Stock &lt; 0) throw new ValidationException("Stock cannot be negative.");
+    if (await _repo.ExistsByNameAsync(r.Name)) throw new ValidationException("Product name already exists.");
+}</code></pre>
+<p>
+  Refactor tidak menambah perilaku, jadi tidak ada test baru; jalankan test lagi dan pastikan semuanya tetap hijau.
+  Lalu kembali ke test list dan ambil item berikutnya. <sup class="cite"><a href="https://newsletter.kentbeck.com/p/canon-tdd">[3]</a></sup>
+</p>
+
+<h2>3. Kenapa harus merah dulu?</h2>
+<p>
+  Test yang belum pernah Anda lihat gagal belum terbukti bisa gagal. Beberapa cara sebuah test selalu hijau tanpa menguji apa pun:
+  assertion terlupa, method yang salah dipanggil, atau mock yang membuat jalur error tidak pernah tersentuh.
+  Beck mencatat dua versinya sebagai kesalahan: "write tests without assertions just to get code coverage" dan "delete assertions so the test pretends to pass."
+  <sup class="cite"><a href="https://newsletter.kentbeck.com/p/canon-tdd">[3]</a></sup>
+</p>
+<ul>
+  <li><strong>Merah membuktikan test itu peka</strong> terhadap perilaku yang hendak Anda tambahkan. Hijau sesudahnya baru berarti sesuatu.</li>
+  <li><strong>Merah harus karena alasan yang benar.</strong> <code>NullReferenceException</code> dari setup yang rusak, atau error compile, bukan bukti apa pun tentang aturan harga. Perbaiki test-nya dulu.</li>
+  <li><strong>Untuk bug, urutannya sama.</strong> Fowler: tim yang sehat akan "write a test that exposes the bug, and only then to try to fix it."
+    <sup class="cite"><a href="https://martinfowler.com/bliki/SelfTestingCode.html">[6]</a></sup></li>
+</ul>
+<p class="note">
+  Padanan Node: menulis <code>expect(...)</code> di Jest lalu langsung melihat centang hijau tanpa pernah merah adalah sinyal yang sama. Curigai test-nya, bukan rayakan kodenya.
+</p>
+
+<h2>4. Arrange-Act-Assert dan nama test</h2>
+<p>
+  Microsoft: "<strong>Arrange</strong> your objects, create, and configure them as necessary · <strong>Act</strong> on an object · <strong>Assert</strong> that something is as expected."
+  Keuntungannya: "you can clearly separate what is being tested from the Arrange and Assert tasks."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#arrange-your-tests">[1]</a></sup>
+  Act cukup satu per test; kalau ada dua input, pakai parameterized test. <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#avoid-multiple-act-tasks">[1]</a></sup>
+  Jangan pula menaruh <code>if</code>/<code>for</code> di dalam test: "Avoid coding logic in unit tests."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#avoid-coding-logic-in-unit-tests">[1]</a></sup>
+</p>
+
+<table>
+  <thead><tr><th>Konvensi</th><th>xUnit (.NET)</th><th>Padanan Jest</th></tr></thead>
+  <tbody>
+    <tr><td>Nama test: method, skenario, hasil <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#follow-test-naming-standards">[1]</a></sup></td><td><code>CreateAsync_PriceNotPositive_ThrowsValidationException</code></td><td><code>describe("createProduct")</code> + <code>it("throws when price ≤ 0")</code></td></tr>
+    <tr><td>Satu kasus</td><td><code>[Fact]</code></td><td><code>test()</code> / <code>it()</code></td></tr>
+    <tr><td>Kode sama, input berbeda <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit#add-more-tests">[2]</a></sup></td><td><code>[Theory]</code> + <code>[InlineData(0)]</code></td><td><code>test.each</code> <sup class="cite"><a href="https://jestjs.io/docs/api#testeachtablename-fn-timeout">[5]</a></sup></td></tr>
+    <tr><td>Menjalankan terus-menerus</td><td><code>dotnet watch test</code></td><td><code>jest --watch</code></td></tr>
+  </tbody>
+</table>
+<p>
+  Kenapa nama itu penting: test adalah dokumentasi, dan "when tests fail, you can see exactly which scenarios don't meet your expectations."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#follow-test-naming-standards">[1]</a></sup>
+  Dari daftar nama test saja, pewawancara bisa membaca aturan bisnis Product Anda.
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1: Urutkan satu siklus</h2>
+  <p>Klik langkah-langkahnya sesuai urutan yang benar untuk aturan harga. Jangan scroll ke atas dulu.</p>
+  <div class="order">
+    <ol class="steps">
+      <li>Ambil satu item dari test list: harga ≤ 0 ditolak</li>
+      <li>Tulis <code>CreateAsync_PriceNotPositive_ThrowsValidationException</code> dengan Arrange-Act-Assert</li>
+      <li>Jalankan <code>dotnet test</code>: merah, karena tidak ada exception yang dilempar</li>
+      <li>Tambahkan satu <code>if (request.Price &lt;= 0) throw</code> di <code>CreateAsync</code></li>
+      <li>Jalankan <code>dotnet test</code>: test ini dan semua test lama hijau</li>
+      <li>Ekstrak validasi ke <code>ValidateAsync</code>, jalankan test lagi: tetap hijau</li>
+      <li>Kembali ke test list, ambil perilaku berikutnya</li>
+    </ol>
+    <p class="explain">
+      Test list → Red (tulis, lalu <em>lihat</em> merah) → Green (kode minimal, semua test hijau) → Refactor (tetap hijau) → ulangi.
+      Kesalahan urutan yang paling umum: menulis kode sebelum melihat merah, atau merapikan kode sebelum hijau (Beck: "mixing refactoring into making the test pass").
+    </p>
+  </div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2: Siklus dan "kenapa merah dulu"</h2>
+  <p>Soal-soal ini muncul lagi, diacak, di review campuran 0012.</p>
+  <div class="quiz" data-bank-lesson="0009" data-bank-topic="tdd-siklus,tdd-red" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3: Arrange-Act-Assert dan nama test</h2>
+  <div class="quiz" data-bank-lesson="0009" data-bank-topic="tdd-aaa,tdd-naming" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 4 ============ -->
+<section class="exercise">
+  <h2>Latihan 4: Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik dan jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Jelaskan red-green-refactor. Kenapa test harus terlihat gagal dulu?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Red-green-refactor adalah siklus TDD. Red: saya tulis satu test kecil untuk satu perilaku yang belum ada, misalnya
+      <code>CreateAsync_PriceNotPositive_ThrowsValidationException</code>, lalu jalankan dan lihat test itu gagal.
+      Green: saya tulis kode paling sederhana supaya test itu dan semua test lama lulus, misalnya satu <code>if (request.Price &lt;= 0) throw</code>.
+      Refactor: saya rapikan kode, misalnya mengekstrak <code>ValidateAsync</code>, dengan test tetap hijau; tahap ini yang paling sering dilewati orang.
+      Lalu ulangi untuk perilaku berikutnya.
+      Test harus merah dulu karena itu bukti test-nya bisa mendeteksi perilaku yang hilang; test yang tidak pernah gagal bisa saja tidak menguji apa-apa,
+      misalnya assertion-nya terlupa. Gagalnya juga harus karena alasan yang benar, bukan karena setup rusak.
+      Di Node polanya sama dengan <code>jest --watch</code>: lihat merah, baru tulis kodenya."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Red: satu test kecil untuk perilaku yang belum ada, dijalankan dan gagal?</li>
+      <li>Green: kode paling sederhana sampai test ini dan test lama lulus?</li>
+      <li>Refactor: rapikan kode dengan semua test tetap hijau (dan jangan dilewati)?</li>
+      <li>ulangi satu perilaku per siklus, dengan contoh konkret dari Product?</li>
+      <li>gagal dulu membuktikan test bisa mendeteksi perilaku yang hilang (bukan selalu hijau)?</li>
+      <li>gagal karena alasan yang benar, bukan setup rusak atau error compile?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kalau kurang, ulangi besok pagi sebelum review 0012 (spacing).</p>
+  </details>
+
+  <h3>Bonus (90 detik): demo tanpa catatan</h3>
+  <blockquote>"Demokan satu siklus TDD untuk aturan 'harga Product harus lebih dari 0': nama test, isi Arrange-Act-Assert, kode green, dan apa yang di-refactor."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Nama test: <code>CreateAsync_PriceNotPositive_ThrowsValidationException</code>, sebuah <code>[Theory]</code> dengan <code>[InlineData(0)]</code> dan <code>[InlineData(-10)]</code>.
+      Arrange: mock <code>IProductRepository</code> dengan Moq dan request dengan harga dari parameter. Act: panggil <code>CreateAsync(request)</code> sekali.
+      Assert: <code>Assert.ThrowsAsync&lt;ValidationException&gt;</code>, lalu <code>Verify</code> bahwa <code>AddAsync</code> tidak pernah dipanggil.
+      Saya jalankan <code>dotnet test</code>: merah karena tidak ada exception. Green: satu baris <code>if (request.Price &lt;= 0) throw new ValidationException(...)</code>.
+      Setelah aturan Stock dan nama duplikat menyusul, saya refactor: ketiga <code>if</code> diekstrak ke <code>ValidateAsync</code>, lalu test dijalankan lagi dan tetap hijau."
+    </p>
+    <p><strong>Checklist:</strong></p>
+    <ul>
+      <li>nama test tiga bagian: <code>Method_Scenario_ExpectedResult</code></li>
+      <li><code>[Theory]</code> + <code>[InlineData]</code> untuk 0 dan angka negatif</li>
+      <li>Arrange (mock repository + request), Act (satu panggilan <code>CreateAsync</code>), Assert (<code>ThrowsAsync</code>)</li>
+      <li><code>Verify</code> bahwa <code>AddAsync</code> tidak dipanggil (<code>Times.Never</code>)</li>
+      <li>menyebut test dijalankan dan merah sebelum menulis kode green</li>
+      <li>refactor konkret (ekstrak <code>ValidateAsync</code>) dengan test tetap hijau</li>
+    </ul>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices">Microsoft Learn: Unit testing best practices for .NET</a>.
+  Baca bagian "Follow test naming standards", "Arrange your tests", dan "Avoid multiple Act tasks". Untuk siklusnya, lanjut ke
+  <a href="https://newsletter.kentbeck.com/p/canon-tdd">Kent Beck: Canon TDD</a> (pendek, daftar kesalahan per langkah).
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/red-green-refactor.html">Reference: Red-Green-Refactor</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kalau refactor itu opsional menurut Beck, kapan saya boleh melewatinya?" atau "apa bedanya mock dan stub di test tadi?" (yang terakhir dibahas di lesson 0010).</p>
+
+<p class="note" style="font-size:.8rem">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices">[1] Microsoft Learn: Unit testing best practices for .NET</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit">[2] Microsoft Learn: Unit testing C# with xUnit</a> ·
+  <a href="https://newsletter.kentbeck.com/p/canon-tdd">[3] Kent Beck: Canon TDD</a> ·
+  <a href="https://martinfowler.com/bliki/TestDrivenDevelopment.html">[4] Martin Fowler: Test Driven Development</a> ·
+  <a href="https://jestjs.io/docs/api#testeachtablename-fn-timeout">[5] Jest: test.each</a> ·
+  <a href="https://martinfowler.com/bliki/SelfTestingCode.html">[6] Martin Fowler: Self Testing Code</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0008-solid.html">← 0008 · Prinsip SOLID</a>
+  <a href="0010-jenis-test.html">0010 · Jenis test →</a>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0009.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+<script src="../assets/order.js"></script>
+</body>
+</html>
