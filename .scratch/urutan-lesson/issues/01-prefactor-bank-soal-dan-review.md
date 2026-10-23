@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Agent memanggil skill `/teach` sebelum mulai dan membaca assets yang sudah ada
 - [x] Komponen kuis yang sudah ada tetap jalan tanpa perubahan di halaman yang memakainya

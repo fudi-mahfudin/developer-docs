@@ -4,7 +4,7 @@
 
 **Blocked by:** 13, 14, 15, 16, 17, 18
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] Agent memanggil skill `/teach` sebelum mulai, lalu membaca MISSION, NOTES, learning records, dan draf STAR
 - [x] Mock interview dibatasi waktu, dengan bagian konsep yang diacak dari 0001–0017, bagian live coding sesuai ROADMAP, dan 2 cerita STAR

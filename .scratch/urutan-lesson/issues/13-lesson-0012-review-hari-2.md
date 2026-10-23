@@ -4,7 +4,7 @@
 
 **Blocked by:** 08, 09, 10, 11, 12
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] Agent memanggil skill `/teach` sebelum mulai, lalu membaca MISSION, NOTES, dan learning records
 - [ ] Soal mencakup topik lemah dari hasil review 0007 yang tercatat di NOTES

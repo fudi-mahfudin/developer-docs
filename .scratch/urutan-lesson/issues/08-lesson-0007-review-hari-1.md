@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03, 04, 05, 06, 07
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] Agent memanggil skill `/teach` sebelum mulai, lalu membaca MISSION, NOTES, dan learning records
 - [x] Memakai komponen review dari tiket 01, dengan soal yang diacak dan bercampur antar-topik

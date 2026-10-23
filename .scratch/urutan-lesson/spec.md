@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # Spec: Susun ulang urutan lesson — persiapan interview .NET 8 + Angular 16 (3 hari)
 
