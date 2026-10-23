@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0006 · Konsep EF Core dan tugas STAR malam Hari 1</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0006 · Backend · ±15 menit · penutup Hari 1</div>
+  <h1>EF Core: change tracking, Migration, N+1, dan <code>AsNoTracking</code></h1>
+  <p class="subtitle">Bagaimana DbContext tahu apa yang harus disimpan, dan apa yang Anda periksa saat query EF Core lambat</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Endpoint EF Core Anda lambat. Apa itu N+1, bagaimana mengatasinya, dan kapan Anda memakai <code>AsNoTracking</code>?"</em>
+  dalam 60–90 detik. Di akhir ada tugas malam: draf 4 cerita STAR.
+</div>
+
+<h2>1. DbContext dan change tracking</h2>
+<p>
+  EF Core adalah O/RM. Model-nya "made up of entity classes and a context object that represents a session with the database."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/#the-model">[1]</a></sup>
+  Context itu adalah <strong>DbContext</strong>, yang di <a href="0004-service-lifetime.html">lesson 0004</a> Anda daftarkan sebagai Scoped
+  karena ia "designed to represent a short-lived unit-of-work."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/change-tracking/#how-to-track-entities">[2]</a></sup>
+</p>
+<p>
+  "Each DbContext instance tracks changes made to entities. These tracked entities in turn drive the changes to the database when SaveChanges is called."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/change-tracking/">[2]</a></sup>
+  Setiap Entity yang dilacak punya <code>EntityState</code>:
+</p>
+<table>
+  <thead><tr><th>State</th><th>Artinya</th><th>Saat <code>SaveChanges</code></th></tr></thead>
+  <tbody>
+    <tr><td><code>Added</code></td><td>baru, belum ada di database (<code>db.Products.Add(p)</code>)</td><td><code>INSERT</code></td></tr>
+    <tr><td><code>Unchanged</code></td><td>hasil query, belum diubah. "All entities returned from queries are initially in this state."</td><td>—</td></tr>
+    <tr><td><code>Modified</code></td><td>property diubah sejak di-query</td><td><code>UPDATE</code> kolom yang berubah saja</td></tr>
+    <tr><td><code>Deleted</code></td><td>ditandai <code>db.Remove(p)</code></td><td><code>DELETE</code></td></tr>
+    <tr><td><code>Detached</code></td><td>tidak dilacak DbContext</td><td>diabaikan</td></tr>
+  </tbody>
+</table>
+<p class="note">Definisi state dan tabel aksinya: <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/change-tracking/#entity-states">[2]</a></sup></p>
+
+<pre><code>var p = await db.Products.FirstAsync(x =&gt; x.Id == 1);  // Unchanged, snapshot disimpan
+p.Price = 15000m;                                       // Modified (property Price)
+await db.SaveChangesAsync();                            // UPDATE Products SET Price = @p0 WHERE Id = @p1</code></pre>
+<p>
+  Tidak ada <code>Update()</code>. EF Core menyimpan <em>snapshot</em> saat Entity dimuat, dan saat <code>SaveChanges</code> "the application's instance is compared with the snapshot to discover the changes to be persisted."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying#tracking-no-tracking-and-identity-resolution">[3]</a></sup>
+  "EF Core tracks changes at the property level", jadi UPDATE hanya berisi kolom yang berubah.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/change-tracking/#entity-states">[2]</a></sup>
+</p>
+<p class="note">
+  Padanan Node: Prisma tidak punya change tracker. Di sana Anda menulis <code>prisma.product.update({ where, data })</code> secara eksplisit.
+  Di EF Core, Anda mengubah objek biasa lalu satu <code>SaveChangesAsync</code> menyimpan semua perubahan dalam unit of work itu.
+  Mirip <code>save()</code> di TypeORM / Mongoose, tapi untuk semua Entity sekaligus.
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Apa yang dikirim <code>SaveChanges</code>?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review campuran 0007.</p>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ef-tracking" data-stack></div>
+</section>
+
+<h2>2. Migration (code-first)</h2>
+<p>
+  "If you want your EF Core model to be the source of truth, use Migrations." Kalau database yang menjadi sumber kebenaran, pakai
+  <em>reverse engineering</em> (scaffold), yang biasa disebut database-first.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/">[4]</a></sup>
+  Product Catalog di ROADMAP memakai code-first.
+</p>
+<pre><code>dotnet ef migrations add AddProductSku   # buat file migration di folder Migrations/
+dotnet ef database update                # terapkan ke database lokal</code></pre>
+<ul>
+  <li><code>migrations add</code>: "EF Core compares the current model against a snapshot of the old model to determine the differences, and generates migration source files", yang di-commit seperti kode biasa.</li>
+  <li><code>database update</code>: "EF Core records all applied migrations in a special history table", jadi hanya migration baru yang dijalankan.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/">[5]</a></sup></li>
+  <li>Production: cara di atas "is ideal for local development, but is less suitable for production environments."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/#create-your-database-and-schema">[5]</a></sup>
+    Pakai SQL script (<code>dotnet ef migrations script --idempotent</code>) yang bisa direview, karena "A migration may drop a column when the intent was to rename it."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying">[6]</a></sup></li>
+</ul>
+<p class="note">Padanan Node: <code>prisma migrate dev</code> (lokal) dan <code>prisma migrate deploy</code> (production), atau migration Knex. Folder <code>Migrations/</code> + snapshot ≈ folder <code>prisma/migrations/</code>.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Migration</h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ef-migration" data-stack></div>
+</section>
+
+<h2>3. Masalah N+1</h2>
+<p>
+  Ada tiga cara memuat relasi (navigation property): eager loading ("loaded from the database as part of the initial query"),
+  explicit loading, dan lazy loading ("transparently loaded from the database when the navigation property is accessed").
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/related-data/">[7]</a></sup>
+  Lazy loading tidak aktif sendiri; ia perlu package <code>Microsoft.EntityFrameworkCore.Proxies</code> dan <code>UseLazyLoadingProxies()</code>.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/related-data/lazy">[8]</a></sup>
+</p>
+<pre><code>// lazy loading aktif, 50 Category
+foreach (var c in await db.Categories.ToListAsync())   // 1 query
+    foreach (var p in c.Products)                      // +1 query PER Category
+        Console.WriteLine(p.Name);                     // total 1 + 50 = 51 query</code></pre>
+<p>
+  "After the initial query loading all the blogs, we then have another query <em>per blog</em>, loading all its posts; this is sometimes called the <em>N+1</em> problem, and it can cause very significant performance issues."
+  Cara melihatnya: nyalakan statement logging EF Core, lalu hitung <code>SELECT</code> yang berulang.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying#beware-of-lazy-loading">[3]</a></sup>
+</p>
+<p><strong>Solusinya: muat semua yang dibutuhkan dalam satu query.</strong></p>
+<pre><code>// Eager loading
+var cats = await db.Categories.Include(c =&gt; c.Products).ToListAsync();
+
+// Lebih baik untuk API: projection langsung ke DTO (hanya kolom yang perlu)
+var dto = await db.Categories
+    .Select(c =&gt; new CategoryResponse(c.Id, c.Name, c.Products.Select(p =&gt; p.Name).ToList()))
+    .ToListAsync();</code></pre>
+<p>
+  Kalau datanya pasti dibutuhkan, "it is always better to use eager loading, so that EF can fetch all the required data in one roundtrip."
+  Projection dengan <code>Select</code> mengirim "only the needed columns."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying#load-related-entities-eagerly-when-possible">[3]</a></sup>
+  Microsoft bahkan menyarankan: "Because lazy loading makes it extremely easy to inadvertently trigger the N+1 problem, it is recommended to avoid it."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying#beware-of-lazy-loading">[3]</a></sup>
+</p>
+<p class="note">
+  N+1 tidak hanya dari lazy loading. Menulis <code>await db.Categories.FindAsync(p.CategoryId)</code> di dalam <code>foreach</code> juga N+1, sama seperti <code>await</code> query Prisma di dalam loop.
+  Prisma: "The n+1 problem occurs when looping through query results and performing one additional query per result", dan solusinya juga <code>include</code>.
+  <sup class="cite"><a href="https://www.prisma.io/docs/orm/prisma-client/queries/query-optimization-performance">[9]</a></sup>
+  Ingat juga lesson 0003: query baru dieksekusi saat <code>ToListAsync</code> (deferred execution), jadi <code>Include</code>/<code>Select</code> harus ditulis <em>sebelum</em> itu.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 3 — Temukan dan perbaiki N+1</h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ef-n-plus-1" data-stack></div>
+</section>
+
+<h2>4. <code>AsNoTracking</code></h2>
+<p>
+  Tracking ada harganya: EF Core memelihara dictionary Entity yang dilacak dan menyimpan snapshot setiap Entity.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying#tracking-no-tracking-and-identity-resolution">[3]</a></sup>
+  Untuk data yang hanya dibaca, biaya itu sia-sia:
+  "No-tracking queries are useful when the results are used in a read-only scenario. They're generally quicker to execute because there's no need to set up the change tracking information."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/tracking#no-tracking-queries">[10]</a></sup>
+</p>
+<pre><code>// GET /api/products: hanya dibaca, langsung jadi DTO
+var products = await db.Products.AsNoTracking().ToListAsync();</code></pre>
+<table>
+  <thead><tr><th>Pakai tracking (default)</th><th>Pakai <code>AsNoTracking</code></th></tr></thead>
+  <tbody>
+    <tr><td>PUT/PATCH/DELETE: query → ubah → <code>SaveChangesAsync</code></td><td>GET daftar / detail yang hanya dikirim ke client</td></tr>
+    <tr><td>butuh satu instance per baris (identity resolution)</td><td>laporan / export besar yang read-only</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Jebakan interview: Entity dari <code>AsNoTracking</code> lalu diubah dan <code>SaveChanges</code> dipanggil → <strong>tidak ada yang disimpan</strong>, tanpa error.
+  Projection <code>Select</code> ke DTO juga tidak dilacak, karena "If the result set doesn't contain any entity types, then no tracking is done."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/tracking#tracking-and-custom-projections">[10]</a></sup>
+  Padanan Node: Prisma selalu "no-tracking", karena hasilnya objek biasa.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 4 — Tracking atau tidak?</h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ef-no-tracking" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 5 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer 90 detik dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Endpoint EF Core Anda lambat. Apa itu masalah N+1, bagaimana mengatasinya, dan kapan Anda memakai <code>AsNoTracking</code>?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Pertama saya nyalakan log SQL EF Core untuk melihat query yang benar-benar dikirim. Kalau ada satu SELECT untuk daftar Category lalu satu SELECT lagi per Category untuk Product-nya,
+      itu N+1: satu query awal ditambah N query untuk relasinya. Penyebab paling umum adalah lazy loading, karena relasi dimuat diam-diam saat property navigasi diakses di dalam loop.
+      Solusinya eager loading dengan <code>Include</code>, atau lebih baik lagi projection <code>Select</code> langsung ke DTO, supaya semuanya terambil dalam satu roundtrip dan hanya kolom yang perlu.
+      Lalu, untuk endpoint yang hanya membaca data, saya pakai <code>AsNoTracking</code>: EF Core tidak perlu menyimpan snapshot dan mendaftarkan Entity ke change tracker, jadi lebih cepat dan hemat memori.
+      Untuk endpoint yang mengubah data saya tetap memakai tracking query, karena <code>SaveChanges</code> butuh change tracker untuk tahu kolom mana yang di-UPDATE.
+      Padanannya di Prisma: <code>include</code> untuk menghindari N+1 di dalam loop."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>langkah pertama: lihat log SQL EF Core untuk menghitung query?</li>
+      <li>N+1 = satu query awal + satu query per baris untuk relasinya?</li>
+      <li>penyebab umum: lazy loading / akses navigasi di dalam loop?</li>
+      <li>solusi: eager loading <code>Include</code> atau projection <code>Select</code> ke DTO dalam satu roundtrip?</li>
+      <li><code>AsNoTracking</code> untuk query read-only: tanpa snapshot / change tracker, lebih cepat?</li>
+      <li>endpoint yang mengubah data tetap tracking, karena <code>SaveChanges</code> butuh change tracker?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review 0007 juga bisa menanyakan secara lisan "Bagaimana <code>SaveChanges</code> tahu apa yang harus di-UPDATE?"
+      dan "Apa itu Migration, code-first vs database-first?" dengan checklist yang sama gayanya.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying">Microsoft Learn: Efficient Querying (EF Core)</a>.
+  Fokus ke bagian "Project only properties you need", "Beware of lazy loading", dan "Tracking, no-tracking and identity resolution".
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/ef-core.html">Reference: EF Core</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan <code>Include</code> justru lebih lambat (cartesian explosion)?" atau "apa beda <code>AsNoTracking</code> dan <code>AsNoTrackingWithIdentityResolution</code>?"</p>
+
+<!-- ============ STAR ============ -->
+<section class="exercise">
+  <h2>Tugas malam Hari 1 — draf 4 cerita STAR</h2>
+  <p>
+    Hari 1 selesai. Malam ini, sebelum tidur, tulis <strong>draf kasar</strong> 4 cerita dari pengalaman Node/React Anda (±30 menit, tidak perlu rapi).
+    Lesson 0018 dipakai untuk memoles dan mengulangnya, bukan menyusun dari nol.
+  </p>
+  <p><strong>Format S-T-A-R</strong> (dari <a href="../ROADMAP.md">ROADMAP</a>, Hari 3 Sesi 3):</p>
+  <table>
+    <thead><tr><th></th><th>Isi</th><th>Panjang</th></tr></thead>
+    <tbody>
+      <tr><td><strong>S</strong>ituation</td><td>konteks: tim, produk, masalahnya</td><td>1–2 kalimat</td></tr>
+      <tr><td><strong>T</strong>ask</td><td>tanggung jawab <em>Anda</em> di situ</td><td>1 kalimat</td></tr>
+      <tr><td><strong>A</strong>ction</td><td>apa yang <em>saya</em> lakukan (bukan "kami"), langkah demi langkah</td><td>3–5 kalimat</td></tr>
+      <tr><td><strong>R</strong>esult</td><td>hasilnya, pakai angka bila bisa (waktu, error rate, jumlah user)</td><td>1–2 kalimat</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Empat tema</strong> (sesuai ROADMAP):</p>
+  <ol>
+    <li>Bug/insiden produksi tersulit yang Anda selesaikan.</li>
+    <li>Refactor yang meningkatkan kualitas/maintainability (kaitkan ke SOLID/testing; Hari 2 akan memberi Anda istilahnya).</li>
+    <li>Konflik/beda pendapat teknis dengan rekan dan cara menyelesaikannya.</li>
+    <li>Mempelajari teknologi baru dengan cepat. Jembatannya: "persis seperti saya mempelajari .NET &amp; Angular untuk posisi ini, ini mini project-nya."</li>
+  </ol>
+  <p>
+    <strong>Simpan di:</strong> <a href="../star/draf-star.md"><code>star/draf-star.md</code></a> (template empat cerita sudah tersedia).
+    Lesson 0018 dan mock interview akan membaca file itu. Kalau sempat, tambahkan juga draf jawaban "Kenapa pindah dari Node/React ke .NET/Angular?" di bagian bawah file yang sama.
+  </p>
+  <p class="note">Cukup poin-poin. Yang penting setiap cerita sudah punya S, T, A, R dan satu angka di Result. Besok pagi review 0007 dulu; ceritanya diendapkan sampai Hari 3.</p>
+</section>
+
+<p class="note" style="font-size:.8rem">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/ef/core/">[1] Overview of Entity Framework Core</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/change-tracking/">[2] Change Tracking in EF Core</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying">[3] Efficient Querying</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/">[4] Managing Database Schemas</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/">[5] Migrations Overview</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying">[6] Applying Migrations</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/related-data/">[7] Loading Related Data</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/related-data/lazy">[8] Lazy Loading</a> ·
+  <a href="https://www.prisma.io/docs/orm/prisma-client/queries/query-optimization-performance">[9] Prisma: Query optimization</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/tracking">[10] Tracking vs. No-Tracking Queries</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0005-middleware-options.html">← 0005 · Middleware + Options Pattern</a>
+  <span class="disabled">0007 · Review campuran Hari 1 (segera) →</span>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

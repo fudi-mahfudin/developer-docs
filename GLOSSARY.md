@@ -195,6 +195,27 @@ Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateSc
 Padanan Node: tidak ada.
 _Avoid_: DI check, lifetime validation
 
+## EF Core
+
+**Change Tracker**:
+Bagian DbContext yang mencatat state setiap Entity (`Added`, `Unchanged`, `Modified`, `Deleted`, `Detached`) dan snapshot nilai aslinya, sehingga `SaveChanges` tahu SQL apa yang harus dikirim.
+Padanan Node: tidak ada di Prisma (update selalu eksplisit); mirip unit of work di TypeORM/MikroORM.
+_Avoid_: Dirty checking, state manager
+
+**N+1 Problem**:
+Satu query untuk daftar induk, lalu satu query tambahan per baris untuk relasinya; biasanya dari lazy loading atau query di dalam loop. Diatasi dengan eager loading (`Include`) atau projection `Select`.
+Padanan Node: `await` query Prisma di dalam loop, diatasi dengan `include`.
+_Avoid_: Select N+1, query loop
+
+**Eager Loading**:
+Memuat relasi sebagai bagian dari query awal lewat `Include`.
+Padanan Node: `include` di Prisma, `relations` di TypeORM.
+_Avoid_: Join loading, preload
+
+**No-Tracking Query**:
+Query dengan `AsNoTracking()` yang hasilnya tidak masuk change tracker; untuk skenario read-only, lebih cepat, dan perubahannya tidak disimpan oleh `SaveChanges`.
+Padanan Node: hasil query Prisma biasa (objek polos).
+_Avoid_: Read-only query (bukan istilah EF Core), detached query
 ## RxJS (Angular 16)
 
 **Subject**:
@@ -226,3 +247,14 @@ _Avoid_: Given-When-Then (setara, tapi istilah BDD)
 Daftar skenario perilaku yang ingin dicakup, diambil satu per satu dalam siklus Red-Green-Refactor.
 Padanan Node: daftar `test.todo()` di Jest.
 _Avoid_: Test plan, test suite
+## Forms (Angular 16)
+
+**Reactive Forms**:
+Pendekatan form Angular (`ReactiveFormsModule`) di mana form model (`FormGroup`/`FormControl`) dibuat eksplisit di class component, alur datanya sinkron, dan validatornya berupa fungsi.
+Padanan React: controlled input dengan state, atau React Hook Form.
+_Avoid_: Model-driven form, dynamic form (itu pola lain di atas Reactive Forms)
+
+**Template-driven Forms**:
+Pendekatan form Angular (`FormsModule`) di mana form model dibuat implisit oleh directive `ngModel` di template, dengan two-way binding dan alur data asinkron.
+Padanan React: tidak ada padanan langsung; paling dekat input dengan `value` + `onChange` di JSX.
+_Avoid_: HTML form, simple form
