@@ -1,65 +1,61 @@
 /*
- * Latihan mengurutkan langkah (mis. satu siklus TDD), dengan feedback langsung.
+ * Latihan "susun urutan" dengan feedback langsung (mis. urutan middleware, prioritas konfigurasi).
  *
- * Markup (tulis langkah dalam URUTAN BENAR; komponen yang mengacaknya):
- *   <div class="order" data-title="Urutkan satu siklus">
- *     <ol class="steps">
- *       <li>Langkah pertama</li>
- *       <li>Langkah kedua</li>
+ * Markup (tulis item dalam urutan BENAR; komponen mengacaknya saat halaman dibuka):
+ *   <div class="order">
+ *     <ol>
+ *       <li>app.UseExceptionHandler()</li>
+ *       <li>app.UseRouting()</li>
+ *       …
  *     </ol>
- *     <p class="explain">Penjelasan yang muncul setelah semua langkah dipilih.</p>
+ *     <p class="explain">Penjelasan yang muncul setelah urutan benar atau setelah "Lihat jawaban".</p>
  *   </div>
  *   <script src="../assets/order.js"></script>
  *
- * Pengguna mengklik langkah sesuai urutan yang ia yakini. Setelah langkah terakhir,
- * setiap posisi ditandai benar/salah, urutan benar ditampilkan, plus tombol Ulangi.
- * Logic murni (scramble, checkOrder) diuji di tests/order.test.js.
+ * Pengguna memindah item dengan tombol ↑/↓, lalu "Periksa": setiap posisi ditandai benar/salah.
+ * Pure logic (checkOrder, scramble) diuji di tests/order.test.js lewat require().
  */
 (function (root) {
-  // Permutation of 0..n-1 that is never already solved (for n >= 2).
-  function scramble(n, rng = Math.random) {
-    const out = [...Array(n).keys()];
-    for (let i = n - 1; i > 0; i--) {
+  function checkOrder(expected, given) {
+    const marks = expected.map((item, i) => given[i] === item);
+    const right = marks.filter(Boolean).length;
+    return { right, total: expected.length, solved: right === expected.length, marks };
+  }
+
+  // Fisher-Yates; if the result happens to be the solved order, rotate by one so the user always has work to do.
+  function scramble(items, rng = Math.random) {
+    const out = items.slice();
+    for (let i = out.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
       [out[i], out[j]] = [out[j], out[i]];
     }
-    if (n > 1 && out.every((v, i) => v === i)) out.push(out.shift());
+    if (out.length > 1 && out.every((x, i) => x === items[i])) out.push(out.shift());
     return out;
   }
 
-  // picked: step indices in the order the user chose them.
-  function checkOrder(picked) {
-    const marks = picked.map((v, i) => v === i);
-    const right = marks.filter(Boolean).length;
-    return { marks, right, solved: right === picked.length };
-  }
-
-  const api = { scramble, checkOrder };
+  const api = { checkOrder, scramble };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
-  root.OrderDrill = api;
+  root.OrderExercise = api;
 
   const css = `
   .order { margin: 1.2rem 0; }
-  .order ol.steps { display: none; }
-  .order .pool { display: flex; flex-direction: column; gap: .45rem; margin: .4rem 0 1rem; }
-  .order button {
-    font: inherit; font-size: .9rem; cursor: pointer; text-align: left;
-    background: #fff; border: 1px solid var(--ink); padding: .35rem .75rem;
-  }
+  .order ol { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+  .order li { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; margin: .3rem 0;
+    background: #fff; border: 1px solid var(--rule); counter-increment: step; }
+  .order li::before { content: counter(step); font-family: -apple-system, sans-serif; font-size: .75rem; color: var(--muted); min-width: 1.2rem; }
+  .order li .item { flex: 1; }
+  .order li.ok { border-color: var(--ok); background: var(--ok-bg); }
+  .order li.no { border-color: var(--bad); background: var(--bad-bg); }
+  .order button { font: inherit; font-size: .85rem; cursor: pointer; background: #fff; border: 1px solid var(--ink); padding: .2rem .6rem; }
   .order button:hover:not(:disabled) { background: var(--code-bg); }
-  .order .pool button:disabled { visibility: hidden; }
-  .order .label { font-family: -apple-system, sans-serif; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  .order ol.picked { margin: .3rem 0 .8rem; padding-left: 1.6rem; }
-  .order ol.picked li { padding: .2rem .4rem; margin: .15rem 0; }
-  .order ol.picked li.correct { background: var(--ok-bg); color: var(--ok); }
-  .order ol.picked li.wrong { background: var(--bad-bg); color: var(--bad); }
-  .order ol.picked li .should { font-size: .8rem; margin-left: .4rem; }
-  .order .result { display: none; }
-  .order.done .result { display: block; }
-  .order.done .explain { display: block; }
-  .order .explain { display: none; font-size: .9rem; color: var(--muted); }
-  .order .score { font-family: -apple-system, sans-serif; font-size: .88rem; display: flex; gap: 1rem; align-items: center; margin-top: .6rem; }
-  @media print { .order .pool, .order .score button { display: none; } .order ol.steps { display: block; } }
+  .order button:disabled { opacity: .35; cursor: default; }
+  .order .moves { display: flex; gap: .25rem; }
+  .order .moves button { padding: .1rem .45rem; }
+  .order .explain { display: none; font-size: .9rem; color: var(--muted); margin: .6rem 0 0; }
+  .order.revealed .explain { display: block; }
+  .order .score { font-family: -apple-system, sans-serif; font-size: .88rem; margin-top: .8rem; display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+  .order .verdict.ok { color: var(--ok); } .order .verdict.no { color: var(--bad); }
+  @media print { .order .moves, .order .score button { display: none; } }
   `;
   const style = document.createElement("style");
   style.textContent = css;
@@ -67,75 +63,80 @@
 
   document.querySelectorAll(".order").forEach(initOrder);
 
-  function initOrder(el) {
-    const steps = [...el.querySelectorAll("ol.steps > li")].map(li => li.innerHTML);
-    const pool = document.createElement("div");
-    pool.className = "pool";
-    const pickedLabel = document.createElement("div");
-    pickedLabel.className = "label";
-    pickedLabel.textContent = "Urutan Anda";
-    const pickedList = document.createElement("ol");
-    pickedList.className = "picked";
-    const result = document.createElement("div");
-    result.className = "result";
+  function initOrder(box) {
+    const list = box.querySelector("ol");
+    const expected = [...list.children].map(li => li.innerHTML.trim());
+    let current = scramble(expected);
+    let tries = 0;
+
     const score = document.createElement("div");
     score.className = "score";
-    const explain = el.querySelector(".explain");
-    el.insertBefore(pool, el.querySelector("ol.steps"));
-    el.insertBefore(pickedLabel, explain);
-    el.insertBefore(pickedList, explain);
-    el.insertBefore(result, explain);
-    el.appendChild(score);
+    box.appendChild(score);
 
-    let picked = [];
-
-    function start() {
-      picked = [];
-      el.classList.remove("done");
-      pool.innerHTML = "";
-      scramble(steps.length).forEach(i => {
-        const b = document.createElement("button");
-        b.innerHTML = steps[i];
-        b.dataset.step = i;
-        b.onclick = () => { picked.push(i); b.disabled = true; render(); };
-        pool.appendChild(b);
+    function renderList(marks) {
+      list.innerHTML = "";
+      current.forEach((html, i) => {
+        const li = document.createElement("li");
+        if (marks) li.className = marks[i] ? "ok" : "no";
+        li.innerHTML = `<span class="item">${html}</span><span class="moves">
+          <button aria-label="Naikkan" ${i === 0 ? "disabled" : ""}>↑</button>
+          <button aria-label="Turunkan" ${i === current.length - 1 ? "disabled" : ""}>↓</button></span>`;
+        const [up, down] = li.querySelectorAll("button");
+        up.onclick = () => move(i, -1);
+        down.onclick = () => move(i, 1);
+        list.appendChild(li);
       });
-      render();
     }
 
-    function render() {
-      const done = picked.length === steps.length;
-      const check = done ? checkOrder(picked) : null;
-      pickedList.innerHTML = picked.map((i, pos) => {
-        if (!done) return `<li>${steps[i]}</li>`;
-        const ok = check.marks[pos];
-        return `<li class="${ok ? "correct" : "wrong"}">${steps[i]}${ok ? "" : `<span class="should">(seharusnya no. ${i + 1})</span>`}</li>`;
-      }).join("") || `<li style="list-style:none;color:var(--muted)">Klik langkah di atas sesuai urutannya.</li>`;
+    function move(i, d) {
+      [current[i], current[i + d]] = [current[i + d], current[i]];
+      renderList();
+      renderScore();
+    }
+
+    function renderScore(result) {
       score.innerHTML = "";
-      if (done) {
-        el.classList.add("done");
-        result.innerHTML = check.solved ? "" :
-          `<div class="label">Urutan benar</div><ol>${steps.map(s => `<li>${s}</li>`).join("")}</ol>`;
-        score.innerHTML = `<span>Posisi benar: <strong>${check.right}/${steps.length}</strong></span>`;
-        const again = document.createElement("button");
-        again.textContent = "Ulangi";
-        again.onclick = start;
-        score.appendChild(again);
-      } else {
-        score.innerHTML = `<span>${steps.length - picked.length} langkah tersisa</span>`;
-        if (picked.length) {
-          const undo = document.createElement("button");
-          undo.textContent = "Batalkan langkah terakhir";
-          undo.onclick = () => {
-            const i = picked.pop();
-            [...pool.children].find(b => b.dataset.step === String(i)).disabled = false;
-            render();
-          };
-          score.appendChild(undo);
-        }
+      const check = button("Periksa", () => {
+        tries += 1;
+        const r = checkOrder(expected, current);
+        if (r.solved) box.classList.add("revealed");
+        renderList(r.marks);
+        renderScore(r);
+      });
+      score.appendChild(check);
+      if (result) {
+        const v = document.createElement("span");
+        v.className = "verdict " + (result.solved ? "ok" : "no");
+        v.textContent = result.solved
+          ? `Benar semua (${tries}× periksa)`
+          : `${result.right}/${result.total} posisi benar. Pindahkan yang merah, lalu periksa lagi.`;
+        score.appendChild(v);
       }
+      if (!box.classList.contains("revealed")) {
+        score.appendChild(button("Lihat jawaban", () => {
+          current = expected.slice();
+          box.classList.add("revealed");
+          renderList(checkOrder(expected, current).marks);
+          renderScore();
+        }));
+      }
+      score.appendChild(button("Acak ulang", () => {
+        current = scramble(expected);
+        tries = 0;
+        box.classList.remove("revealed");
+        renderList();
+        renderScore();
+      }));
     }
 
-    start();
+    function button(label, onclick) {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.onclick = onclick;
+      return b;
+    }
+
+    renderList();
+    renderScore();
   }
 })(typeof globalThis !== "undefined" ? globalThis : this);

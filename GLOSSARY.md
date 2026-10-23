@@ -195,6 +195,17 @@ Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateSc
 Padanan Node: tidak ada.
 _Avoid_: DI check, lifetime validation
 
+## Pipeline dan konfigurasi
+
+**Short-circuit**:
+Middleware yang tidak memanggil `next`, sehingga sisa pipeline (termasuk endpoint) tidak dijalankan; middleware itu disebut terminal middleware.
+Padanan Node: mengirim `res.status(401).send()` tanpa memanggil `next()` di Express.
+_Avoid_: Early return, abort
+
+**User Secrets**:
+Penyimpanan secret untuk development (`dotnet user-secrets`) di profil user, di luar folder project dan tidak ikut source control; tidak terenkripsi dan hanya dibaca di environment Development.
+Padanan Node: file `.env` yang masuk `.gitignore`.
+_Avoid_: Secret store, vault (itu untuk production, mis. Azure Key Vault)
 ## EF Core
 
 **Change Tracker**:
@@ -289,3 +300,30 @@ _Avoid_: Integration test (berbeda: tanpa browser)
 Class `WebApplicationFactory<Program>` dari `Microsoft.AspNetCore.Mvc.Testing` yang menjalankan aplikasi ASP.NET Core di TestServer in-memory untuk Integration Test, dengan `CreateClient()` dan titik untuk mengganti service.
 Padanan Node: Supertest `request(app)`.
 _Avoid_: Test host (itu bagian di dalamnya), test server saja
+
+## Arsitektur
+
+**Clean Architecture**:
+Arsitektur yang menaruh aturan bisnis (Application Core) di pusat, dengan Infrastructure dan UI di luar yang bergantung ke dalam; nama lainnya Hexagonal, Ports-and-Adapters, Onion.
+Padanan Node: hexagonal / ports and adapters di NestJS, dengan Prisma sebagai adapter.
+_Avoid_: Onion layer, layered (layered tradisional arahnya UI → BLL → DAL)
+
+**Dependency Rule**:
+Aturan Clean Architecture bahwa dependency source code hanya boleh mengarah ke dalam; lingkaran dalam tidak tahu apa pun tentang lingkaran luar. Diwujudkan lewat DIP.
+Padanan Node: folder `domain/` yang tidak pernah meng-`import` Prisma atau Express.
+_Avoid_: Layer rule, call direction (alur runtime tetap boleh keluar)
+
+**Application Core**:
+Project pusat Clean Architecture berisi Entity, interface (mis. `IProductRepository`), domain service, dan DTO; tidak mereferensikan project lain.
+Padanan Node: folder `domain/` + `services/` tanpa dependency ke framework.
+_Avoid_: Domain layer saja, core library
+
+**Infrastructure**:
+Project Clean Architecture berisi detail teknis yang mengimplementasikan interface dari Application Core: `DbContext`, Migration, implementasi Repository, pengirim email.
+Padanan Node: adapter Prisma, Nodemailer, klien HTTP.
+_Avoid_: DAL, data layer (itu istilah N-Layer)
+
+**Unit of Work**:
+Pola yang mengumpulkan semua insert/update/delete satu aksi lalu menyimpannya dalam satu transaksi; di EF Core diwujudkan oleh `DbContext` dan dijalankan saat `SaveChanges`.
+Padanan Node: `prisma.$transaction([...])`, atau unit of work di MikroORM.
+_Avoid_: Transaction (lebih sempit), batch save
