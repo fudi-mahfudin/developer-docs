@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Angular 16 dasar untuk developer React</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Frontend · Angular 16</div>
+<h1>Angular 16 dasar untuk developer React</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0013-angular-dasar.html">Lesson 0013</a>. Semua sintaks versi 16 (tanpa <code>@if</code>/<code>@for</code> v17).</p>
+
+<h2>Component</h2>
+<pre><code>@Component({ selector: 'app-product-card', templateUrl: './x.html', styleUrls: ['./x.css'] })
+export class ProductCardComponent {
+  @Input() product!: Product;                       // parent → child  (props)
+  @Output() deleted = new EventEmitter&lt;number&gt;();   // child → parent  (callback prop)
+}</code></pre>
+
+<h2>NgModule</h2>
+<table>
+  <thead><tr><th>Array</th><th>Isi</th><th>Padanan</th></tr></thead>
+  <tbody>
+    <tr><td><code>declarations</code></td><td>Component/directive/pipe milik module ini</td><td>file component di folder fitur</td></tr>
+    <tr><td><code>imports</code></td><td>Module lain (<code>FormsModule</code>, <code>HttpClientModule</code>, <code>CommonModule</code>)</td><td><code>import</code> paket npm</td></tr>
+    <tr><td><code>providers</code></td><td>Service untuk DI</td><td>Context Provider / NestJS providers</td></tr>
+    <tr><td><code>bootstrap</code></td><td>Root component (<code>AppComponent</code>)</td><td><code>createRoot().render(&lt;App/&gt;)</code></td></tr>
+  </tbody>
+</table>
+<p><strong>Standalone component:</strong> <code>standalone: true</code> + <code>imports: [...]</code> di <code>@Component</code>, tanpa NgModule; bootstrap lewat <code>bootstrapApplication(AppComponent)</code>. Jangan dimasukkan ke <code>declarations</code>. Default <code>ng new</code> v16 masih NgModule (kecuali <code>--standalone</code>).</p>
+
+<h2>Binding</h2>
+<table>
+  <thead><tr><th>Sintaks</th><th>Nama</th><th>Arah</th><th>JSX</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{ x }}</code></td><td>Interpolation</td><td>class → view</td><td><code>{x}</code></td></tr>
+    <tr><td><code>[prop]="x"</code></td><td>Property binding</td><td>class → elemen</td><td><code>prop={x}</code></td></tr>
+    <tr><td><code>(event)="f($event)"</code></td><td>Event binding</td><td>elemen → class</td><td><code>onEvent={f}</code></td></tr>
+    <tr><td><code>[(ngModel)]="x"</code></td><td>Two-way (butuh <code>FormsModule</code>)</td><td>dua arah</td><td><code>value</code> + <code>onChange</code></td></tr>
+  </tbody>
+</table>
+<p>Two-way untuk component sendiri: <code>@Input() size</code> + <code>@Output() sizeChange</code> → <code>[(size)]="x"</code>.</p>
+
+<h2>Structural directive</h2>
+<pre><code>&lt;p *ngIf="loading; else done"&gt;Memuat…&lt;/p&gt;  &lt;ng-template #done&gt;…&lt;/ng-template&gt;
+&lt;li *ngFor="let p of products; trackBy: trackById; let i = index"&gt;{{ i }}. {{ p.name }}&lt;/li&gt;
+&lt;div [ngSwitch]="status"&gt;&lt;span *ngSwitchCase="'active'"&gt;Aktif&lt;/span&gt;&lt;span *ngSwitchDefault&gt;–&lt;/span&gt;&lt;/div&gt;
+&lt;ng-container *ngIf="isAdmin"&gt;…&lt;/ng-container&gt;   &lt;!-- seperti Fragment --&gt;</code></pre>
+<ul>
+  <li><code>*</code> = singkatan untuk <code>&lt;ng-template&gt;</code>. Hanya <strong>satu</strong> structural directive per elemen; gabungkan dengan <code>&lt;ng-container&gt;</code>.</li>
+  <li><code>trackBy</code> ≈ <code>key</code> di React.</li>
+</ul>
+
+<h2>Lifecycle Hook</h2>
+<table>
+  <thead><tr><th>Hook</th><th>Kapan</th><th>Untuk</th><th>React</th></tr></thead>
+  <tbody>
+    <tr><td><code>constructor</code></td><td>class dibuat</td><td>inject dependency saja</td><td>badan function</td></tr>
+    <tr><td><code>ngOnChanges</code></td><td>sebelum <code>ngOnInit</code> + tiap input berubah</td><td>reaksi ke <code>@Input</code> (<code>SimpleChanges</code>)</td><td><code>useEffect(f, [dep])</code></td></tr>
+    <tr><td><code>ngOnInit</code></td><td>sekali, setelah <code>ngOnChanges</code> pertama</td><td>ambil data awal</td><td><code>useEffect(f, [])</code></td></tr>
+    <tr><td><code>ngOnDestroy</code></td><td>tepat sebelum dihancurkan</td><td>unsubscribe, lepas handler</td><td>cleanup <code>useEffect</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Jebakan interview</h2>
+<ol>
+  <li>Fetch data di constructor → pindahkan ke <code>ngOnInit</code>.</li>
+  <li>"Can't bind to 'ngModel'" → <code>FormsModule</code> belum ada di <code>imports</code>.</li>
+  <li>Module lain dimasukkan ke <code>declarations</code> → seharusnya <code>imports</code>.</li>
+  <li>Menjawab dengan <code>@if</code>/<code>@for</code> → itu Angular 17.</li>
+</ol>
+
+<p class="note">Sumber: <a href="https://v16.angular.io/guide/ngmodules">NgModules</a> · <a href="https://v16.angular.io/guide/standalone-components">Standalone</a> · <a href="https://v16.angular.io/guide/binding-overview">Binding</a> · <a href="https://v16.angular.io/guide/inputs-outputs">Inputs/Outputs</a> · <a href="https://v16.angular.io/guide/structural-directives">Structural directives</a> · <a href="https://v16.angular.io/guide/lifecycle-hooks">Lifecycle hooks</a> (dokumentasi Angular v16)</p>
+</main>
+</body>
+</html>

@@ -125,3 +125,13 @@ _Avoid_: Middleware (itu istilah backend)
 Nilai reaktif (`signal`, `computed`); masih developer preview di Angular 16.
 Padanan React: `useState` / `useMemo`.
 _Avoid_: State, store
+
+**Data Binding**:
+Penghubung template dan class component: interpolation `{{ }}`, property binding `[ ]`, event binding `( )`, dan two-way binding `[( )]`.
+Padanan React: `{x}`, `prop={x}`, `onClick={f}`, serta pasangan `value` + `onChange`.
+_Avoid_: Data flow, wiring
+
+**Structural Directive**:
+Directive yang menambah atau menghapus elemen DOM, ditulis dengan awalan `*` (`*ngIf`, `*ngFor`) di Angular 16.
+Padanan React: `{cond && ...}` dan `array.map(...)` di JSX.
+_Avoid_: Control flow (itu sintaks `@if`/`@for` Angular 17)
