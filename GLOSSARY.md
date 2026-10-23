@@ -157,3 +157,15 @@ _Avoid_: Nullable type (itu `int?`, value type yang boleh null)
 Base class yang tidak bisa di-instantiate dan boleh berisi field, constructor, serta method jadi di samping member abstract.
 Padanan TS: `abstract class` (sama).
 _Avoid_: Base interface
+
+## Dependency Injection
+
+**Captive Dependency**:
+Kesalahan konfigurasi lifetime di mana service berumur panjang (mis. Singleton) memegang dependensi berumur lebih pendek (mis. DbContext yang Scoped), sehingga dependensi itu ikut hidup selamanya.
+Padanan Node: tidak ada bawaannya; di NestJS request scope justru merambat ke konsumennya secara otomatis.
+_Avoid_: Scope leak, lifetime mismatch
+
+**Scope Validation**:
+Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateScopes`) yang melempar exception bila service Scoped di-inject ke Singleton atau di-resolve dari root provider.
+Padanan Node: tidak ada.
+_Avoid_: DI check, lifetime validation
