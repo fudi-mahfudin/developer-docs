@@ -66,6 +66,10 @@
   rxjs.dev adalah SPA (kosong saat di-fetch agent); isi panduan dan halaman API operator berasal dari sini. Use for: mengutip Observable, Subject, `switchMap`/`mergeMap`/`concatMap`/`exhaustMap`, `forkJoin`, `catchError`, `takeUntil` secara verbatim, lalu tautkan ke rxjs.dev.
 - [Angular v16: Observables compared to other techniques](https://v16.angular.io/guide/comparing-observables) dan [AsyncPipe](https://v16.angular.io/api/common/AsyncPipe)
   Tabel Observable vs Promise versi Angular dan perilaku `async` pipe (unsubscribe otomatis). Use for: lesson 0015, pertanyaan Observable vs Promise dan memory leak.
+- [Robert C. Martin: Solid Relevance](https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html)
+  Rumusan ringkas kelima prinsip SOLID dari pencetusnya. Use for: definisi SRP/OCP/LSP/ISP/DIP satu kalimat (lesson 0008).
+- [Robert C. Martin: The Single Responsibility Principle](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) dan [The Open Closed Principle](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html)
+  "Reason to change" = orang/peran; OCP lewat arsitektur plugin. Use for: menjelaskan SRP dan OCP lebih dalam.
 
 ## Wisdom (Communities)
 
