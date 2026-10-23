@@ -36,6 +36,20 @@
   Definisi DTO dan alasannya (over-posting, sembunyikan property, payload, flatten). Use for: pertanyaan "kenapa DTO?".
 - [Microsoft Learn: Options pattern in ASP.NET Core (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0)
   `IOptions<T>`, `Configure<T>(GetSection(...))`, encapsulation & separation of concerns. Use for: Options Pattern dan konfigurasi.
+- [Microsoft Learn: Asynchronous programming with async and await](https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/) dan [Async return types](https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-return-types)
+  `Task`/`Task<T>`, `await` yang tidak memblokir, exception di task, `.Result` sebagai blocking property, `async void` hanya untuk event handler. Use for: Task vs Promise (lesson 0003).
+- [Microsoft Learn: Task-based Asynchronous Pattern (TAP)](https://learn.microsoft.com/en-us/dotnet/standard/asynchronous-programming-patterns/task-based-asynchronous-pattern-tap)
+  Akhiran `Async`, task yang dikembalikan selalu "hot". Use for: kapan operasi async mulai berjalan.
+- [Microsoft Learn: ASP.NET Core Best Practices (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0)
+  "Avoid blocking calls" (`.Result`/`.Wait()` → thread pool starvation), `async void` selalu buruk, filter di database. Use for: kenapa async di seluruh call stack.
+- [Microsoft Learn: Introduction to LINQ Queries](https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/introduction-to-linq-queries)
+  Deferred vs immediate execution, tabel klasifikasi operator. Use for: deferred execution.
+- [Microsoft Learn: EF Core How Queries Work](https://learn.microsoft.com/en-us/ef/core/querying/how-query-works), [Client vs. Server Evaluation](https://learn.microsoft.com/en-us/ef/core/querying/client-eval), dan [Asynchronous Programming](https://learn.microsoft.com/en-us/ef/core/miscellaneous/async)
+  Kapan query dikirim ke database, `AsEnumerable`/`ToList` sebagai client evaluation, tidak ada `WhereAsync`, tidak boleh operasi paralel di satu DbContext. Use for: IEnumerable vs IQueryable dan async EF Core.
+- [.NET API: IQueryable&lt;T&gt;](https://learn.microsoft.com/en-us/dotnet/api/system.linq.iqueryable-1?view=net-8.0) dan [Expression Trees](https://learn.microsoft.com/en-us/dotnet/csharp/advanced-topics/expression-trees/)
+  IQueryable mewarisi IEnumerable, query sebagai expression tree yang diterjemahkan provider. Use for: IEnumerable vs IQueryable.
+- [MDN: Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise)
+  Definisi Promise sebagai pembanding `Task`. Use for: padanan TS/JS.
 
 ## Wisdom (Communities)
 
