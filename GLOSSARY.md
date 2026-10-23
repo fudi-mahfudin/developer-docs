@@ -237,3 +237,15 @@ _Avoid_: Pipe (itu istilah template Angular, mis. `async` pipe)
 Pipe template `| async` yang subscribe ke Observable, menampilkan nilai terakhirnya, dan unsubscribe otomatis saat component dihancurkan.
 Padanan React: `useEffect` + `useState` + cleanup yang ditulis otomatis.
 _Avoid_: Auto-subscribe
+
+## Forms (Angular 16)
+
+**Reactive Forms**:
+Pendekatan form Angular (`ReactiveFormsModule`) di mana form model (`FormGroup`/`FormControl`) dibuat eksplisit di class component, alur datanya sinkron, dan validatornya berupa fungsi.
+Padanan React: controlled input dengan state, atau React Hook Form.
+_Avoid_: Model-driven form, dynamic form (itu pola lain di atas Reactive Forms)
+
+**Template-driven Forms**:
+Pendekatan form Angular (`FormsModule`) di mana form model dibuat implisit oleh directive `ngModel` di template, dengan two-way binding dan alur data asinkron.
+Padanan React: tidak ada padanan langsung; paling dekat input dengan `value` + `onChange` di JSX.
+_Avoid_: HTML form, simple form
