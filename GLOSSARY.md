@@ -269,6 +269,32 @@ _Avoid_: Model-driven form, dynamic form (itu pola lain di atas Reactive Forms)
 Pendekatan form Angular (`FormsModule`) di mana form model dibuat implisit oleh directive `ngModel` di template, dengan two-way binding dan alur data asinkron.
 Padanan React: tidak ada padanan langsung; paling dekat input dengan `value` + `onChange` di JSX.
 _Avoid_: HTML form, simple form
+## Auth dan error handling (lesson 0017)
+
+**JWT**:
+Token ringkas `header.payload.signature` (tiap bagian base64url) berisi claims seperti `sub`, role, dan `exp`; ditandatangani sehingga tidak bisa diubah, tapi isinya bisa dibaca siapa saja. Dikirim di header `Authorization: Bearer …`.
+Padanan Node: token dari `jsonwebtoken.sign()`, divalidasi passport-jwt / express-jwt.
+_Avoid_: Session token (session disimpan di server), encrypted token (JWS tidak dienkripsi)
+
+**Authentication**:
+Proses menentukan identitas user (di .NET: `UseAuthentication` mengisi `HttpContext.User`); gagal = 401.
+Padanan Node: passport mengisi `req.user`.
+_Avoid_: Login (itu salah satu langkahnya saja), auth (ambigu)
+
+**Authorization**:
+Proses menentukan apakah user yang sudah dikenal boleh mengakses resource (`[Authorize]`, role, policy); gagal = 403.
+Padanan Node: middleware pengecek role sesudah passport.
+_Avoid_: Auth (ambigu), permission check
+
+**CORS**:
+Mekanisme server untuk melonggarkan same-origin policy browser lewat header `Access-Control-*`, termasuk menjawab preflight `OPTIONS`; bukan fitur keamanan.
+Padanan Node: package `cors` di Express.
+_Avoid_: CORS error sebagai "error API" (yang memblokir adalah browser)
+
+**ProblemDetails**:
+Format standar (RFC 9457, dulu 7807) untuk body error HTTP API dengan field `type`, `title`, `status`, `detail`, `instance`; di .NET 8 dihasilkan lewat `AddProblemDetails` dan `IExceptionHandler`.
+Padanan Node: format JSON error yang Anda tentukan sendiri di error middleware Express.
+_Avoid_: Error object, error DTO
 ## Testing (tambahan lesson 0010)
 
 **Test Double**:

@@ -134,6 +134,24 @@
   JSDoc halaman API `HttpInterceptorFn` (interceptor fungsi, injection context). Use for: menyebut interceptor fungsi sebagai alternatif standalone di v16.
 - [Axios: Interceptors](https://axios-http.com/docs/interceptors)
   Dokumentasi resmi request/response interceptor Axios. Use for: padanan React untuk HTTP Interceptor.
+## Knowledge (tambahan lesson 0017)
+
+- [Microsoft Learn: Overview of ASP.NET Core Authentication (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-8.0) dan [Introduction to authorization](https://learn.microsoft.com/en-us/aspnet/core/security/authorization/introduction?view=aspnetcore-8.0)
+  Definisi authentication vs authorization, scheme/handler, challenge (401 + `www-authenticate: bearer`) vs forbid (403), `ClaimsPrincipal`. Use for: pertanyaan authn vs authz (lesson 0017).
+- [Microsoft Learn: Configure JWT bearer authentication in ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication?view=aspnetcore-8.0)
+  `AddJwtBearer`, apa yang divalidasi (signature, issuer, audience, expiry), 401 vs 403, rekomendasi OIDC/OAuth dan cookie HttpOnly (BFF) alih-alih token di local storage. Use for: JWT di .NET dan pertanyaan penyimpanan token.
+- [Microsoft Learn: Role-based authorization](https://learn.microsoft.com/en-us/aspnet/core/security/authorization/roles?view=aspnetcore-8.0)
+  `[Authorize(Roles = "...")]`, role sebagai policy (`RequireRole`). Use for: role vs policy-based authorization.
+- [Microsoft Learn: Handle errors in ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling?view=aspnetcore-8.0) dan [Handle errors in ASP.NET Core APIs](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling-api?view=aspnetcore-8.0)
+  `IExceptionHandler` (Singleton, `TryHandleAsync` true = ditangani), `AddProblemDetails`, `UseExceptionHandler`, `ValidationProblemDetails` dari `[ApiController]`. Use for: global error handling (lesson 0017).
+- [RFC 7519: JSON Web Token](https://www.rfc-editor.org/rfc/rfc7519) dan [RFC 9457: Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457)
+  Standar primer: struktur JWT (bagian base64url dipisah titik) dan field ProblemDetails (`type`, `title`, `status`, `detail`, `instance`). Use for: definisi formal.
+- [OWASP: JSON Web Token Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_Cheat_Sheet.html), [HTML5 Security Cheat Sheet (Local Storage)](https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html), dan [CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
+  Payload JWT hanya base64url; jangan simpan session identifier di localStorage (XSS); cookie terkirim otomatis (CSRF), `SameSite`. Use for: trade-off localStorage vs httpOnly cookie.
+- [Angular v16: HTTP - Security: XSRF protection](https://v16.angular.io/guide/http-security-xsrf-protection) (sumber: `aio/content/guide/http-security-xsrf-protection.md` di branch `16.2.x`)
+  `HttpClient` membaca cookie `XSRF-TOKEN` dan mengirim header `X-XSRF-TOKEN`; "supports only the client half". Use for: proteksi CSRF bila JWT di cookie.
+- [Express: cors middleware](https://expressjs.com/en/resources/middleware/cors.html)
+  Package `cors` dan opsi `origin`. Use for: padanan Node untuk CORS di ASP.NET Core.
 
 ## Knowledge (tambahan lesson 0010)
 
