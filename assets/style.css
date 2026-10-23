@@ -1,0 +1,138 @@
+/* Shared stylesheet for all lessons & reference docs — Tufte-inspired */
+:root {
+  --ink: #1f1f1f;
+  --muted: #6b6b6b;
+  --paper: #fffff8;
+  --rule: #d9d6c8;
+  --accent: #8b1e3f;
+  --code-bg: #f3f1e7;
+  --ok: #2f6b3a;
+  --ok-bg: #e7f2e4;
+  --bad: #9a2a2a;
+  --bad-bg: #f7e6e3;
+  --measure: 42rem;
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: 17px; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  line-height: 1.6;
+}
+
+main {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 3rem 1.25rem 5rem;
+}
+
+header.lesson-head { margin-bottom: 2.5rem; }
+.kicker {
+  font-family: -apple-system, "Helvetica Neue", sans-serif;
+  font-size: .75rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--accent);
+}
+h1 { font-weight: 400; font-size: 2.1rem; line-height: 1.2; margin: .3rem 0 .6rem; }
+h2 { font-weight: 400; font-style: italic; font-size: 1.45rem; margin: 2.6rem 0 .6rem; }
+h3 { font-weight: 600; font-size: 1.05rem; margin: 1.6rem 0 .4rem; }
+.subtitle { color: var(--muted); font-style: italic; margin: 0; }
+
+a { color: var(--accent); text-underline-offset: 2px; }
+
+code, pre {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: .82rem;
+}
+code { background: var(--code-bg); padding: .08em .3em; border-radius: 3px; }
+pre {
+  background: var(--code-bg);
+  padding: .9rem 1rem;
+  overflow-x: auto;
+  border-left: 3px solid var(--rule);
+  line-height: 1.45;
+}
+pre code { background: none; padding: 0; }
+
+table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .92rem; }
+th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 600; border-bottom: 2px solid var(--ink); }
+
+.win {
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
+  padding: .8rem 0;
+  margin: 1.5rem 0;
+}
+.win strong { color: var(--accent); }
+
+.note {
+  font-size: .9rem; color: var(--muted);
+  border-left: 2px solid var(--accent);
+  padding-left: .9rem; margin: 1.2rem 0;
+}
+
+blockquote {
+  margin: 1.2rem 0; padding-left: 1rem;
+  border-left: 3px solid var(--rule);
+  font-style: italic;
+}
+blockquote cite { display: block; font-style: normal; font-size: .82rem; color: var(--muted); margin-top: .3rem; }
+
+sup.cite a { text-decoration: none; font-size: .7rem; }
+
+/* Flow diagram */
+.flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .82rem;
+  margin: 1.2rem 0;
+}
+.flow span.box { border: 1px solid var(--ink); padding: .3rem .55rem; background: #fff; }
+.flow span.arrow { color: var(--muted); }
+
+/* Reveal (retrieval practice) */
+details {
+  border: 1px solid var(--rule); padding: .6rem .9rem; margin: 1rem 0; background: #fff;
+}
+details summary { cursor: pointer; font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .88rem; color: var(--accent); }
+details[open] summary { margin-bottom: .6rem; }
+
+/* Exercise block */
+.exercise {
+  border-top: 2px solid var(--ink);
+  margin-top: 2.6rem; padding-top: .4rem;
+}
+
+.source {
+  border: 1px solid var(--ink); padding: .9rem 1rem; margin: 2.5rem 0 1rem; background: #fff;
+}
+.source .kicker { display: block; margin-bottom: .2rem; }
+
+.ask {
+  font-style: italic; color: var(--muted); text-align: center; margin: 2.5rem 0 1rem;
+}
+
+nav.lesson-nav {
+  display: flex; justify-content: space-between; gap: 1rem;
+  border-top: 1px solid var(--rule); padding-top: 1rem; margin-top: 2rem;
+  font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .85rem;
+}
+nav.lesson-nav .disabled { color: var(--muted); }
+
+/* Reference documents: denser */
+body.reference main { max-width: 52rem; }
+body.reference h2 { margin-top: 1.8rem; }
+
+@media print {
+  body { background: #fff; font-size: 11pt; }
+  main { padding: 0; max-width: none; }
+  details { display: block; }
+  details > * { display: block !important; }
+  .quiz button, nav.lesson-nav, .ask { display: none; }
+  pre { white-space: pre-wrap; }
+  h2 { break-after: avoid; }
+}
