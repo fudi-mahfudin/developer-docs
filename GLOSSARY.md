@@ -182,3 +182,15 @@ _Avoid_: Lazy loading (itu fitur EF Core lain untuk navigation property)
 Query LINQ yang disimpan sebagai expression tree sehingga provider (EF Core) bisa menerjemahkannya ke SQL; berbeda dengan `IEnumerable` yang dijalankan di memori.
 Padanan Node: `prisma.product.findMany({ where })` vs `array.filter(...)`.
 _Avoid_: Query object, IEnumerable (berbeda: filternya jalan di memori)
+
+## Dependency Injection
+
+**Captive Dependency**:
+Kesalahan konfigurasi lifetime di mana service berumur panjang (mis. Singleton) memegang dependensi berumur lebih pendek (mis. DbContext yang Scoped), sehingga dependensi itu ikut hidup selamanya.
+Padanan Node: tidak ada bawaannya; di NestJS request scope justru merambat ke konsumennya secara otomatis.
+_Avoid_: Scope leak, lifetime mismatch
+
+**Scope Validation**:
+Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateScopes`) yang melempar exception bila service Scoped di-inject ke Singleton atau di-resolve dari root provider.
+Padanan Node: tidak ada.
+_Avoid_: DI check, lifetime validation
