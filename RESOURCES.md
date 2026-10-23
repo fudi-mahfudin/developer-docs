@@ -40,6 +40,10 @@
   Definisi DTO dan alasannya (over-posting, sembunyikan property, payload, flatten). Use for: pertanyaan "kenapa DTO?".
 - [Microsoft Learn: Options pattern in ASP.NET Core (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0)
   `IOptions<T>`, `Configure<T>(GetSection(...))`, encapsulation & separation of concerns. Use for: Options Pattern dan konfigurasi.
+- [Sumber markdown dokumentasi RxJS (repo ReactiveX/rxjs, branch 7.x, `docs_app/content/guide/`)](https://github.com/ReactiveX/rxjs/tree/7.x/docs_app/content/guide) dan [JSDoc operator di `src/internal/operators/`](https://github.com/ReactiveX/rxjs/tree/7.x/src/internal/operators)
+  rxjs.dev adalah SPA (kosong saat di-fetch agent); isi panduan dan halaman API operator berasal dari sini. Use for: mengutip Observable, Subject, `switchMap`/`mergeMap`/`concatMap`/`exhaustMap`, `forkJoin`, `catchError`, `takeUntil` secara verbatim, lalu tautkan ke rxjs.dev.
+- [Angular v16: Observables compared to other techniques](https://v16.angular.io/guide/comparing-observables) dan [AsyncPipe](https://v16.angular.io/api/common/AsyncPipe)
+  Tabel Observable vs Promise versi Angular dan perilaku `async` pipe (unsubscribe otomatis). Use for: lesson 0015, pertanyaan Observable vs Promise dan memory leak.
 
 ## Wisdom (Communities)
 

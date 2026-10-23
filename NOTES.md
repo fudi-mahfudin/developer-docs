@@ -9,3 +9,4 @@
 - Tugas STAR mulai dicicil di akhir lesson 0006 (malam Hari 1).
 - Lesson 0001 dibangun ulang mengikuti spec (soal di `assets/questions/0001.js`). Hasil pengerjaan versi lama tidak dihitung sebagai bukti penguasaan; bukti untuk topik 0001 baru datang dari review 0007.
 - v16.angular.io adalah SPA (kosong saat di-fetch agent). Ambil kutipan dari markdown sumbernya di repo angular/angular branch `16.2.x`, folder `aio/content/guide/`, lalu tautkan ke halaman v16.angular.io yang sesuai.
+- rxjs.dev juga SPA (kosong saat di-fetch). Kutip dari markdown `docs_app/content/guide/` dan JSDoc `src/internal/` di repo ReactiveX/rxjs branch `7.x`, lalu tautkan ke rxjs.dev.
