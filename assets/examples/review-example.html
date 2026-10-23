@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contoh: kuis dari bank + review campuran</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+<header class="lesson-head">
+  <div class="kicker">Contoh komponen · bukan lesson</div>
+  <h1>Kuis dari bank &amp; review campuran</h1>
+  <p class="subtitle">Halaman ini menunjukkan cara memakai assets/bank.js, bank-quiz.js, dan review.js.</p>
+</header>
+
+<h2>Kuis lesson 9001 (dirender dari bank, dinilai oleh quiz.js)</h2>
+<div class="quiz" data-bank-lesson="9001"></div>
+
+<h2>Review campuran lesson 9001 + 9002</h2>
+<div class="review" data-title="Review contoh" data-lessons="9001,9002" data-mc="3" data-oral="1"></div>
+</main>
+
+<script src="../bank.js"></script>
+<script src="questions-example.js"></script>
+<script src="../bank-quiz.js"></script>
+<script src="../quiz.js"></script>
+<script src="../review.js"></script>
+</body>
+</html>
