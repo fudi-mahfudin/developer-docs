@@ -62,6 +62,16 @@
   DbContext = satu unit-of-work, `AddDbContext` Scoped, tidak thread-safe, `AddDbContextFactory`. Use for: kenapa DbContext Scoped (lesson 0004, 0006).
 - [NestJS: Injection scopes](https://docs.nestjs.com/fundamentals/injection-scopes)
   DEFAULT/REQUEST/TRANSIENT dan "scope bubbles up". Use for: padanan Node untuk Service Lifetime.
+- [Microsoft Learn: Write custom ASP.NET Core middleware (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/write?view=aspnetcore-8.0)
+  Syarat middleware class (`RequestDelegate`, `InvokeAsync`), middleware dibuat sekali, service Scoped lewat parameter `InvokeAsync`. Use for: Scoped service di middleware (lesson 0005).
+- [Microsoft Learn: Configuration in ASP.NET Core (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0)
+  Urutan default sumber konfigurasi (command-line > env var > User Secrets > appsettings.{Env}.json > appsettings.json), `__` untuk hierarki di env var. Use for: konfigurasi berlapis.
+- [Microsoft Learn: Safe storage of app secrets in development (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-8.0)
+  Secret Manager / `dotnet user-secrets`, lokasi file, tidak terenkripsi, hanya untuk development; production pakai env var / Key Vault. Use for: "di mana secret disimpan?".
+- [Microsoft Learn: Enable CORS in ASP.NET Core (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0)
+  `UseCors` sesudah `UseRouting` dan sebelum `UseAuthorization`, sebelum `UseResponseCaching`, preflight. Use for: urutan middleware (0005) dan CORS (0017).
+- [Express: Using middleware](https://expressjs.com/en/guide/using-middleware.html) dan [Error handling](https://expressjs.com/en/guide/error-handling.html)
+  Definisi middleware `(req, res, next)`, error handler 4 argumen yang didefinisikan paling akhir. Use for: padanan Node untuk middleware pipeline.
 - [Microsoft Learn: Change Tracking in EF Core](https://learn.microsoft.com/en-us/ef/core/change-tracking/)
   Kapan Entity dilacak, lima EntityState dan aksinya saat SaveChanges, tracking per property. Use for: change tracking (lesson 0006).
 - [Microsoft Learn: Efficient Querying (EF Core)](https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying)
@@ -102,6 +112,16 @@
 - [Sumber kode Angular v16 `packages/router/src/models.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/router/src/models.ts)
   JSDoc yang menjadi halaman API v16.angular.io/api/router/*, termasuk tanda `@deprecated` class-based guard. Use for: mengutip status deprecated `CanActivate` di v16.
 
+## Knowledge (tambahan lesson 0009)
+
+- [Kent Beck: Canon TDD](https://newsletter.kentbeck.com/p/canon-tdd)
+  Langkah TDD versi pencetusnya (test list → satu test → pass → refactor opsional → ulangi) beserta daftar kesalahan per langkah. Use for: siklus red-green-refactor dan jebakannya (lesson 0009).
+- [Martin Fowler: Test Driven Development](https://martinfowler.com/bliki/TestDrivenDevelopment.html) dan [Self Testing Code](https://martinfowler.com/bliki/SelfTestingCode.html)
+  Rangkuman "Red - Green - Refactor", kesalahan paling umum (melewatkan refactor), dan "write a test that exposes the bug" sebelum memperbaiki. Use for: menjelaskan siklus dan kenapa merah dulu.
+- [Microsoft Learn: Unit testing C# with xUnit](https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit)
+  Tutorial resmi dengan pendekatan TDD ("write a test that's known to fail"), `[Fact]`, `[Theory]` + `[InlineData]`. Use for: contoh siklus di xUnit.
+- [Jest: Globals API (`test`, `test.each`)](https://jestjs.io/docs/api#testeachtablename-fn-timeout)
+  Use for: padanan Node untuk `[Fact]`/`[Theory]`.
 ## Knowledge (tambahan lesson 0016)
 
 - [Angular v16: Introduction to forms](https://v16.angular.io/guide/forms-overview) dan [Reactive forms](https://v16.angular.io/guide/reactive-forms)

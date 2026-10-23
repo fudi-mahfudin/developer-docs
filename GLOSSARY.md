@@ -195,6 +195,17 @@ Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateSc
 Padanan Node: tidak ada.
 _Avoid_: DI check, lifetime validation
 
+## Pipeline dan konfigurasi
+
+**Short-circuit**:
+Middleware yang tidak memanggil `next`, sehingga sisa pipeline (termasuk endpoint) tidak dijalankan; middleware itu disebut terminal middleware.
+Padanan Node: mengirim `res.status(401).send()` tanpa memanggil `next()` di Express.
+_Avoid_: Early return, abort
+
+**User Secrets**:
+Penyimpanan secret untuk development (`dotnet user-secrets`) di profil user, di luar folder project dan tidak ikut source control; tidak terenkripsi dan hanya dibaca di environment Development.
+Padanan Node: file `.env` yang masuk `.gitignore`.
+_Avoid_: Secret store, vault (itu untuk production, mis. Azure Key Vault)
 ## EF Core
 
 **Change Tracker**:
@@ -238,6 +249,15 @@ Pipe template `| async` yang subscribe ke Observable, menampilkan nilai terakhir
 Padanan React: `useEffect` + `useState` + cleanup yang ditulis otomatis.
 _Avoid_: Auto-subscribe
 
+**Arrange-Act-Assert**:
+Pola menyusun satu test: siapkan objek dan mock (Arrange), panggil satu method yang diuji (Act), periksa hasilnya (Assert).
+Padanan Node: susunan yang sama di dalam `it()` Jest; Red-Green-Refactor di Node = `jest --watch` merah, hijau, rapikan.
+_Avoid_: Given-When-Then (setara, tapi istilah BDD)
+
+**Test List**:
+Daftar skenario perilaku yang ingin dicakup, diambil satu per satu dalam siklus Red-Green-Refactor.
+Padanan Node: daftar `test.todo()` di Jest.
+_Avoid_: Test plan, test suite
 ## Forms (Angular 16)
 
 **Reactive Forms**:
