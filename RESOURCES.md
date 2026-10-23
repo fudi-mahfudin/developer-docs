@@ -62,6 +62,16 @@
   DbContext = satu unit-of-work, `AddDbContext` Scoped, tidak thread-safe, `AddDbContextFactory`. Use for: kenapa DbContext Scoped (lesson 0004, 0006).
 - [NestJS: Injection scopes](https://docs.nestjs.com/fundamentals/injection-scopes)
   DEFAULT/REQUEST/TRANSIENT dan "scope bubbles up". Use for: padanan Node untuk Service Lifetime.
+- [Microsoft Learn: Write custom ASP.NET Core middleware (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/write?view=aspnetcore-8.0)
+  Syarat middleware class (`RequestDelegate`, `InvokeAsync`), middleware dibuat sekali, service Scoped lewat parameter `InvokeAsync`. Use for: Scoped service di middleware (lesson 0005).
+- [Microsoft Learn: Configuration in ASP.NET Core (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0)
+  Urutan default sumber konfigurasi (command-line > env var > User Secrets > appsettings.{Env}.json > appsettings.json), `__` untuk hierarki di env var. Use for: konfigurasi berlapis.
+- [Microsoft Learn: Safe storage of app secrets in development (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-8.0)
+  Secret Manager / `dotnet user-secrets`, lokasi file, tidak terenkripsi, hanya untuk development; production pakai env var / Key Vault. Use for: "di mana secret disimpan?".
+- [Microsoft Learn: Enable CORS in ASP.NET Core (.NET 8)](https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0)
+  `UseCors` sesudah `UseRouting` dan sebelum `UseAuthorization`, sebelum `UseResponseCaching`, preflight. Use for: urutan middleware (0005) dan CORS (0017).
+- [Express: Using middleware](https://expressjs.com/en/guide/using-middleware.html) dan [Error handling](https://expressjs.com/en/guide/error-handling.html)
+  Definisi middleware `(req, res, next)`, error handler 4 argumen yang didefinisikan paling akhir. Use for: padanan Node untuk middleware pipeline.
 - [Microsoft Learn: Change Tracking in EF Core](https://learn.microsoft.com/en-us/ef/core/change-tracking/)
   Kapan Entity dilacak, lima EntityState dan aksinya saat SaveChanges, tracking per property. Use for: change tracking (lesson 0006).
 - [Microsoft Learn: Efficient Querying (EF Core)](https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying)
