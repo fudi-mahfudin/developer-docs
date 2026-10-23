@@ -68,6 +68,11 @@ Cara membaca konfigurasi `appsettings.json` ke kelas bertipe lewat `IOptions<T>`
 Padanan Node: `process.env` + modul `config/` yang divalidasi.
 _Avoid_: Env config, settings object
 
+**Composition root**:
+Satu tempat di awal aplikasi (`Program.cs`) yang menghubungkan setiap interface ke implementasinya di DI container.
+Padanan Node: `app.js` yang membuat semua instance, atau `providers` di module NestJS.
+_Avoid_: Startup wiring, bootstrap, DI config
+
 ## Testing
 
 **Red-Green-Refactor**:
@@ -135,3 +140,30 @@ _Avoid_: Data flow, wiring
 Directive yang menambah atau menghapus elemen DOM, ditulis dengan awalan `*` (`*ngIf`, `*ngFor`) di Angular 16.
 Padanan React: `{cond && ...}` dan `array.map(...)` di JSX.
 _Avoid_: Control flow (itu sintaks `@if`/`@for` Angular 17)
+
+## Fondasi C#
+
+**Value Type**:
+Tipe yang variabelnya menyimpan datanya langsung, sehingga assignment menyalin data (`struct`, `enum`, `int`, `decimal`).
+Padanan TS: `number` / `boolean`.
+_Avoid_: Primitive (di C# `string` justru reference type)
+
+**Reference Type**:
+Tipe yang variabelnya menyimpan referensi ke objek di heap, sehingga assignment berbagi objek yang sama (`class`, array, `string`).
+Padanan TS: object dan array.
+_Avoid_: Pointer type
+
+**Record**:
+Modifier di atas `class` atau `struct` yang membuat compiler menyediakan value equality, `ToString`, dan `with`; bentuk default untuk DTO, bukan untuk Entity.
+Padanan TS: `Readonly<type>` + spread, tapi dibandingkan berdasarkan isi.
+_Avoid_: Data class, POCO (POCO bisa berarti class apa saja)
+
+**Nullable Reference Types**:
+Fitur compile-time C# di mana reference type non-nullable secara default dan `string?` menandai yang boleh null.
+Padanan TS: `strictNullChecks` + `string | null`.
+_Avoid_: Nullable type (itu `int?`, value type yang boleh null)
+
+**Abstract Class**:
+Base class yang tidak bisa di-instantiate dan boleh berisi field, constructor, serta method jadi di samping member abstract.
+Padanan TS: `abstract class` (sama).
+_Avoid_: Base interface
