@@ -52,3 +52,10 @@
 
 ## Gaps
 - Belum ada sumber bank-soal interview .NET/Angular yang benar-benar high-trust; pertanyaan latihan disusun dari dokumentasi resmi.
+
+## Knowledge (tambahan lesson 0014)
+
+- [React docs: Passing Data Deeply with Context](https://react.dev/learn/passing-data-deeply-with-context) dan [`lazy`](https://react.dev/reference/react/lazy)
+  Dokumentasi resmi React. Use for: padanan React untuk DI hierarkis Angular (Provider terdekat) dan lazy loading route (lesson 0014).
+- [Sumber kode Angular v16 `packages/router/src/models.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/router/src/models.ts)
+  JSDoc yang menjadi halaman API v16.angular.io/api/router/*, termasuk tanda `@deprecated` class-based guard. Use for: mengutip status deprecated `CanActivate` di v16.
