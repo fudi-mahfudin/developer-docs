@@ -72,6 +72,26 @@
   `UseCors` sesudah `UseRouting` dan sebelum `UseAuthorization`, sebelum `UseResponseCaching`, preflight. Use for: urutan middleware (0005) dan CORS (0017).
 - [Express: Using middleware](https://expressjs.com/en/guide/using-middleware.html) dan [Error handling](https://expressjs.com/en/guide/error-handling.html)
   Definisi middleware `(req, res, next)`, error handler 4 argumen yang didefinisikan paling akhir. Use for: padanan Node untuk middleware pipeline.
+- [Microsoft Learn: Change Tracking in EF Core](https://learn.microsoft.com/en-us/ef/core/change-tracking/)
+  Kapan Entity dilacak, lima EntityState dan aksinya saat SaveChanges, tracking per property. Use for: change tracking (lesson 0006).
+- [Microsoft Learn: Efficient Querying (EF Core)](https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying)
+  Projection `Select`, eager loading, "Beware of lazy loading" (N+1), biaya snapshot tracking vs no-tracking. Use for: pertanyaan performa EF Core (lesson 0006).
+- [Microsoft Learn: Tracking vs. No-Tracking Queries](https://learn.microsoft.com/en-us/ef/core/querying/tracking)
+  `AsNoTracking` untuk read-only, identity resolution, projection tanpa Entity tidak dilacak. Use for: kapan memakai AsNoTracking.
+- [Microsoft Learn: Loading Related Data](https://learn.microsoft.com/en-us/ef/core/querying/related-data/) dan [Lazy Loading](https://learn.microsoft.com/en-us/ef/core/querying/related-data/lazy)
+  Definisi eager/explicit/lazy loading; lazy loading opt-in lewat Proxies. Use for: penyebab N+1.
+- [Microsoft Learn: Managing Database Schemas](https://learn.microsoft.com/en-us/ef/core/managing-schemas/), [Migrations Overview](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/), dan [Applying Migrations](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying)
+  Code-first (Migrations) vs reverse engineering, snapshot model, history table, SQL script untuk production. Use for: pertanyaan Migration.
+- [Prisma: Query optimization (Solving the n+1 problem)](https://www.prisma.io/docs/orm/prisma-client/queries/query-optimization-performance)
+  Definisi n+1 dan solusi `include`. Use for: padanan Node untuk N+1.
+- [Sumber markdown dokumentasi RxJS (repo ReactiveX/rxjs, branch 7.x, `docs_app/content/guide/`)](https://github.com/ReactiveX/rxjs/tree/7.x/docs_app/content/guide) dan [JSDoc operator di `src/internal/operators/`](https://github.com/ReactiveX/rxjs/tree/7.x/src/internal/operators)
+  rxjs.dev adalah SPA (kosong saat di-fetch agent); isi panduan dan halaman API operator berasal dari sini. Use for: mengutip Observable, Subject, `switchMap`/`mergeMap`/`concatMap`/`exhaustMap`, `forkJoin`, `catchError`, `takeUntil` secara verbatim, lalu tautkan ke rxjs.dev.
+- [Angular v16: Observables compared to other techniques](https://v16.angular.io/guide/comparing-observables) dan [AsyncPipe](https://v16.angular.io/api/common/AsyncPipe)
+  Tabel Observable vs Promise versi Angular dan perilaku `async` pipe (unsubscribe otomatis). Use for: lesson 0015, pertanyaan Observable vs Promise dan memory leak.
+- [Robert C. Martin: Solid Relevance](https://blog.cleancoder.com/uncle-bob/2020/10/18/Solid-Relevance.html)
+  Rumusan ringkas kelima prinsip SOLID dari pencetusnya. Use for: definisi SRP/OCP/LSP/ISP/DIP satu kalimat (lesson 0008).
+- [Robert C. Martin: The Single Responsibility Principle](https://blog.cleancoder.com/uncle-bob/2014/05/08/SingleReponsibilityPrinciple.html) dan [The Open Closed Principle](https://blog.cleancoder.com/uncle-bob/2014/05/12/TheOpenClosedPrinciple.html)
+  "Reason to change" = orang/peran; OCP lewat arsitektur plugin. Use for: menjelaskan SRP dan OCP lebih dalam.
 
 ## Wisdom (Communities)
 
@@ -84,3 +104,23 @@
 
 ## Gaps
 - Belum ada sumber bank-soal interview .NET/Angular yang benar-benar high-trust; pertanyaan latihan disusun dari dokumentasi resmi.
+
+## Knowledge (tambahan lesson 0014)
+
+- [React docs: Passing Data Deeply with Context](https://react.dev/learn/passing-data-deeply-with-context) dan [`lazy`](https://react.dev/reference/react/lazy)
+  Dokumentasi resmi React. Use for: padanan React untuk DI hierarkis Angular (Provider terdekat) dan lazy loading route (lesson 0014).
+- [Sumber kode Angular v16 `packages/router/src/models.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/router/src/models.ts)
+  JSDoc yang menjadi halaman API v16.angular.io/api/router/*, termasuk tanda `@deprecated` class-based guard. Use for: mengutip status deprecated `CanActivate` di v16.
+
+## Knowledge (tambahan lesson 0016)
+
+- [Angular v16: Introduction to forms](https://v16.angular.io/guide/forms-overview) dan [Reactive forms](https://v16.angular.io/guide/reactive-forms)
+  Tabel "Key differences" reactive vs template-driven (setup, data model, data flow, validasi, testing), `FormBuilder`, `valueChanges`. Use for: memilih pendekatan form (lesson 0016).
+- [Angular v16: HTTP - Intercept requests and responses](https://v16.angular.io/guide/http-intercept-requests-and-responses) dan [Interceptor use-cases](https://v16.angular.io/guide/http-interceptor-use-cases)
+  `HttpInterceptor`, `next.handle()`, `HTTP_INTERCEPTORS` + `multi: true`, urutan interceptor, immutability + `clone`/`setHeaders`. Use for: HTTP Interceptor (lesson 0016, 0017).
+- [Angular v16: Handle request errors](https://v16.angular.io/guide/http-handle-request-errors) dan [Setup for server communication](https://v16.angular.io/guide/http-setup-server-communication)
+  `HttpErrorResponse` (status 0 untuk error jaringan), `retry`, `HttpClientModule`. Use for: HttpClient dan error handling di Angular.
+- [Sumber kode Angular v16 `packages/common/http/src/interceptor.ts` (branch 16.2.x)](https://github.com/angular/angular/blob/16.2.x/packages/common/http/src/interceptor.ts)
+  JSDoc halaman API `HttpInterceptorFn` (interceptor fungsi, injection context). Use for: menyebut interceptor fungsi sebagai alternatif standalone di v16.
+- [Axios: Interceptors](https://axios-http.com/docs/interceptors)
+  Dokumentasi resmi request/response interceptor Axios. Use for: padanan React untuk HTTP Interceptor.

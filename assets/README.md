@@ -48,6 +48,7 @@ Tulis soal sekali di `questions/NNNN.js`, lalu render di lesson (urutan sesuai r
 ```html
 <div class="quiz" data-bank-lesson="0004"></div>
 <div class="quiz" data-bank-lesson="0004" data-bank-topic="di-captive" data-stack></div> <!-- filter topik, opsi vertikal -->
+<div class="quiz" data-bank-lesson="0015" data-bank-topic="rx-subject,rx-unsubscribe"></div> <!-- beberapa topik, dipisah koma -->
 
 <script src="../assets/bank.js"></script>
 <script src="../assets/questions/0004.js"></script>
