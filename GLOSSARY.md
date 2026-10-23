@@ -194,3 +194,25 @@ _Avoid_: Scope leak, lifetime mismatch
 Pemeriksaan DI container (default aktif di Development, diatur lewat `ValidateScopes`) yang melempar exception bila service Scoped di-inject ke Singleton atau di-resolve dari root provider.
 Padanan Node: tidak ada.
 _Avoid_: DI check, lifetime validation
+
+## RxJS (Angular 16)
+
+**Subject**:
+Observable yang sekaligus Observer: bisa di-`subscribe` dan diberi nilai lewat `next()`, lalu meneruskannya ke banyak subscriber.
+Padanan Node: `EventEmitter`.
+_Avoid_: Event bus, channel
+
+**BehaviorSubject**:
+Subject yang wajib punya nilai awal, menyimpan nilai terakhir, dan langsung mengirimkannya ke subscriber baru; bentuk default state bersama di Angular Service.
+Padanan React: state di Context Provider / store Zustand.
+_Avoid_: Store (kecuali memang NgRx), state subject
+
+**Operator**:
+Fungsi RxJS yang dirangkai di dalam `pipe()` untuk mengubah aliran Observable (`map`, `switchMap`, `catchError`, `debounceTime`).
+Padanan Node: method array (`map`, `filter`) atau `.then()` berantai, tapi untuk banyak nilai.
+_Avoid_: Pipe (itu istilah template Angular, mis. `async` pipe)
+
+**Async Pipe**:
+Pipe template `| async` yang subscribe ke Observable, menampilkan nilai terakhirnya, dan unsubscribe otomatis saat component dihancurkan.
+Padanan React: `useEffect` + `useState` + cleanup yang ditulis otomatis.
+_Avoid_: Auto-subscribe

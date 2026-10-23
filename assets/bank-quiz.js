@@ -3,15 +3,16 @@
  * dalam urutan registrasi, memakai markup quiz.js. Dengan begitu soal lesson ditulis sekali
  * (di assets/questions/NNNN.js) dan dipakai ulang oleh review.
  *
- * Atribut opsional: data-bank-topic="layer" (filter topik), data-stack (opsi ditumpuk vertikal).
+ * Atribut opsional: data-bank-topic="layer" (filter topik; boleh daftar dipisah koma, mis. "a,b"),
+ * data-stack (opsi ditumpuk vertikal).
  * Urutan script: bank.js -> questions/NNNN.js -> bank-quiz.js -> quiz.js
  */
 (function () {
   const QB = window.QuestionBank;
   document.querySelectorAll(".quiz[data-bank-lesson]").forEach(el => {
-    const topic = el.dataset.bankTopic;
+    const topics = (el.dataset.bankTopic || "").split(",").map(t => t.trim()).filter(Boolean);
     const qs = QB.select({ lessons: [el.dataset.bankLesson] })
-      .filter(q => q.type === "mc" && (!topic || q.topic === topic));
+      .filter(q => q.type === "mc" && (!topics.length || topics.includes(q.topic)));
     el.innerHTML = qs.map(q => `
       <div class="q" data-answer="${q.answer}">
         <p class="prompt">${q.prompt}</p>

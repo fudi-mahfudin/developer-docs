@@ -62,6 +62,10 @@
   DbContext = satu unit-of-work, `AddDbContext` Scoped, tidak thread-safe, `AddDbContextFactory`. Use for: kenapa DbContext Scoped (lesson 0004, 0006).
 - [NestJS: Injection scopes](https://docs.nestjs.com/fundamentals/injection-scopes)
   DEFAULT/REQUEST/TRANSIENT dan "scope bubbles up". Use for: padanan Node untuk Service Lifetime.
+- [Sumber markdown dokumentasi RxJS (repo ReactiveX/rxjs, branch 7.x, `docs_app/content/guide/`)](https://github.com/ReactiveX/rxjs/tree/7.x/docs_app/content/guide) dan [JSDoc operator di `src/internal/operators/`](https://github.com/ReactiveX/rxjs/tree/7.x/src/internal/operators)
+  rxjs.dev adalah SPA (kosong saat di-fetch agent); isi panduan dan halaman API operator berasal dari sini. Use for: mengutip Observable, Subject, `switchMap`/`mergeMap`/`concatMap`/`exhaustMap`, `forkJoin`, `catchError`, `takeUntil` secara verbatim, lalu tautkan ke rxjs.dev.
+- [Angular v16: Observables compared to other techniques](https://v16.angular.io/guide/comparing-observables) dan [AsyncPipe](https://v16.angular.io/api/common/AsyncPipe)
+  Tabel Observable vs Promise versi Angular dan perilaku `async` pipe (unsubscribe otomatis). Use for: lesson 0015, pertanyaan Observable vs Promise dan memory leak.
 
 ## Wisdom (Communities)
 

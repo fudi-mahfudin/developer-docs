@@ -11,3 +11,4 @@
 - Lesson 0003 (async/Task + LINQ) dibangun dengan soal di `assets/questions/0003.js` (topik `csharp-async`, `linq-deferred`, `linq-queryable`) dan reference `reference/async-dan-linq.html`.
 - Lesson 0004 (Service Lifetime) dibangun: soal di `assets/questions/0004.js` (topik `di-lifetime`, `di-dbcontext`, `di-captive`), reference `reference/service-lifetime.html`. Istilah baru di GLOSSARY: Captive Dependency, Scope Validation.
 - v16.angular.io adalah SPA (kosong saat di-fetch agent). Ambil kutipan dari markdown sumbernya di repo angular/angular branch `16.2.x`, folder `aio/content/guide/`, lalu tautkan ke halaman v16.angular.io yang sesuai.
+- rxjs.dev juga SPA (kosong saat di-fetch). Kutip dari markdown `docs_app/content/guide/` dan JSDoc `src/internal/` di repo ReactiveX/rxjs branch `7.x`, lalu tautkan ke rxjs.dev.
