@@ -172,6 +172,12 @@
   Definisi, parameter memperlakukan input sebagai literal, SP pun rentan bila memakai input tanpa parameter. Use for: pertanyaan keamanan query (lesson 0020).
 - [Dapper README (DapperLib/Dapper)](https://github.com/DapperLib/Dapper)
   `Query<T>`, `Execute`, parameter objek anonim dan `DynamicParameters`, SP dengan `CommandType.StoredProcedure`, parameter Output/ReturnValue, `DbString` (varchar vs nvarchar). Use for: memanggil SP dari Dapper (lesson 0020).
+- [Microsoft Learn: Index architecture and design guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide) dan [Clustered and nonclustered indexes described](https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described)
+  Analogi buku, B+ tree, clustered vs non-clustered, heap, properti clustered key ideal, urutan kolom composite (leftmost prefix), covering index dan INCLUDE, biaya tulis, overindexing, selektivitas rendah, tabel kecil. Use for: semua pertanyaan index (lesson 0022).
+- [Microsoft Learn: CREATE INDEX (Transact-SQL)](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-index-transact-sql) dan [Showplan logical and physical operators reference](https://learn.microsoft.com/en-us/sql/relational-databases/showplan-logical-and-physical-operators-reference)
+  Sintaks CLUSTERED/NONCLUSTERED, INCLUDE, DROP INDEX; operator Index Seek, Clustered Index Scan, Key Lookup, RID Lookup. Use for: membuat index dan membaca plan (lesson 0022, dasar lesson 0023).
+- [Microsoft Learn: SET STATISTICS IO](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-io-transact-sql), [SET STATISTICS TIME](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-time-transact-sql), dan [Pages and extents architecture guide](https://learn.microsoft.com/en-us/sql/relational-databases/pages-and-extents-architecture-guide)
+  Logical reads vs physical reads, scan count, waktu parse/compile/execute, ukuran page 8 KiB. Use for: mengukur sebelum/sesudah index (lesson 0022).
 
 ## Wisdom (Communities)
 
