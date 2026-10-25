@@ -394,3 +394,36 @@ _Avoid_: Normalization form (cukup sebut 1NF/2NF/3NF)
 Tabel virtual yang isinya didefinisikan oleh query; datanya tetap di tabel asal kecuali indexed view. Dipakai untuk menyederhanakan query dan membatasi akses. ORDER BY di definisinya tidak menjamin urutan (lesson 0019).
 Padanan Node: mirip fungsi query yang dipakai ulang, tapi definisinya tinggal di database.
 _Avoid_: Virtual table (pakai "view"), materialized view (itu indexed view di SQL Server)
+
+**Stored Procedure (SP)**:
+Kumpulan statement T-SQL bernama yang disimpan di database dan dijalankan dengan `EXEC`. Menerima parameter input (boleh ber-default), mengembalikan result set, parameter `OUTPUT`, dan status `RETURN` (int). Boleh mengubah data dan memakai transaction serta `TRY/CATCH`. Diberi awalan `usp_`, bukan `sp_` (lesson 0020).
+Padanan Node: fungsi query yang tinggal di database; di Node dipanggil lewat `pg`/`mssql` (`request.execute('usp_X')`), jarang dipakai di proyek Prisma.
+_Avoid_: Stored function, SPROC (cukup "SP"), prosedur
+
+**OUTPUT Parameter**:
+Parameter SP yang nilainya dikirim balik ke pemanggil. Kata `OUTPUT` wajib ditulis di definisi **dan** di `EXEC`; kalau lupa di `EXEC`, tidak error tapi nilainya tidak kembali. Dari Dapper dibaca lewat `DynamicParameters` dengan `ParameterDirection.Output` (lesson 0020).
+_Avoid_: Return value (itu `RETURN`, hanya int status), out parameter (istilah C#)
+
+**THROW**:
+Statement T-SQL untuk melempar error (nomor ≥ 50000, severity 16) atau, tanpa parameter di dalam CATCH, melempar ulang error yang ditangkap. Pengganti `RAISERROR` untuk kode baru. Error yang ditangkap CATCH tidak sampai ke aplikasi kecuali di-`THROW;` ulang (lesson 0020).
+Padanan Node: `throw new Error(...)` dan `catch (e) { ...; throw e; }`.
+_Avoid_: RAISERROR (lama), PRINT (bukan error)
+
+**User-defined Function (UDF)**:
+Function buatan sendiri di T-SQL yang dipakai di dalam query: **scalar function** mengembalikan satu nilai (ekspresi di SELECT/WHERE), **table-valued function (TVF)** mengembalikan tabel (di FROM, bisa di-JOIN; versi inline berisi satu SELECT). Tidak boleh mengubah data dan tidak mendukung `TRY/CATCH`. Beda utama dengan SP: function dipakai di query, SP di-`EXEC` (lesson 0020).
+_Avoid_: Stored function, method
+
+**Dapper**:
+Micro-ORM: extension method di `DbConnection` (`Query<T>`, `Execute`) yang menjalankan SQL tulisan sendiri dan memetakan hasilnya ke objek, tanpa change tracking. Memanggil SP dengan `commandType: CommandType.StoredProcedure` (lesson 0020).
+Padanan Node: `pg`/`mssql` atau knex `raw` dengan mapping manual.
+_Avoid_: ORM penuh (itu EF Core)
+
+**Raw SQL (EF Core)**:
+Menjalankan SQL sendiri lewat EF Core: `FromSql` (query yang mengembalikan entity, hanya di `DbSet`), `ExecuteSql` (perintah tanpa result set, mengembalikan jumlah baris), `SqlQuery<T>` (scalar/DTO). Versi `FormattableString` aman karena nilai interpolasi menjadi `DbParameter`; versi `...Raw` dengan string interpolation rentan SQL injection (lesson 0020).
+Padanan Node: Prisma `$queryRaw`/`$executeRaw` (tagged template, aman) vs `$queryRawUnsafe` (rawan).
+_Avoid_: Native query, plain SQL
+
+**SQL Injection**:
+Serangan dengan menyisipkan kode ke string yang kemudian di-parse dan dijalankan Database Engine, mis. input `x' OR 1 = 1 --`. Dicegah dengan parameter, karena input diperlakukan sebagai nilai literal; SP pun rentan kalau menggabungkan string ke dynamic SQL (pakai `sp_executesql` dengan parameter) (lesson 0020).
+Padanan Node: sama; parameterized query `pg` (`$1`) vs template string ke `query()`.
+_Avoid_: SQLi (singkatan boleh setelah disebut lengkap)
