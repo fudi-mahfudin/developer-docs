@@ -360,3 +360,37 @@ _Avoid_: Transaction (lebih sempit), batch save
 ## Database (SQL Server)
 
 <!-- Diisi oleh ticket lesson 0019–0024 (spec .scratch/materi-database). -->
+
+**Outer Join**:
+JOIN yang tetap mengembalikan baris tanpa pasangan dari satu sisi, dengan kolom sisi lain diisi NULL: `LEFT JOIN` (semua baris kiri), `RIGHT JOIN` (semua baris kanan), `FULL JOIN` (keduanya). Kebalikannya `INNER JOIN`, yang hanya mengembalikan pasangan cocok (lesson 0019).
+Padanan Node: sama persis di SQL `pg`/knex (`.leftJoin`); di Prisma, relasi opsional dari `include`.
+_Avoid_: Join luar, optional join
+
+**HAVING**:
+Klausa yang menyaring grup setelah `GROUP BY` dan agregasi; `WHERE` menyaring baris sebelum grouping (lesson 0019).
+Padanan Node: `having` di `prisma.groupBy`, `.having()`/`.havingRaw()` di knex.
+_Avoid_: Filter agregat (bukan istilah T-SQL)
+
+**CTE (Common Table Expression)**:
+Result set sementara bernama yang ditulis dengan `WITH nama AS (...)` dan hanya berlaku dalam satu statement. Untuk keterbacaan dan query rekursif, bukan cache: hasilnya tidak di-materialize (lesson 0019).
+Padanan Node: sama di SQL `pg`/knex (`.with()`); mirip memberi nama variabel pada langkah perantara.
+_Avoid_: Temp table (itu objek lain), WITH table
+
+**Window Function**:
+Fungsi yang menghitung nilai per baris di atas sekelompok baris lewat `OVER (PARTITION BY ... ORDER BY ...)` tanpa menggabungkan barisnya, mis. `ROW_NUMBER`, `RANK`, `DENSE_RANK`. Dihitung di tahap SELECT, jadi difilter di query luar (CTE). Dasar soal top-N per grup (lesson 0019).
+Padanan Node: tidak ada API Prisma; ditulis sebagai raw SQL (`$queryRaw`, `pg`).
+_Avoid_: Analytic function (istilah Oracle), ranking query
+
+**Constraint**:
+Aturan yang ditegakkan Database Engine untuk setiap INSERT/UPDATE dari klien mana pun: PRIMARY KEY (identitas baris, default menjadi clustered index), FOREIGN KEY (relasi harus ada, tidak otomatis ber-index), UNIQUE (nilai unik, dijaga index non-clustered), CHECK (domain nilai, mis. Price > 0). Aturan Product dijaga di Service **dan** di constraint (lesson 0019).
+Padanan Node: `@id`, `@unique`, `@relation` di schema Prisma menjadi constraint yang sama; Zod/class-validator hanya validasi di aplikasi.
+_Avoid_: Validasi database (terlalu kabur), rule
+
+**Normalisasi**:
+Menata tabel untuk menghilangkan redundansi dan dependensi yang tidak konsisten, mis. nama Category disimpan sekali di tabel Category dan Product menyimpan `CategoryId`. Bentuk ke-3 (3NF) cukup untuk kebanyakan aplikasi; denormalisasi menukar redundansi dengan JOIN yang lebih sedikit (lesson 0019).
+_Avoid_: Normalization form (cukup sebut 1NF/2NF/3NF)
+
+**View**:
+Tabel virtual yang isinya didefinisikan oleh query; datanya tetap di tabel asal kecuali indexed view. Dipakai untuk menyederhanakan query dan membatasi akses. ORDER BY di definisinya tidak menjamin urutan (lesson 0019).
+Padanan Node: mirip fungsi query yang dipakai ulang, tapi definisinya tinggal di database.
+_Avoid_: Virtual table (pakai "view"), materialized view (itu indexed view di SQL Server)

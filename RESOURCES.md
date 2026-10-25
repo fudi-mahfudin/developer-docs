@@ -146,6 +146,20 @@
   Package `cors` dan opsi `origin`. Use for: padanan Node untuk CORS di ASP.NET Core.
 - [MIT CAPD: The STAR method for behavioral interviews](https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/)
   Porsi S 20% / T 10% / A 60% / R 10%, pakai "saya" bukan "kami", hasil terukur. Use for: memoles 4 cerita STAR (lesson 0018).
+- [Microsoft Learn: FROM clause plus JOIN, APPLY, PIVOT (Transact-SQL)](https://learn.microsoft.com/en-us/sql/t-sql/queries/from-transact-sql) dan [Joins (SQL Server)](https://learn.microsoft.com/en-us/sql/relational-databases/performance/joins)
+  Definisi INNER/LEFT/RIGHT/FULL/CROSS JOIN, predikat ON vs WHERE di outer join, NULL tidak saling cocok, denormalisasi, physical join. Use for: pertanyaan JOIN (lesson 0019).
+- [Microsoft Learn: SELECT - GROUP BY](https://learn.microsoft.com/en-us/sql/t-sql/queries/select-group-by-transact-sql), [SELECT - HAVING](https://learn.microsoft.com/en-us/sql/t-sql/queries/select-having-transact-sql), dan [SELECT: logical processing order](https://learn.microsoft.com/en-us/sql/t-sql/queries/select-transact-sql#logical-processing-order-of-the-select-statement)
+  WHERE sebelum grouping, HAVING untuk grup, urutan FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY. Use for: WHERE vs HAVING dan alias (lesson 0019).
+- [Microsoft Learn: Subqueries (SQL Server)](https://learn.microsoft.com/en-us/sql/relational-databases/performance/subqueries) dan [WITH common_table_expression](https://learn.microsoft.com/en-us/sql/t-sql/queries/with-common-table-expression-transact-sql)
+  Performa subquery umumnya setara dengan versi tanpa subquery, correlated subquery, NOT IN vs NULL; CTE tidak di-materialize, aturan titik koma, CTE rekursif. Use for: subquery vs CTE (lesson 0019).
+- [Microsoft Learn: ROW_NUMBER (Transact-SQL)](https://learn.microsoft.com/en-us/sql/t-sql/functions/row-number-transact-sql)
+  PARTITION BY, ORDER BY wajib, ROW_NUMBER vs RANK, nondeterministik bila ORDER BY tidak unik, contoh CTE + filter. Use for: top-N per grup (lesson 0019).
+- [Microsoft Learn: Primary and foreign key constraints](https://learn.microsoft.com/en-us/sql/relational-databases/tables/primary-and-foreign-key-constraints) dan [Unique constraints and check constraints](https://learn.microsoft.com/en-us/sql/relational-databases/tables/unique-constraints-and-check-constraints)
+  PK = unique index (clustered bila belum ada), FK tidak otomatis ber-index, cascading action, UNIQUE = index non-clustered, CHECK dan jebakan NULL. Use for: constraint dan kenapa aturan juga di database (lesson 0019, dasar lesson 0022).
+- [Microsoft Learn (arsip): Description of the database normalization basics](https://learn.microsoft.com/en-us/previous-versions/troubleshoot/microsoft-365/microsoft-365-apps/access/database-normalization-description)
+  1NF/2NF/3NF dengan bahasa sederhana; ditulis untuk Access tapi konsepnya umum. Use for: selipan normalisasi (lesson 0019).
+- [Microsoft Learn: Views](https://learn.microsoft.com/en-us/sql/relational-databases/views/views) dan [CREATE VIEW](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-view-transact-sql)
+  View sebagai tabel virtual, indexed view, ORDER BY di view tidak menjamin urutan, SCHEMABINDING. Use for: selipan view (lesson 0019).
 
 ## Wisdom (Communities)
 
