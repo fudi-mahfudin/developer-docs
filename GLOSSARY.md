@@ -427,6 +427,44 @@ _Avoid_: Native query, plain SQL
 Serangan dengan menyisipkan kode ke string yang kemudian di-parse dan dijalankan Database Engine, mis. input `x' OR 1 = 1 --`. Dicegah dengan parameter, karena input diperlakukan sebagai nilai literal; SP pun rentan kalau menggabungkan string ke dynamic SQL (pakai `sp_executesql` dengan parameter) (lesson 0020).
 Padanan Node: sama; parameterized query `pg` (`$1`) vs template string ke `query()`.
 _Avoid_: SQLi (singkatan boleh setelah disebut lengkap)
+
+**Transaction (ACID)**:
+Unit kerja yang berhasil atau gagal utuh, dengan empat jaminan: Atomicity (semua atau tidak sama sekali), Consistency (aturan/constraint tetap terpenuhi), Isolation (transaction bersamaan tidak saling mengganggu), Durability (yang di-commit bertahan walau crash). Default T-SQL autocommit: tiap statement satu transaction; beberapa statement dibungkus `BEGIN TRANSACTION` … `COMMIT`/`ROLLBACK`. Di EF Core, satu `SaveChanges` sudah satu transaction; beberapa SaveChanges memakai `Database.BeginTransactionAsync()` (lesson 0021).
+Padanan Node: `prisma.$transaction(...)`, atau `BEGIN`/`COMMIT` lewat `pg`.
+_Avoid_: Batch (batch adalah kumpulan statement yang dikirim sekaligus, bukan transaction)
+
+**XACT_ABORT**:
+Opsi sesi T-SQL; bila `ON`, error run-time apa pun me-rollback seluruh transaction. Default `OFF`: hanya statement yang gagal yang di-rollback, sehingga COMMIT bisa menyimpan setengah transaction. Dipasangkan dengan `TRY/CATCH`, `XACT_STATE()` (1 aktif, -1 uncommittable, 0 tidak ada), dan `THROW;` (lesson 0021).
+_Avoid_: Auto rollback (bukan nama fiturnya)
+
+**Isolation Level**:
+Tingkat perlindungan transaction dari perubahan transaction lain saat membaca: READ UNCOMMITTED, READ COMMITTED (default SQL Server), REPEATABLE READ, SERIALIZABLE, dan SNAPSHOT. Makin tinggi, makin sedikit anomali (dirty read, non-repeatable read, phantom) tapi makin banyak blocking. Tidak mengubah X lock untuk menulis (lesson 0021).
+Padanan Node: opsi `isolationLevel` di `prisma.$transaction`, atau `SET TRANSACTION ISOLATION LEVEL` lewat `pg`.
+_Avoid_: Transaction level, lock level
+
+**Dirty Read / Non-repeatable Read / Phantom**:
+Tiga anomali konkurensi. Dirty read: membaca data yang belum di-commit (dicegah READ COMMITTED). Non-repeatable read: baris yang sama dibaca dua kali dengan nilai berbeda (dicegah REPEATABLE READ). Phantom: query yang sama mengembalikan himpunan baris berbeda karena INSERT/DELETE (dicegah SERIALIZABLE atau SNAPSHOT). Lost update adalah anomali keempat: update terakhir menimpa update lain yang berbasis nilai lama (lesson 0021).
+_Avoid_: Phantom read dan phantom dipakai bergantian, keduanya boleh; jangan sebut dirty read untuk data yang sudah di-commit
+
+**Row Versioning (RCSI, SNAPSHOT)**:
+Pembaca membaca versi baris terakhir yang di-commit dari version store (tempdb) tanpa shared lock, sehingga pembaca tidak memblok penulis. RCSI (`READ_COMMITTED_SNAPSHOT ON`) berlaku per statement dan transparan bagi aplikasi; SNAPSHOT (`ALLOW_SNAPSHOT_ISOLATION ON` + `SET TRANSACTION ISOLATION LEVEL SNAPSHOT`) berlaku per transaction dan mendeteksi update conflict (Msg 3960). Keduanya OFF default di SQL Server 2022, RCSI ON di Azure SQL Database (lesson 0021).
+Padanan Node: mirip MVCC PostgreSQL, yang di sana selalu aktif.
+_Avoid_: NOLOCK (itu READ UNCOMMITTED, membaca data belum di-commit)
+
+**Lock**:
+Mekanisme Database Engine untuk menyinkronkan akses ke data yang sama. Mode utama: Shared (S) untuk membaca, Update (U) untuk mencari baris yang akan diubah, Exclusive (X) untuk mengubah dan ditahan sampai transaction selesai, Intent (IS/IX) di level page/tabel. Granularitas KEY/RID, PAGE, OBJECT; escalation ke tabel bila satu statement mengambil ≥ 5.000 lock. Hint `UPDLOCK` mengambil U lock sejak membaca (lesson 0021).
+Padanan Node: `SELECT ... FOR UPDATE` di PostgreSQL ≈ `WITH (UPDLOCK)`.
+_Avoid_: Mutex/`lock` C# (hanya dalam satu proses aplikasi)
+
+**Blocking**:
+Satu sesi menunggu lock yang dipegang sesi lain; selesai sendiri begitu lock dilepas (COMMIT/ROLLBACK). Tanpa `SET LOCK_TIMEOUT`, engine menunggu tanpa batas. Dilihat lewat `sys.dm_exec_requests.blocking_session_id` dan `sys.dm_tran_locks` (lesson 0021).
+_Avoid_: Deadlock (blocking bukan siklus), hang
+
+**Deadlock**:
+Dua atau lebih transaction saling menunggu lock yang dipegang yang lain (siklus), mis. A pegang Product 1 minta Product 2, B sebaliknya. Deadlock monitor (default tiap 5 detik) memilih victim, me-rollback transaction-nya, dan mengirim error 1205. Dicegah dengan urutan akses sama, transaction pendek, isolation level serendah yang cukup, RCSI, atau `UPDLOCK`; aplikasi tetap harus retry 1205 (lesson 0021).
+Padanan Node: konsep sama di PostgreSQL (error `40P01`); di JS mirip dua `await` yang saling menunggu promise satu sama lain.
+_Avoid_: Blocking lama, timeout (itu hal lain)
+
 **Clustered Index**:
 Index yang menentukan urutan penyimpanan baris data itu sendiri: leaf level-nya adalah data pages tabel, jadi hanya ada satu per tabel. PRIMARY KEY secara default menjadi clustered index; key idealnya sempit, unik, dan selalu naik (`int IDENTITY`). Tabel tanpa clustered index disebut heap (lesson 0022).
 Padanan Node: di MySQL InnoDB primary key berperan sama; PostgreSQL tidak punya clustered index yang dijaga terus (`CLUSTER` hanya mengurutkan sekali).
