@@ -10,7 +10,7 @@
 <main>
 <div class="kicker">Reference · Pagi hari interview · cetak satu halaman</div>
 <h1>Ulang sebelum interview</h1>
-<p class="subtitle">Daftar akhir dari <a href="../lessons/0018-star-mock-interview.html">Lesson 0018</a>. Uji diri dulu dengan suara keras, baru buka reference kalau macet.</p>
+<p class="subtitle">Daftar akhir dari <a href="../lessons/0018-star-mock-interview.html">Lesson 0018</a> dan <a href="../lessons/0024-review-database.html">review database 0024</a>. Uji diri dulu dengan suara keras, baru buka reference kalau macet.</p>
 
 <h2>1 · Topik lemah dari mock 0018</h2>
 <!--
@@ -25,6 +25,12 @@
 <!-- Diisi agent dari baris "Topik lemah 0007: …" / "Topik lemah 0012: …" di NOTES. Hapus topik yang lulus di mock 0018. -->
 <ul>
   <li><em>Belum ada hasil review 0007 dan 0012.</em></li>
+</ul>
+
+<h2>2b · Topik lemah dari review database 0024</h2>
+<!-- Diisi agent setelah user menempelkan "Hasil Review 0024 (database) (seed …)": satu <li> per topik LEMAH, ditautkan ke reference di tabel bagian 3. -->
+<ul>
+  <li><em>Belum ada hasil review 0024.</em> Sebelum ada, ulang semua baris "Database" di bawah.</li>
 </ul>
 
 <h2>3 · Semua topik: pertanyaan uji diri → reference</h2>
@@ -46,6 +52,32 @@
     <tr><td>0015</td><td>Observable vs Promise; kapan <code>switchMap</code>; cara mencegah memory leak subscription.</td><td><a href="rxjs.html">RxJS</a></td></tr>
     <tr><td>0016</td><td>Reactive vs template-driven forms; apa yang dikerjakan HTTP Interceptor?</td><td><a href="forms-http-interceptor.html">Forms, HttpClient, Interceptor</a></td></tr>
     <tr><td>0017</td><td>Jelaskan alur login aplikasi Anda: JWT, authentication vs authorization, CORS, error handling.</td><td><a href="auth-cors-error.html">Auth, CORS, error</a></td></tr>
+    <tr><td>0019</td><td>★ Tulis query 3 Product termahal per Category (<code>ROW_NUMBER</code>). WHERE vs HAVING? Kenapa aturan Product juga dijaga constraint?</td><td><a href="sql-dasar.html">SQL dasar</a></td></tr>
+    <tr><td>0020</td><td>★ Kapan pakai Stored Procedure dibanding query EF Core? Panggil SP dari EF Core/Dapper tanpa SQL injection; tulis SP dengan <code>TRY/CATCH</code> + <code>THROW</code>.</td><td><a href="stored-procedure.html">Stored Procedure</a></td></tr>
+    <tr><td>0021</td><td>★ Lima isolation level dan anomali yang dicegah masing-masing; default SQL Server 2022 (RCSI OFF). Apa itu deadlock, bedanya dengan blocking, cara mencegah dan menangani 1205?</td><td><a href="transaction-locking.html">Transaction &amp; locking</a></td></tr>
+    <tr><td>0022</td><td>★ Clustered vs non-clustered (analogi buku). Query Product per Category lambat: index apa (urutan kolom, <code>INCLUDE</code>), cara membuktikan, kapan index merugikan?</td><td><a href="sql-index.html">Index</a></td></tr>
+    <tr><td>0023</td><td>★ Query lambat dari EF Core: bagaimana menganalisis (log/<code>ToQueryString</code> → actual plan + logical reads → SARGable, index, parameter sniffing, keyset pagination → ukur lagi)?</td><td><a href="sql-optimasi-query.html">Optimasi query</a></td></tr>
+  </tbody>
+</table>
+
+<h2>3b · Ringkasan database: kerangka jawaban 30 detik</h2>
+<p class="note">Tutup dulu kolom kanan dengan kertas, jawab dari kolom kiri. Kerangka ini ringkasan lesson 0019–0023 dan 0006; detail dan sumber resmi ada di reference-nya.</p>
+<table>
+  <thead><tr><th>Pertanyaan interview</th><th>Poin yang harus terucap</th></tr></thead>
+  <tbody>
+    <tr><td>Clustered vs non-clustered index?</td><td>Clustered = data tabel itu sendiri, terurut menurut key, satu per tabel (default PK). Non-clustered = struktur terpisah berisi key + penunjuk ke baris (clustered key), bisa banyak. Analogi: isi buku terurut vs indeks di belakang buku.</td></tr>
+    <tr><td>Query per Category lambat, index apa?</td><td>Kolom filter kesetaraan dulu, lalu kolom urut/rentang: <code>(CategoryId, Price DESC)</code>; kolom SELECT lain di <code>INCLUDE</code> supaya covering (tanpa Key Lookup). Buktikan dengan actual plan (scan → seek) dan logical reads turun. Index memperlambat INSERT/UPDATE dan makan storage, jadi jangan index kolom berselektivitas rendah.</td></tr>
+    <tr><td>Membaca execution plan?</td><td>Estimated (tanpa eksekusi) vs actual (dengan jumlah baris sebenarnya). Cari: Scan vs Seek, Key Lookup, estimasi vs aktual baris yang jauh berbeda, operator paling mahal. Ukur dengan <code>SET STATISTICS IO, TIME ON</code>.</td></tr>
+    <tr><td>SARGable?</td><td>Jangan bungkus kolom ber-index dengan fungsi: <code>YEAR(OrderDate) = 2024</code> → rentang <code>&gt;= '2024-01-01' AND &lt; '2025-01-01'</code>; <code>LEFT(Name,3)='Abc'</code> → <code>LIKE 'Abc%'</code>. Waspadai konversi implisit (nvarchar vs varchar).</td></tr>
+    <tr><td>Parameter sniffing?</td><td>Plan dikompilasi untuk nilai parameter pertama lalu dipakai ulang untuk nilai lain yang distribusinya beda. Obat: <code>OPTION (RECOMPILE)</code>, <code>OPTIMIZE FOR</code>, index yang lebih baik; SQL Server 2022 punya PSP optimization (compat 160).</td></tr>
+    <tr><td>Pagination data besar?</td><td><code>OFFSET/FETCH</code> tetap membaca baris yang dilewati, makin lambat di halaman jauh. Keyset: <code>TOP (20) … WHERE Id &gt; @lastId ORDER BY Id</code> (dua kunci: <code>Price &gt; @lastPrice OR (Price = @lastPrice AND Id &gt; @lastId)</code>) + index yang cocok; urutan harus unik; tidak bisa lompat ke halaman acak.</td></tr>
+    <tr><td>Query lambat dari EF Core?</td><td>Lihat SQL-nya (<code>LogTo</code>/<code>ToQueryString</code>, <code>TagWith</code>) → jalankan di SSMS dengan actual plan → perbaiki (index, SARGable, proyeksi <code>Select</code>, N+1, <code>AsNoTracking</code>) → ukur lagi.</td></tr>
+    <tr><td>N+1 dan <code>AsNoTracking</code>? (0006)</td><td>N+1 = 1 query daftar + 1 query per baris (lazy loading di loop). Obat: <code>Include</code> (eager loading) atau proyeksi <code>Select</code>. <code>AsNoTracking</code> untuk query baca saja: tanpa snapshot Change Tracker, lebih hemat; jangan untuk entity yang akan di-update lewat <code>SaveChanges</code>.</td></tr>
+    <tr><td>Isolation level?</td><td>READ UNCOMMITTED (dirty read), READ COMMITTED (default; RCSI OFF di SQL Server 2022, pembaca menunggu writer), REPEATABLE READ (cegah non-repeatable read), SERIALIZABLE (cegah phantom, range lock), SNAPSHOT (row versioning, pembaca tidak menunggu, update konflik gagal 3960). Makin tinggi = makin aman, makin banyak blocking.</td></tr>
+    <tr><td>Deadlock vs blocking?</td><td>Blocking: satu menunggu yang lain, selesai sendiri. Deadlock: saling menunggu melingkar; SQL Server memilih victim (error 1205). Cegah: transaction pendek, urutan akses tabel/baris sama, index yang tepat, <code>UPDLOCK</code> saat baca-lalu-update. Tangani: retry di aplikasi.</td></tr>
+    <tr><td>Transaction di T-SQL dan EF Core?</td><td>ACID. T-SQL: <code>SET XACT_ABORT ON</code> + <code>BEGIN TRAN</code> di dalam <code>TRY</code>, <code>CATCH</code> → <code>IF XACT_STATE() &lt;&gt; 0 ROLLBACK; THROW;</code>. EF Core: satu <code>SaveChanges</code> sudah satu transaction; beberapa langkah → <code>BeginTransactionAsync</code> (dibungkus execution strategy bila retry aktif); lost update → optimistic concurrency (<code>rowversion</code>).</td></tr>
+    <tr><td>Kapan Stored Procedure?</td><td>Logika berat data/banyak baris, kontrak untuk DBA, izin EXECUTE saja. Kelemahan: logika tersebar, sulit di-test dan di-version. Default tetap query EF Core. Panggil dengan parameter (<code>FromSql</code> interpolated, Dapper <code>CommandType.StoredProcedure</code>), jangan concat string (SQL injection).</td></tr>
+    <tr><td>Top-N per grup, WHERE vs HAVING?</td><td><code>ROW_NUMBER() OVER (PARTITION BY CategoryId ORDER BY Price DESC)</code> di CTE, lalu <code>WHERE rn &lt;= 3</code>. WHERE memfilter baris sebelum GROUP BY, HAVING memfilter grup sesudahnya.</td></tr>
   </tbody>
 </table>
 
@@ -58,7 +90,8 @@
 
 <h2>5 · Pagi hari interview (±30 menit)</h2>
 <ol>
-  <li>Bagian 1 dan 2: uji diri setiap topik lemah dengan suara keras, baru buka reference-nya.</li>
+  <li>Bagian 1, 2, dan 2b: uji diri setiap topik lemah dengan suara keras, baru buka reference-nya.</li>
+  <li>Bagian 3b (kalau posisi menyebut SQL Server): jawab kolom kiri dengan suara keras, cek kolom kanan.</li>
   <li>Bagian 3: baca kolom uji diri saja; berhenti di pertanyaan yang membuat ragu.</li>
   <li>Bagian 4: ucapkan satu cerita STAR dan jawaban pindah stack.</li>
   <li>Buka repo mini project di GitHub, pastikan README dan test hijau siap ditunjukkan.</li>

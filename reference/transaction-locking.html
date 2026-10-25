@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Transaction, isolation level, locking, deadlock</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Database · SQL Server 2022 (tanpa optimized locking)</div>
+<h1>Transaction, isolation level, locking, deadlock</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0021-transaction-locking.html">Lesson 0021</a>. Skrip lab: <code>lab/0021-sesi-a.sql</code> + <code>lab/0021-sesi-b.sql</code> (dua jendela).</p>
+
+<h2>ACID <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></h2>
+<ul>
+  <li><strong>Atomicity</strong>: semua perubahan atau tidak sama sekali. <strong>Consistency</strong>: semua aturan (constraint) tetap terpenuhi. <strong>Isolation</strong>: transaction bersamaan tidak saling melihat data setengah jadi (lock / row versioning). <strong>Durability</strong>: yang di-commit bertahan walau crash (transaction log).</li>
+  <li>Autocommit = default: tiap statement adalah transaction sendiri. Explicit transaction untuk <em>beberapa</em> statement.</li>
+  <li>Default saat error run-time: hanya <em>statement</em> yang gagal yang di-rollback → tanpa <code>XACT_ABORT ON</code>, COMMIT bisa menyimpan setengah transaction.</li>
+</ul>
+
+<h2>Pola T-SQL <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-xact-abort-transact-sql">[2]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/functions/xact-state-transact-sql">[3]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/begin-transaction-transact-sql">[4]</a></sup></h2>
+<pre><code>SET XACT_ABORT ON;                          -- default OFF (ON di trigger)
+BEGIN TRY
+    BEGIN TRANSACTION;
+        UPDATE dbo.Product SET Stock = Stock - 5 WHERE Id = 1;
+        UPDATE dbo.Product SET Stock = Stock + 5 WHERE Id = 2;
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF XACT_STATE() &lt;&gt; 0 ROLLBACK TRANSACTION;  -- 1 aktif, -1 uncommittable (hanya ROLLBACK), 0 tidak ada
+    THROW;
+END CATCH;</code></pre>
+<ul>
+  <li>Nested <code>BEGIN TRAN</code>: COMMIT dalam hanya <code>@@TRANCOUNT - 1</code>; ROLLBACK di level mana pun membatalkan semuanya.</li>
+</ul>
+
+<h2>EF Core <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/transactions">[5]</a></sup></h2>
+<pre><code>// Satu SaveChanges = satu transaction (default). Beberapa SaveChanges:
+await using var tx = await context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+await context.SaveChangesAsync();
+await context.SaveChangesAsync();
+await tx.CommitAsync();                     // exception → rollback saat dispose</code></pre>
+<ul>
+  <li><code>EnableRetryOnFailure</code> aktif → bungkus dengan <code>CreateExecutionStrategy().ExecuteAsync(...)</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[10]</a></sup></li>
+  <li>Lost update tanpa lock panjang: optimistic concurrency (<code>[Timestamp]</code> rowversion → <code>DbUpdateConcurrencyException</code>). <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/concurrency">[11]</a></sup></li>
+  <li>Node: <code>prisma.$transaction(async tx =&gt; ...)</code>.</li>
+</ul>
+
+<h2>Isolation level <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql">[6]</a></sup></h2>
+<table>
+  <thead><tr><th>Level</th><th>Dirty</th><th>Non-repeatable</th><th>Phantom</th><th>Mekanisme</th></tr></thead>
+  <tbody>
+    <tr><td>READ UNCOMMITTED</td><td>bisa</td><td>bisa</td><td>bisa</td><td>tanpa S lock (= <code>NOLOCK</code>)</td></tr>
+    <tr><td><strong>READ COMMITTED</strong> (default)</td><td>–</td><td>bisa</td><td>bisa</td><td>S lock dilepas setelah baca</td></tr>
+    <tr><td>REPEATABLE READ</td><td>–</td><td>–</td><td>bisa</td><td>S lock sampai akhir transaction</td></tr>
+    <tr><td>SNAPSHOT</td><td>–</td><td>–</td><td>–</td><td>versi saat transaction mulai; konflik → 3960</td></tr>
+    <tr><td>SERIALIZABLE</td><td>–</td><td>–</td><td>–</td><td>key-range lock</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>Dirty read</strong>: baca data belum di-commit. <strong>Non-repeatable read</strong>: baris sama dibaca dua kali, nilai beda. <strong>Phantom</strong>: query sama, himpunan baris beda (INSERT/DELETE).</li>
+  <li>UPDATE/DELETE/INSERT selalu memegang X lock sampai transaction selesai, apa pun level-nya.</li>
+  <li><strong>RCSI</strong> (<code>READ_COMMITTED_SNAPSHOT ON</code>): READ COMMITTED membaca versi per statement, pembaca tidak memblok penulis, transparan untuk aplikasi. <strong>SNAPSHOT</strong> (<code>ALLOW_SNAPSHOT_ISOLATION ON</code> + <code>SET TRANSACTION ISOLATION LEVEL SNAPSHOT</code>): versi per transaction. Keduanya OFF default di SQL Server 2022; RCSI ON di Azure SQL Database. Microsoft menyarankan RCSI. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[7]</a></sup></li>
+</ul>
+
+<h2>Lock dan blocking <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></h2>
+<table>
+  <thead><tr><th>Diminta ↓ / dipegang →</th><th>S</th><th>U</th><th>X</th></tr></thead>
+  <tbody>
+    <tr><td>S (baca)</td><td>ok</td><td>ok</td><td>tunggu</td></tr>
+    <tr><td>U (cari-untuk-ubah)</td><td>ok</td><td>tunggu</td><td>tunggu</td></tr>
+    <tr><td>X (ubah)</td><td>tunggu</td><td>tunggu</td><td>tunggu</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Intent lock (IS/IX) di PAGE/OBJECT; granularitas KEY/RID → PAGE → OBJECT; escalation ke tabel bila satu statement ≥ 5.000 lock.</li>
+  <li>Blocking menunggu tanpa batas kecuali <code>SET LOCK_TIMEOUT</code> (default -1 = tunggu selamanya; error 1222 "Lock request time out period exceeded."). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[12]</a> <a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[13]</a></sup></li>
+  <li>Transaction pendek, tanpa input user / panggilan HTTP di tengahnya, sentuh data sesedikit mungkin.</li>
+</ul>
+<pre><code>SELECT session_id, blocking_session_id, wait_type, wait_time, wait_resource
+FROM sys.dm_exec_requests WHERE blocking_session_id &lt;&gt; 0;          -- siapa diblok siapa
+SELECT request_session_id, resource_type, request_mode, request_status
+FROM sys.dm_tran_locks WHERE resource_database_id = DB_ID();       -- GRANTED / WAIT</code></pre>
+<p class="note">Kedua DMV butuh <code>VIEW SERVER PERFORMANCE STATE</code> di SQL Server 2022. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-exec-requests-transact-sql">[8]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-locks-transact-sql">[9]</a></sup></p>
+
+<h2>Deadlock <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[7]</a></sup></h2>
+<ul>
+  <li>Siklus: A pegang 1 minta 2, B pegang 2 minta 1. Blocking selesai sendiri; deadlock tidak.</li>
+  <li>Deadlock monitor (default tiap 5 detik) memilih victim (paling murah di-rollback, atur dengan <code>DEADLOCK_PRIORITY</code>), me-rollback, error <strong>1205</strong>.</li>
+  <li>Cegah: urutan akses sama · transaction pendek, satu batch · tanpa input user · hindari REPEATABLE READ/SERIALIZABLE bila tidak perlu · RCSI · <code>UPDLOCK</code> untuk baca-lalu-ubah (atau satu UPDATE bersyarat).</li>
+  <li>Tangani: tangkap <code>SqlException.Number == 1205</code>, ulang seluruh unit kerja setelah jeda acak. Deadlock graph: extended event <code>system_health</code> (<code>xml_deadlock_report</code>).</li>
+</ul>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  Isolation level mengatur perilaku membaca: READ UNCOMMITTED (dirty read), READ COMMITTED default (cegah dirty read), REPEATABLE READ (cegah non-repeatable read lewat S lock sampai akhir),
+  SERIALIZABLE (cegah phantom lewat range lock), SNAPSHOT (row versioning, pembaca tidak memblok penulis, bisa konflik 3960). Level lebih tinggi = lebih banyak blocking dan deadlock. Saya pakai READ COMMITTED, idealnya RCSI.
+  Deadlock = siklus saling menunggu; engine memilih victim dan mengirim 1205. Cegah dengan urutan akses sama dan transaction pendek; tangani dengan retry 1205.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1] Transaction locking and row versioning guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-xact-abort-transact-sql">[2] SET XACT_ABORT</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/functions/xact-state-transact-sql">[3] XACT_STATE</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/begin-transaction-transact-sql">[4] BEGIN TRANSACTION</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/saving/transactions">[5] EF Core: Transactions</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql">[6] SET TRANSACTION ISOLATION LEVEL</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[7] Deadlocks guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-exec-requests-transact-sql">[8] sys.dm_exec_requests</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-locks-transact-sql">[9] sys.dm_tran_locks</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[10] EF Core: Connection resiliency</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/saving/concurrency">[11] EF Core: Concurrency conflicts</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[12] SET LOCK_TIMEOUT</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[13] MSSQLSERVER_1222</a></p>
+</main>
+</body>
+</html>

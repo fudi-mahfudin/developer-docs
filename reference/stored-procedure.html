@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Stored Procedure, function, dan memanggil SP dari .NET</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Database · SQL Server</div>
+<h1>Stored Procedure, function, dan memanggil SP dari .NET</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0020-stored-procedure.html">Lesson 0020</a>. Skrip lab: <code>lab/0020-stored-procedure.sql</code>.</p>
+
+<h2>Kerangka SP <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-procedure-transact-sql">[1]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/throw-transact-sql">[3]</a></sup></h2>
+<pre><code>CREATE OR ALTER PROCEDURE dbo.usp_AdjustStock      -- usp_, bukan sp_ (system procedure)
+    @ProductId int,
+    @Delta     int,
+    @NewStock  int = NULL OUTPUT                   -- default boleh konstanta atau NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        BEGIN TRANSACTION;
+        IF NOT EXISTS (SELECT 1 FROM dbo.Product WHERE Id = @ProductId)
+            THROW 50001, N'Product tidak ditemukan.', 1;
+        UPDATE dbo.Product SET Stock = Stock + @Delta
+        WHERE Id = @ProductId AND Stock + @Delta &gt;= 0;
+        IF @@ROWCOUNT = 0
+            THROW 50002, N'Stock tidak boleh negatif.', 1;
+        SELECT @NewStock = Stock FROM dbo.Product WHERE Id = @ProductId;
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT &gt; 0 ROLLBACK TRANSACTION;
+        THROW;                                      -- wajib: error di CATCH tidak sampai ke aplikasi
+    END CATCH
+END;
+GO
+DECLARE @s int, @status int;
+EXEC @status = dbo.usp_AdjustStock @ProductId = 1, @Delta = -5, @NewStock = @s OUTPUT;  -- OUTPUT di EXEC juga</code></pre>
+<ul>
+  <li>Mengembalikan: result set (<code>SELECT</code>, 0..n), parameter <code>OUTPUT</code>, <code>RETURN</code> (int status saja).</li>
+  <li>Lupa <code>OUTPUT</code> di EXEC → tidak error, nilainya tidak kembali.</li>
+  <li><code>THROW</code>: nomor ≥ 50000, tidak perlu di <code>sys.messages</code>, severity 16, menghormati <code>XACT_ABORT</code>; statement sebelumnya wajib diakhiri <code>;</code>. Kode baru pakai THROW, bukan RAISERROR. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/raiserror-transact-sql">[4]</a></sup></li>
+  <li>TRY...CATCH menangkap error severity &gt; 10 yang tidak memutus koneksi; tidak menangkap compile error di level yang sama. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/try-catch-transact-sql">[2]</a></sup></li>
+  <li>Best practice: <code>SET NOCOUNT ON</code>, nama schema, tanpa <code>SELECT *</code>, transaction sependek mungkin, jangan bungkus kolom dengan fungsi di WHERE (lesson 0023).</li>
+</ul>
+
+<h2>SP vs function <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/user-defined-functions/create-user-defined-functions-database-engine">[5]</a></sup></h2>
+<table>
+  <thead><tr><th></th><th>SP</th><th>Scalar UDF</th><th>Inline TVF</th></tr></thead>
+  <tbody>
+    <tr><td>Ubah data</td><td>Ya</td><td>Tidak</td><td>Tidak</td></tr>
+    <tr><td>Di dalam query</td><td>Tidak (<code>EXEC</code> saja, juga tidak di CTE)</td><td>Ekspresi di SELECT/WHERE</td><td>Di FROM, bisa di-JOIN</td></tr>
+    <tr><td>Hasil</td><td>0..n result set, OUTPUT, RETURN</td><td>1 nilai</td><td>1 tabel (satu SELECT)</td></tr>
+    <tr><td>TRY/CATCH, transaction, dynamic SQL, temp table</td><td>Ya</td><td>Tidak</td><td>Tidak</td></tr>
+  </tbody>
+</table>
+<p>Scalar UDF di SELECT banyak baris = pemrosesan per baris (lambat); SQL Server 2019+ bisa meng-inline sebagian. Untuk logika query yang dipakai ulang → inline TVF.</p>
+
+<h2>SP vs query dari aplikasi <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/stored-procedures/stored-procedures-database-engine">[6]</a></sup></h2>
+<table>
+  <thead><tr><th>Aspek</th><th>SP</th><th>EF Core (berparameter)</th></tr></thead>
+  <tbody>
+    <tr><td>Performa</td><td>hanya EXEC lewat jaringan; plan dibuat saat eksekusi pertama lalu dipakai ulang (bisa merugikan: parameter sniffing)</td><td>plan juga di-cache; CRUD biasa setara</td></tr>
+    <tr><td>Keamanan</td><td>izin EXECUTE tanpa izin ke tabel; parameter mencegah injection</td><td>selalu berparameter kecuali raw SQL digabung string</td></tr>
+    <tr><td>Testability</td><td>sulit di-unit-test</td><td>logika di Service C#, mudah di-test</td></tr>
+    <tr><td>Versioning</td><td>skrip database, terpisah dari rilis</td><td>ikut kode, review, Migration</td></tr>
+  </tbody>
+</table>
+<p>Default: EF Core untuk CRUD. SP: set-based berat, query yang sulit di LINQ, atau kebijakan DBA.</p>
+
+<h2>Memanggil dari .NET <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/sql-queries">[7]</a></sup> <sup class="cite"><a href="https://github.com/DapperLib/Dapper">[8]</a></sup></h2>
+<pre><code>// EF Core 8 — aman: FormattableString, nilai menjadi DbParameter
+var list = await context.Products
+    .FromSql($"EXECUTE dbo.usp_GetProductsByCategory @CategoryId={categoryId}")
+    .AsNoTracking().ToListAsync();                 // tanpa .Where setelah EXEC
+int rows = await context.Database.ExecuteSqlAsync(   // -1: SP memakai SET NOCOUNT ON
+    $"EXECUTE dbo.usp_AdjustStock @ProductId={id}, @Delta={delta}");
+
+// BERBAHAYA                                       // AMAN bila terpaksa raw
+context.Products.FromSqlRaw($"... = '{input}'");  context.Products.FromSqlRaw("... = {0}", input);
+
+// Dapper
+var p = new DynamicParameters();
+p.Add("@CategoryId", 6);
+p.Add("@TotalCount", dbType: DbType.Int32, direction: ParameterDirection.Output);
+var rowsDto = await conn.QueryAsync&lt;ProductDto&gt;("dbo.usp_GetProductsByCategory", p,
+    commandType: CommandType.StoredProcedure);
+int total = p.Get&lt;int&gt;("@TotalCount");</code></pre>
+<ul>
+  <li><code>FromSql</code>: hanya di <code>DbSet</code>, hasil harus memuat semua kolom entity, SP tidak bisa di-compose. <code>ExecuteSql</code>: tanpa result set, mengembalikan rows affected, atau -1 bila SP memakai <code>SET NOCOUNT ON</code>; hasil SP ambil lewat <code>OUTPUT</code>/return value <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlcommand.executenonquery">[10]</a></sup>. <code>SqlQuery&lt;T&gt;</code>: scalar/DTO.</li>
+  <li>SP pun rentan injection bila menggabungkan string ke <code>EXEC (@sql)</code> → <code>sp_executesql</code> dengan parameter. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection">[9]</a></sup></li>
+  <li>Node: Dapper ≈ <code>pg</code>/<code>mssql</code>; <code>FromSql</code> ≈ Prisma <code>$queryRaw</code>; <code>FromSqlRaw</code> ≈ <code>$queryRawUnsafe</code>.</li>
+</ul>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  Default EF Core/LINQ untuk CRUD: logika di C#, bisa di-unit-test, ikut versioning aplikasi, tetap berparameter dan plan-nya di-cache. SP untuk operasi set-based berat, query yang sulit di LINQ,
+  atau bila akses harus lewat izin EXECUTE. SP tidak otomatis lebih cepat (plan dipakai ulang → parameter sniffing), dan biayanya testability serta deploy terpisah.
+  Panggil dengan <code>FromSql</code>/<code>ExecuteSql</code> atau Dapper <code>CommandType.StoredProcedure</code>; jangan pernah <code>FromSqlRaw</code> dengan <code>$"..."</code>.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-procedure-transact-sql">[1] CREATE PROCEDURE</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/try-catch-transact-sql">[2] TRY...CATCH</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/throw-transact-sql">[3] THROW</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/raiserror-transact-sql">[4] RAISERROR</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/user-defined-functions/create-user-defined-functions-database-engine">[5] Create user-defined functions</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/stored-procedures/stored-procedures-database-engine">[6] Stored procedures</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/sql-queries">[7] EF Core: SQL Queries</a> ·
+  <a href="https://github.com/DapperLib/Dapper">[8] Dapper README</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection">[9] SQL injection</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlcommand.executenonquery">[10] SqlCommand.ExecuteNonQuery</a></p>
+</main>
+</body>
+</html>

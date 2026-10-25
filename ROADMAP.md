@@ -12,6 +12,7 @@
 | 1 | C# + ASP.NET Core + directory structure + EF Core | CRUD Product API berlapis (Controller → Service → Repository → DbContext) |
 | 2 | SOLID + TDD (red-green-refactor) + Clean Architecture (lisan) | Unit test service (xUnit + Moq), 1 integration test, refactor SOLID |
 | 3 | Angular 16 + JWT/interceptor + error handling + STAR | Frontend Product list/form, auth sederhana, siap mock interview |
+| 4 (setengah hari) | SQL Server: SQL dasar, Stored Procedure, transaction, index, optimasi query | Lab `ProductCatalogLab` (±100k Product), bisa menjawab pertanyaan database interview |
 
 ---
 
@@ -591,6 +592,41 @@ Siapkan 4 cerita dari pengalaman Node/React:
 7. Di mana menyimpan JWT di frontend? (localStorage — rentan XSS; httpOnly cookie — perlu proteksi CSRF; jelaskan trade-off)
 8. Apa itu CORS dan kenapa perlu dikonfigurasi di API?
 9. Middleware vs filter di ASP.NET Core?
+
+---
+
+## Hari 4 (setengah hari): Database
+
+> Lesson 0019–0024, ±30 menit per lesson (±15 menit konsep + kuis, ±15 menit hands-on). Total ±3 jam, sisanya untuk mengulang latihan tulis query.
+
+### Setup lab `ProductCatalogLab` (sekali sebelum 0019, ulangi kapan saja untuk reset)
+Container `sql2022` dari Hari 0 harus jalan (`docker start sql2022`). Database lab terpisah dari `ProductCatalog` milik EF Core. Skrip `lab/00-setup-product-catalog-lab.sql` membuat database bila belum ada, membuat ulang tabel Category dan Product, lalu men-seed 6 Category dan 100.000 Product. Pilih salah satu cara:
+
+- **sqlcmd** (dari root repo):
+  ```bash
+  sqlcmd -S localhost,1433 -U sa -P 'Dev_Passw0rd!' -C -i lab/00-setup-product-catalog-lab.sql
+  ```
+  Tanpa `sqlcmd` di Mac, pakai yang ada di dalam container:
+  ```bash
+  docker cp lab/00-setup-product-catalog-lab.sql sql2022:/tmp/setup.sql
+  docker exec sql2022 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Dev_Passw0rd!' -C -i /tmp/setup.sql
+  ```
+- **Azure Data Studio**: koneksi baru `localhost,1433`, user `sa`, password `Dev_Passw0rd!`, centang *Trust server certificate*; buka file `.sql`, lalu **Run**.
+- **VS Code + ekstensi mssql**: tambah koneksi dengan data yang sama, buka file `.sql`, lalu **Execute Query** (Cmd+Shift+E).
+
+Hasil akhir yang benar: `CategoryCount = 6`, `ProductCount = 100000`, dan Category "Elektronik" berisi 90.000 Product (sengaja tidak merata, untuk demo parameter sniffing di 0023).
+
+### Urutan lesson
+| # | Lesson |
+|---|---|
+| 0019 | SQL dasar: JOIN, GROUP BY/HAVING, subquery vs CTE, `ROW_NUMBER`, normalisasi, constraint, view |
+| 0020 | Stored Procedure: parameter, `OUTPUT`, `TRY/CATCH`, SP vs function, memanggil SP dari EF Core dan Dapper |
+| 0021 | Transaction, isolation level, locking, deadlock |
+| 0022 | Index: clustered vs non-clustered, composite, covering (`INCLUDE`), kapan index merugikan |
+| 0023 | Optimasi query: execution plan, SARGable, parameter sniffing, pagination, SQL dari EF Core |
+| 0024 | Review campuran database (seam) |
+
+Setiap lesson menampilkan skripnya (file di `lab/`) dengan tombol copy, plus 1–2 latihan tulis query dengan jawaban tersembunyi.
 
 ---
 

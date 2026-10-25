@@ -10,9 +10,10 @@ Pindah dari stack TypeScript/Node.js/React ke posisi fullstack .NET 8 + Angular 
 - Bisa mendemokan satu siklus red-green-refactor dan membedakan unit test vs integration test
 - Bisa menjawab konsep Angular 16 inti (NgModule, DI, RxJS, lifecycle, forms, interceptor) dengan padanan React
 - Punya 4 cerita STAR siap pakai
+- Database (SQL Server): bisa menjelaskan clustered vs non-clustered index, membaca execution plan sederhana (scan vs seek, key lookup), menulis Stored Procedure dengan `TRY/CATCH` + transaction, menjelaskan isolation level dan deadlock, serta menulis query top-N-per-grup (`ROW_NUMBER`)
 
 ## Constraints
-- 3 hari, 6–8 jam/hari
+- 3 hari, 6–8 jam/hari, ditambah setengah hari (Hari 4, ±4–6 jam) untuk database
 - Fokus **konsep untuk interview** (permintaan user); praktik kode mengikuti [ROADMAP.md](./ROADMAP.md)
 - Bahasa Indonesia, istilah teknis tetap bahasa Inggris
 - Versi: .NET 8, Angular 16 (bukan 17+)

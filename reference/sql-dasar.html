@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · SQL dasar: JOIN, WHERE vs HAVING, CTE, ROW_NUMBER, constraint</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Database · SQL Server</div>
+<h1>SQL dasar: JOIN, WHERE vs HAVING, CTE, <code>ROW_NUMBER</code>, constraint</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0019-sql-dasar.html">Lesson 0019</a>. Skrip lab: <code>lab/0019-sql-dasar.sql</code>.</p>
+
+<h2>Urutan logis SELECT <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-transact-sql#logical-processing-order-of-the-select-statement">[1]</a></sup></h2>
+<p><code>FROM → ON → JOIN → WHERE → GROUP BY → HAVING → SELECT → DISTINCT → ORDER BY → TOP</code></p>
+<ul>
+  <li>Alias SELECT tidak dikenal di WHERE / GROUP BY / HAVING, tapi bisa di ORDER BY.</li>
+  <li>Window function (<code>ROW_NUMBER</code>) dihitung di SELECT → filter di query luar (CTE / derived table).</li>
+</ul>
+
+<h2>JOIN <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/from-transact-sql">[2]</a></sup></h2>
+<table>
+  <thead><tr><th>JOIN</th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td><code>INNER</code> (default)</td><td>hanya pasangan cocok; baris tanpa pasangan dibuang</td></tr>
+    <tr><td><code>LEFT</code></td><td>semua baris kiri; kolom kanan NULL bila tak ada pasangan</td></tr>
+    <tr><td><code>RIGHT</code></td><td>semua baris kanan (= LEFT dengan tabel dibalik)</td></tr>
+    <tr><td><code>FULL</code> / <code>CROSS</code></td><td>semua baris dua sisi / semua kombinasi</td></tr>
+  </tbody>
+</table>
+<pre><code>-- anti-join: Category tanpa Product
+SELECT c.Name FROM dbo.Category c
+LEFT JOIN dbo.Product p ON p.CategoryId = c.Id
+WHERE p.Id IS NULL;</code></pre>
+<ul>
+  <li>Outer join: predikat di ON diterapkan sebelum join, di WHERE setelah join. <code>WHERE</code> pada kolom tabel kanan mengubah LEFT JOIN menjadi seperti INNER.</li>
+  <li>NULL tidak cocok dengan NULL saat join. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/joins">[3]</a></sup></li>
+</ul>
+
+<h2>GROUP BY, WHERE vs HAVING <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-group-by-transact-sql">[4]</a></sup></h2>
+<pre><code>SELECT c.Name, COUNT(*) AS InStockCount
+FROM dbo.Product p JOIN dbo.Category c ON c.Id = p.CategoryId
+WHERE p.Stock &gt; 0             -- baris, sebelum grouping
+GROUP BY c.Name
+HAVING COUNT(*) &gt;= 1000       -- grup, setelah agregasi
+ORDER BY InStockCount DESC;   -- GROUP BY tidak mengurutkan</code></pre>
+
+<h2>Subquery vs CTE <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/subqueries">[5]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/with-common-table-expression-transact-sql">[6]</a></sup></h2>
+<ul>
+  <li>Performa umumnya setara → pilih yang paling mudah dibaca. Cek dengan execution plan (lesson 0023).</li>
+  <li>CTE = result set bernama dalam satu statement; <strong>tidak di-materialize</strong> (dieksekusi ulang per referensi). Butuh dipakai berkali-kali → temp table.</li>
+  <li>CTE: query bertahap, rekursif. Statement sebelum <code>WITH</code> harus diakhiri <code>;</code>.</li>
+  <li>Correlated subquery memakai kolom query luar. <code>NOT IN</code> + NULL bisa memberi nol baris → pakai <code>NOT EXISTS</code>.</li>
+</ul>
+
+<h2>Top-N per grup <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/functions/row-number-transact-sql">[7]</a></sup></h2>
+<pre><code>WITH Ranked AS (
+    SELECT c.Name AS CategoryName, p.Name, p.Price,
+           ROW_NUMBER() OVER (PARTITION BY p.CategoryId ORDER BY p.Price DESC, p.Id) AS rn
+    FROM dbo.Product p JOIN dbo.Category c ON c.Id = p.CategoryId
+)
+SELECT CategoryName, Name, Price, rn FROM Ranked
+WHERE rn &lt;= 3 ORDER BY CategoryName, rn;</code></pre>
+<table>
+  <thead><tr><th>Fungsi</th><th>Nilai seri (contoh)</th><th>Pakai bila</th></tr></thead>
+  <tbody>
+    <tr><td><code>ROW_NUMBER</code></td><td>1, 2, 3, 4</td><td>tepat N baris; tambahkan pemecah seri (Id) supaya deterministik</td></tr>
+    <tr><td><code>RANK</code></td><td>1, 2, 2, 4</td><td>yang seri ikut, peringkat melompat</td></tr>
+    <tr><td><code>DENSE_RANK</code></td><td>1, 2, 2, 3</td><td>yang seri ikut, peringkat tidak melompat</td></tr>
+  </tbody>
+</table>
+
+<h2>Normalisasi, constraint, view</h2>
+<ul>
+  <li>Normalisasi: hilangkan redundansi; nilai yang berulang dipindah ke tabel sendiri + FK. 3NF cukup untuk kebanyakan aplikasi. Denormalisasi = tukar redundansi dengan JOIN lebih sedikit. <sup class="cite"><a href="https://learn.microsoft.com/en-us/previous-versions/troubleshoot/microsoft-365/microsoft-365-apps/access/database-normalization-description">[8]</a></sup></li>
+</ul>
+<table>
+  <thead><tr><th>Constraint</th><th>Aturan Product</th><th>Index</th></tr></thead>
+  <tbody>
+    <tr><td>PRIMARY KEY <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/tables/primary-and-foreign-key-constraints">[9]</a></sup></td><td>Id unik, NOT NULL, satu per tabel</td><td>unique index; clustered bila belum ada clustered index</td></tr>
+    <tr><td>FOREIGN KEY <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/tables/primary-and-foreign-key-constraints">[9]</a></sup></td><td>CategoryId harus ada di Category</td><td><strong>tidak</strong> otomatis (lesson 0022)</td></tr>
+    <tr><td>UNIQUE <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/tables/unique-constraints-and-check-constraints">[10]</a></sup></td><td>nama Product unik</td><td>unique non-clustered index</td></tr>
+    <tr><td>CHECK <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/tables/unique-constraints-and-check-constraints">[10]</a></sup></td><td>Price &gt; 0, Stock ≥ 0</td><td>—; NULL lolos (UNKNOWN) → kolom NOT NULL</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Kenapa di database juga: engine menegakkan untuk semua klien; race condition dua request lolos cek Service; Service tetap validasi untuk pesan 400 yang ramah.</li>
+  <li>Error saat dilanggar: 2627 (PK/UNIQUE), 547 (CHECK/FK).</li>
+  <li>View = tabel virtual dari query, data tetap di tabel (kecuali indexed view). ORDER BY di definisi view tidak menjamin urutan. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/views/views">[11]</a></sup></li>
+</ul>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  CTE dengan <code>ROW_NUMBER() OVER (PARTITION BY CategoryId ORDER BY Price DESC, Id)</code>: nomor mulai dari 1 per Category, Id sebagai pemecah seri.
+  JOIN ke Category untuk nama. Filter <code>rn &lt;= 3</code> di query luar karena WHERE diproses sebelum window function. Harga seri harus ikut → DENSE_RANK/RANK.
+  Aturan Product dijaga juga oleh UNIQUE/CHECK/FK karena engine menegakkannya untuk semua klien dan menutup race condition; Service tetap memvalidasi untuk pesan error.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-transact-sql#logical-processing-order-of-the-select-statement">[1] SELECT: logical processing order</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/from-transact-sql">[2] FROM clause plus JOIN</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/joins">[3] Joins</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-group-by-transact-sql">[4] SELECT - GROUP BY</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/subqueries">[5] Subqueries</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/with-common-table-expression-transact-sql">[6] WITH common_table_expression</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/functions/row-number-transact-sql">[7] ROW_NUMBER</a> ·
+  <a href="https://learn.microsoft.com/en-us/previous-versions/troubleshoot/microsoft-365/microsoft-365-apps/access/database-normalization-description">[8] Database normalization basics</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/tables/primary-and-foreign-key-constraints">[9] Primary and foreign key constraints</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/tables/unique-constraints-and-check-constraints">[10] Unique and check constraints</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/views/views">[11] Views</a></p>
+</main>
+</body>
+</html>

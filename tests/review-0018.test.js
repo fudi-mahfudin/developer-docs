@@ -114,7 +114,7 @@ test("0018 uses the seam pass criterion and links a printable 'ulang sebelum int
     assert.ok(ref.includes(`href="${f}"`), `daftar ulang belum menautkan reference/${f}`));
 });
 
-test("0018 navigation links back to 0017 and forward to the index", () => {
+test("0018 navigation links back to 0017 and forward to the database lessons (0019)", () => {
   assert.match(html, /href="0017-fullstack-auth-cors-error\.html"/);
-  assert.match(html, /href="\.\.\/index\.html"/);
+  assert.match(html, /href="0019-sql-dasar\.html"/);
 });

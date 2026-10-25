@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Optimasi query: execution plan, SARGable, parameter sniffing, pagination</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Database · SQL Server</div>
+<h1>Optimasi query: execution plan, SARGable, parameter sniffing, pagination</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0023-optimasi-query.html">Lesson 0023</a>. Skrip lab: <code>lab/0023-optimasi-query.sql</code>. Index: <a href="sql-index.html">Reference: Index</a>. N+1 dan <code>AsNoTracking</code>: <a href="ef-core.html">Reference: EF Core</a>.</p>
+
+<h2>Alur "query ini lambat" <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1]</a></sup></h2>
+<ol>
+  <li>Ambil SQL: log EF Core (<code>LogTo</code>, level Information, ada durasi) / <code>ToQueryString()</code>. Cek N+1, tracking, kolom berlebih (0006).</li>
+  <li>Jalankan dengan <strong>actual plan</strong> + <code>SET STATISTICS IO ON</code>.</li>
+  <li>Baca plan: operator mahal, scan vs seek, Key Lookup berulang, estimated vs actual rows, warning (mis. <code>CONVERT_IMPLICIT</code>).</li>
+  <li>Perbaiki: SARGable, index (composite/covering), parameter sniffing, keyset pagination.</li>
+  <li>Ukur lagi: logical reads + plan.</li>
+</ol>
+
+<h2>Estimated vs actual plan <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/display-the-estimated-execution-plan">[2]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide">[3]</a></sup></h2>
+<table>
+  <thead><tr><th></th><th>Estimated</th><th>Actual</th></tr></thead>
+  <tbody>
+    <tr><td>Query dijalankan</td><td>tidak</td><td>ya</td></tr>
+    <tr><td>Isi</td><td>plan kompilasi saja</td><td>plan + runtime (actual rows, warning, waktu)</td></tr>
+    <tr><td>T-SQL</td><td><code>SET SHOWPLAN_XML ON</code> (sendirian di batch)</td><td><code>SET STATISTICS XML ON</code></td></tr>
+  </tbody>
+</table>
+<p>Estimated rows jauh dari actual rows → plan dipilih untuk jumlah baris yang salah. Penyebab: statistik, local variable (pakai rata-rata density), parameter sniffing. Scan tidak selalu buruk bila sebagian besar baris diambil.</p>
+
+<h2>SARGable <sup class="cite"><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[4]</a></sup></h2>
+<table>
+  <thead><tr><th>Non-SARGable → scan</th><th>SARGable → seek</th></tr></thead>
+  <tbody>
+    <tr><td><code>YEAR(CreatedAt) = 2025 AND MONTH(CreatedAt) = 6</code></td><td><code>CreatedAt &gt;= '2025-06-01' AND CreatedAt &lt; '2025-07-01'</code></td></tr>
+    <tr><td><code>LEFT(Name, 12) = N'Product 0001'</code></td><td><code>Name LIKE N'Product 0001%'</code></td></tr>
+    <tr><td><code>Price * 1.1 &gt; 1000</code></td><td><code>Price &gt; 1000 / 1.1</code></td></tr>
+    <tr><td><code>LIKE N'%abc'</code>, <code>ISNULL(col, …)</code>, <code>CONVERT(…, col)</code></td><td>tulis ulang, atau computed column + index</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Aturan: jangan bungkus <strong>kolom</strong> dengan fungsi/perhitungan; pindahkan ke sisi konstanta. Berlaku juga untuk JOIN, HAVING, GROUP BY, ORDER BY.</li>
+  <li>Tipe parameter harus cocok dengan kolom (<code>nvarchar</code> vs <code>varchar</code>) supaya tidak ada <code>CONVERT_IMPLICIT</code> pada kolom. <sup class="cite"><a href="https://github.com/DapperLib/Dapper">[5]</a></sup></li>
+  <li>Tanggal: half-open <code>&gt;= awal AND &lt; berikutnya</code>, bukan <code>BETWEEN … '…-30'</code>. EF Core: <code>p.CreatedAt.Year == 2025</code> → <code>DATEPART</code> pada kolom.</li>
+</ul>
+
+<h2>Parameter sniffing <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide#parameter-sensitivity">[3]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/parameter-sensitive-plan-optimization">[6]</a></sup></h2>
+<p>Plan dikompilasi untuk nilai parameter <strong>pertama</strong>, disimpan, dipakai ulang. Masalah bila data tidak merata (lab: Category 1 = 90.000, Category 6 = 20). Kena: stored procedure, <code>sp_executesql</code> (EF Core, Dapper), prepared query.</p>
+<table>
+  <thead><tr><th>Cara</th><th>Harga</th></tr></thead>
+  <tbody>
+    <tr><td><code>OPTION (RECOMPILE)</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/hints-transact-sql-query">[7]</a></sup></td><td>CPU kompilasi tiap eksekusi</td></tr>
+    <tr><td><code>OPTION (OPTIMIZE FOR (@p = nilai))</code></td><td>harus tahu nilai yang khas</td></tr>
+    <tr><td><code>OPTIMIZE FOR UNKNOWN</code> / local variable</td><td>plan rata-rata, buruk untuk nilai ekstrem</td></tr>
+    <tr><td>Covering index (akar: hilangkan Key Lookup)</td><td>biaya tulis + storage</td></tr>
+    <tr><td><code>DBCC FREEPROCCACHE (plan_handle)</code></td><td>darurat saja; tanpa parameter membuang semua plan</td></tr>
+  </tbody>
+</table>
+<p><strong>SQL Server 2022 PSP optimization</strong> (compat 160, predikat equality): beberapa plan aktif per query. Untuk demo: <code>ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = OFF</code> lalu <code>= ON</code> lagi; kosongkan cache database: <code>ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE</code>.</p>
+
+<h2>Pagination <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">[8]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-order-by-clause-transact-sql">[9]</a></sup></h2>
+<pre><code>-- OFFSET: memproses semua baris yang dilewati; random access OK
+SELECT Id, Name FROM dbo.Product ORDER BY Id OFFSET 90000 ROWS FETCH NEXT 20 ROWS ONLY;
+
+-- Keyset: seek langsung; hanya maju/mundur, tidak bisa lompat halaman
+SELECT TOP (20) Id, Name FROM dbo.Product WHERE Id &gt; @lastId ORDER BY Id;
+
+-- Keyset dua kunci (urutan unik: Id sebagai pemecah seri, index (Price) / (Price, Id))
+SELECT TOP (20) Id, Name, Price FROM dbo.Product
+WHERE Price &gt; @lastPrice OR (Price = @lastPrice AND Id &gt; @lastId)
+ORDER BY Price, Id;</code></pre>
+<ul>
+  <li>Urutan harus unik; database tidak punya urutan default, bahkan untuk primary key.</li>
+  <li>OFFSET bisa melewatkan/menggandakan baris saat data berubah; keyset tidak.</li>
+  <li>EF Core: <code>Skip/Take</code> = OFFSET; <code>Where(p =&gt; p.Id &gt; lastId).Take(n)</code> = keyset.</li>
+</ul>
+
+<h2>SQL dari EF Core <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/logging-events-diagnostics/simple-logging">[10]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.toquerystring">[11]</a></sup></h2>
+<pre><code>optionsBuilder.UseSqlServer(cs)
+    .LogTo(Console.WriteLine, LogLevel.Information)  // SQL + durasi; jangan dibiarkan di production
+    .EnableSensitiveDataLogging();                   // nilai parameter: development saja
+
+var sql = db.Products.Where(p =&gt; p.CategoryId == id)
+    .TagWith("Products by category")                // komentar di SQL
+    .ToQueryString();                               // SQL tanpa eksekusi (EF Core 5+, untuk debugging)</code></pre>
+<p>Padanan Node: <code>LogTo</code> ≈ Prisma <code>log: ['query']</code>; <code>ToQueryString</code> ≈ knex <code>.toSQL()</code>.</p>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  Ambil SQL dari log EF Core atau <code>ToQueryString</code>, cek N+1 dan tracking. Jalankan dengan actual plan dan <code>STATISTICS IO</code>.
+  Cari scan pada tabel besar, Key Lookup ribuan kali, estimated vs actual yang meleset. Perbaiki: kolom tanpa fungsi (SARGable), index composite/covering,
+  parameter sniffing (<code>RECOMPILE</code>, <code>OPTIMIZE FOR</code>, atau index yang menghilangkan lookup), keyset pagination untuk halaman jauh. Ukur lagi.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1] EF Core: Performance Diagnosis</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/display-the-estimated-execution-plan">[2] Display the estimated execution plan</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide">[3] Query processing architecture guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[4] Troubleshoot high-CPU-usage issues</a> ·
+  <a href="https://github.com/DapperLib/Dapper">[5] Dapper README</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/parameter-sensitive-plan-optimization">[6] PSP optimization</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/hints-transact-sql-query">[7] Query hints</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">[8] EF Core: Pagination</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-order-by-clause-transact-sql">[9] ORDER BY (OFFSET/FETCH)</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/logging-events-diagnostics/simple-logging">[10] EF Core: Simple logging</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.toquerystring">[11] ToQueryString</a></p>
+</main>
+</body>
+</html>

@@ -356,3 +356,179 @@ _Avoid_: DAL, data layer (itu istilah N-Layer)
 Pola yang mengumpulkan semua insert/update/delete satu aksi lalu menyimpannya dalam satu transaksi; di EF Core diwujudkan oleh `DbContext` dan dijalankan saat `SaveChanges`.
 Padanan Node: `prisma.$transaction([...])`, atau unit of work di MikroORM.
 _Avoid_: Transaction (lebih sempit), batch save
+
+## Database (SQL Server)
+
+**Outer Join**:
+JOIN yang tetap mengembalikan baris tanpa pasangan dari satu sisi (`LEFT`, `RIGHT`, atau `FULL`), dengan kolom sisi lain diisi NULL. Kebalikannya `INNER JOIN`, yang hanya mengembalikan pasangan cocok (lesson 0019).
+Padanan Node: sama persis di SQL `pg`/knex (`.leftJoin`); di Prisma, relasi opsional dari `include`.
+_Avoid_: Join luar, optional join
+
+**HAVING**:
+Klausa yang menyaring grup setelah `GROUP BY` dan agregasi, sedangkan `WHERE` menyaring baris sebelum grouping (lesson 0019).
+Padanan Node: `having` di `prisma.groupBy`, `.having()`/`.havingRaw()` di knex.
+_Avoid_: Filter agregat (bukan istilah T-SQL)
+
+**CTE (Common Table Expression)**:
+Result set sementara bernama (`WITH nama AS (...)`) yang hanya berlaku dalam satu statement dan tidak di-materialize, jadi alat keterbacaan dan rekursi, bukan cache (lesson 0019).
+Padanan Node: sama di SQL `pg`/knex (`.with()`); mirip memberi nama variabel pada langkah perantara.
+_Avoid_: Temp table (itu objek lain), WITH table
+
+**Window Function**:
+Fungsi yang menghitung nilai per baris di atas sekelompok baris (`OVER (PARTITION BY ... ORDER BY ...)`) tanpa menggabungkan barisnya, mis. `ROW_NUMBER`, `RANK`, `DENSE_RANK` (lesson 0019).
+Padanan Node: tidak ada API Prisma; ditulis sebagai raw SQL (`$queryRaw`, `pg`).
+_Avoid_: Analytic function (istilah Oracle), ranking query
+
+**Constraint**:
+Aturan integritas data yang ditegakkan Database Engine pada setiap INSERT/UPDATE dari klien mana pun: PRIMARY KEY, FOREIGN KEY, UNIQUE, atau CHECK (lesson 0019).
+Padanan Node: `@id`, `@unique`, `@relation` di schema Prisma menjadi constraint yang sama; Zod/class-validator hanya validasi di aplikasi.
+_Avoid_: Validasi database (terlalu kabur), rule
+
+**Normalisasi**:
+Penataan tabel untuk menghilangkan redundansi dan dependensi yang tidak konsisten, mis. nama Category disimpan sekali dan Product hanya menyimpan `CategoryId` (lesson 0019).
+_Avoid_: Normalization form (cukup sebut 1NF/2NF/3NF)
+
+**View**:
+Tabel virtual yang isinya didefinisikan oleh sebuah query; datanya tetap di tabel asal, kecuali indexed view (lesson 0019).
+Padanan Node: mirip fungsi query yang dipakai ulang, tapi definisinya tinggal di database.
+_Avoid_: Virtual table (pakai "view"), materialized view (itu indexed view di SQL Server)
+
+**Stored Procedure (SP)**:
+Kumpulan statement T-SQL bernama yang disimpan di database dan dijalankan dengan `EXEC`, dengan parameter input/`OUTPUT`, result set, dan status `RETURN` (int); boleh mengubah data (lesson 0020).
+Padanan Node: fungsi query yang tinggal di database; di Node dipanggil lewat `pg`/`mssql` (`request.execute('usp_X')`), jarang dipakai di proyek Prisma.
+_Avoid_: Stored function, SPROC (cukup "SP"), prosedur
+
+**OUTPUT Parameter**:
+Parameter SP yang nilainya dikirim balik ke pemanggil; kata `OUTPUT` wajib di definisi **dan** di `EXEC` (lesson 0020).
+_Avoid_: Return value (itu `RETURN`, hanya int status), out parameter (istilah C#)
+
+**THROW**:
+Statement T-SQL yang melempar error (nomor ≥ 50000, severity 16), atau tanpa parameter di dalam CATCH melempar ulang error yang ditangkap; pengganti `RAISERROR` untuk kode baru (lesson 0020).
+Padanan Node: `throw new Error(...)` dan `catch (e) { ...; throw e; }`.
+_Avoid_: RAISERROR (lama), PRINT (bukan error)
+
+**User-defined Function (UDF)**:
+Function T-SQL buatan sendiri yang dipakai di dalam query dan tidak boleh mengubah data: scalar function mengembalikan satu nilai, table-valued function (TVF) mengembalikan tabel (lesson 0020).
+_Avoid_: Stored function, method
+
+**Dapper**:
+Micro-ORM berupa extension method di `DbConnection` (`Query<T>`, `Execute`) yang menjalankan SQL tulisan sendiri dan memetakan hasilnya ke objek, tanpa change tracking (lesson 0020).
+Padanan Node: `pg`/`mssql` atau knex `raw` dengan mapping manual.
+_Avoid_: ORM penuh (itu EF Core)
+
+**Raw SQL (EF Core)**:
+SQL tulisan sendiri yang dijalankan lewat EF Core: `FromSql` (entity), `SqlQuery<T>` (scalar/DTO), atau `ExecuteSql` (tanpa result set; mengembalikan rows affected, atau -1 bila SP memakai `SET NOCOUNT ON`). Versi `FormattableString` menjadikan nilai interpolasi `DbParameter`; versi `...Raw` dengan string interpolation rentan SQL Injection (lesson 0020).
+Padanan Node: Prisma `$queryRaw`/`$executeRaw` (tagged template, aman) vs `$queryRawUnsafe` (rawan).
+_Avoid_: Native query, plain SQL
+
+**SQL Injection**:
+Serangan yang menyisipkan kode ke string yang kemudian di-parse dan dijalankan Database Engine, mis. input `x' OR 1 = 1 --` (lesson 0020).
+Padanan Node: sama; parameterized query `pg` (`$1`) vs template string ke `query()`.
+_Avoid_: SQLi (singkatan boleh setelah disebut lengkap)
+
+**Transaction (ACID)**:
+Unit kerja yang berhasil atau gagal utuh, dengan jaminan Atomicity, Consistency, Isolation, dan Durability (lesson 0021).
+Padanan Node: `prisma.$transaction(...)`, atau `BEGIN`/`COMMIT` lewat `pg`.
+_Avoid_: Batch (batch adalah kumpulan statement yang dikirim sekaligus, bukan transaction)
+
+**XACT_ABORT**:
+Opsi sesi T-SQL yang, bila `ON`, membuat error run-time apa pun me-rollback seluruh Transaction; default `OFF` hanya me-rollback statement yang gagal (lesson 0021).
+_Avoid_: Auto rollback (bukan nama fiturnya)
+
+**Isolation Level**:
+Tingkat perlindungan sebuah Transaction dari perubahan Transaction lain saat membaca: READ UNCOMMITTED, READ COMMITTED (default), REPEATABLE READ, SERIALIZABLE, atau SNAPSHOT (lesson 0021).
+Padanan Node: opsi `isolationLevel` di `prisma.$transaction`, atau `SET TRANSACTION ISOLATION LEVEL` lewat `pg`.
+_Avoid_: Transaction level, lock level
+
+**Dirty Read**:
+Anomali konkurensi berupa membaca data yang belum di-commit Transaction lain; dicegah mulai READ COMMITTED (lesson 0021).
+Padanan Node: sama di PostgreSQL, yang tidak pernah mengizinkannya.
+_Avoid_: Dirty read untuk data yang sudah di-commit
+
+**Non-repeatable Read**:
+Anomali konkurensi berupa baris yang sama dibaca dua kali dalam satu Transaction dengan nilai berbeda; dicegah mulai REPEATABLE READ (lesson 0021).
+Padanan Node: sama di PostgreSQL (dicegah REPEATABLE READ).
+_Avoid_: Phantom (itu himpunan baris yang berubah)
+
+**Phantom**:
+Anomali konkurensi berupa query yang sama mengembalikan himpunan baris berbeda dalam satu Transaction karena INSERT/DELETE lain; dicegah SERIALIZABLE atau SNAPSHOT (lesson 0021).
+Padanan Node: sama di PostgreSQL.
+_Avoid_: Non-repeatable read (itu nilai baris yang berubah); "phantom read" boleh sebagai sinonim
+
+**Row Versioning (RCSI, SNAPSHOT)**:
+Mekanisme baca tempat pembaca melihat versi baris terakhir yang di-commit dari version store (tempdb) tanpa shared Lock, sehingga pembaca tidak memblok penulis; RCSI berlaku per statement, SNAPSHOT per Transaction (lesson 0021).
+Padanan Node: mirip MVCC PostgreSQL, yang di sana selalu aktif.
+_Avoid_: NOLOCK (itu READ UNCOMMITTED, membaca data belum di-commit)
+
+**Lock**:
+Penanda kepemilikan yang dipasang Database Engine pada sebuah resource (baris, page, tabel) untuk menyinkronkan akses; mode utamanya Shared (S), Update (U), Exclusive (X), dan Intent (lesson 0021).
+Padanan Node: `SELECT ... FOR UPDATE` di PostgreSQL ≈ `WITH (UPDLOCK)`.
+_Avoid_: Mutex/`lock` C# (hanya dalam satu proses aplikasi)
+
+**Blocking**:
+Keadaan satu sesi menunggu Lock yang dipegang sesi lain; selesai sendiri begitu Lock dilepas (lesson 0021).
+_Avoid_: Deadlock (blocking bukan siklus), hang
+
+**Deadlock**:
+Siklus dua atau lebih Transaction yang saling menunggu Lock yang dipegang yang lain; SQL Server memilih satu victim, me-rollback-nya, dan mengirim error 1205 (lesson 0021).
+Padanan Node: konsep sama di PostgreSQL (error `40P01`); di JS mirip dua `await` yang saling menunggu promise satu sama lain.
+_Avoid_: Blocking lama, timeout (itu hal lain)
+
+**Clustered Index**:
+Index yang menentukan urutan penyimpanan baris data itu sendiri (leaf level-nya adalah data pages), jadi hanya ada satu per tabel; tabel tanpa clustered index disebut heap (lesson 0022).
+Padanan Node: di MySQL InnoDB primary key berperan sama; PostgreSQL tidak punya clustered index yang dijaga terus (`CLUSTER` hanya mengurutkan sekali).
+_Avoid_: Primary index, "index utama"
+
+**Non-clustered Index**:
+Struktur B+ tree terpisah dari data yang berisi key index plus row locator (clustered key atau RID) dan opsional kolom `INCLUDE`; boleh banyak per tabel (lesson 0022).
+Padanan Node: index biasa dari `@@index([...])` di Prisma atau `CREATE INDEX` di PostgreSQL.
+_Avoid_: Secondary index (istilah MySQL), index sekunder
+
+**Composite Index**:
+Index dengan lebih dari satu kolom key, diurutkan per kolom pertama lalu kolom berikutnya, sehingga hanya bisa di-seek bila kolom terdepan ikut difilter (lesson 0022).
+Padanan Node: `@@index([categoryId, price])` di Prisma; aturan urutan kolomnya sama di PostgreSQL.
+_Avoid_: Compound index, multi-column index (boleh dipahami, tapi pakai "composite index")
+
+**Covering Index**:
+Non-clustered Index yang memuat semua kolom yang dibutuhkan sebuah query, sehingga query dijawab dari index saja tanpa Key Lookup (lesson 0022).
+Padanan Node: `CREATE INDEX ... INCLUDE (...)` di PostgreSQL 11+ (index-only scan).
+_Avoid_: Index lengkap, full index
+
+**Key Lookup**:
+Operator Execution Plan yang mengambil kolom yang tidak ada di Non-clustered Index dari Clustered Index, sekali per baris (lesson 0022).
+Padanan Node: mirip heap fetch setelah index scan di `EXPLAIN` PostgreSQL.
+_Avoid_: Bookmark lookup (nama umum, masih dipakai dokumentasi), RID Lookup (itu versi heap)
+
+**Selektivitas**:
+Ukuran seberapa sedikit baris yang cocok dengan sebuah nilai atau predikat; makin sedikit, makin selektif dan makin berguna index padanya (lesson 0022).
+_Avoid_: Kardinalitas (terkait, tapi itu jumlah nilai atau baris, bukan rasio)
+
+**Logical Reads**:
+Jumlah page 8 KiB yang dibaca dari buffer cache untuk satu query, seperti dilaporkan `SET STATISTICS IO ON` (lesson 0022).
+Padanan Node: `shared hit` / `read` pada `EXPLAIN (ANALYZE, BUFFERS)` di PostgreSQL.
+_Avoid_: Disk reads (itu physical reads)
+
+**Execution Plan**:
+Urutan operator (scan, seek, Key Lookup, join, sort) yang dipilih optimizer untuk menjalankan query. *Estimated plan* dibuat tanpa menjalankan query; *actual plan* menambahkan angka runtime seperti jumlah baris aktual (lesson 0023).
+Padanan Node: `EXPLAIN` (estimated) dan `EXPLAIN ANALYZE` (actual) di PostgreSQL.
+_Avoid_: Query plan saja tanpa menyebut estimated/actual saat konteksnya penting, "explain"
+
+**SARGable**:
+Sifat predikat yang bisa memakai Index Seek (Search ARGument-able) karena kolomnya dibiarkan polos, tanpa fungsi, perhitungan, atau konversi tipe implisit (lesson 0023).
+Padanan Node: aturan yang sama berlaku di PostgreSQL/MySQL; Prisma `where: { createdAt: { gte, lt } }` sudah SARGable.
+_Avoid_: "Index-friendly" (boleh untuk menjelaskan, tapi istilah interview-nya SARGable)
+
+**Parameter Sniffing**:
+Perilaku SQL Server yang membuat Execution Plan dari nilai parameter pada kompilasi pertama lalu memakai ulang plan itu untuk nilai lain; jadi masalah bila data tidak merata (lesson 0023).
+Padanan Node: PostgreSQL punya masalah serupa pada prepared statement (generic vs custom plan).
+_Avoid_: Parameter sensitivity (nama resmi alternatif, boleh), "cache plan bug"
+
+**Keyset Pagination**:
+Pagination yang memulai halaman berikutnya dari nilai kunci urutan baris terakhir (`WHERE Id > @lastId ORDER BY Id`), bukan dengan melewati n baris lewat `OFFSET` (lesson 0023).
+Padanan Node: Prisma `cursor` + `take` (keyset) vs `skip` + `take` (offset).
+_Avoid_: Cursor pagination (sebutan umum di API, boleh, tapi jangan tertukar dengan cursor T-SQL), seek method
+
+**SQL Logging EF Core**:
+Fitur logging EF Core yang menampilkan SQL yang dikirim ke database (`LogTo`, nilai parameter hanya bila `EnableSensitiveDataLogging`), dilengkapi `ToQueryString()` dan `TagWith()` (lesson 0023).
+Padanan Node: Prisma `log: ['query']` / knex `debug`; `ToQueryString` ≈ knex `.toSQL()`.
+_Avoid_: SQL Profiler (tool server terpisah, bukan fitur EF Core)

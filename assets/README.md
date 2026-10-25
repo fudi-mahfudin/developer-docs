@@ -11,6 +11,7 @@ Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetc
 | `bank-quiz.js` | Merender soal kuis dari bank ke markup `quiz.js` di halaman lesson. |
 | `review.js` | Review campuran: tarik + acak soal dari beberapa lesson/topik, ringkasan per topik. |
 | `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/order.test.js`. |
+| `hands-on.js` | Komponen hands-on lesson database (0019+): blok skrip `.sql` dengan tombol copy, dan latihan tulis query dengan jawaban di balik tombol "Lihat jawaban". Contoh: `assets/examples/hands-on-example.html`. |
 | `timer.js` | Timer bersegmen untuk latihan dibatasi waktu: `<div class="timer" data-segments="Konsep:20,Live coding:25,STAR:15">`. Mulai/Jeda/Reset, segmen berganti otomatis, tersembunyi saat dicetak. Logic diuji di `tests/timer.test.js`. Contoh: lesson 0018. |
 
 ## Format soal (`assets/questions/NNNN.js`)
@@ -76,6 +77,25 @@ Tulis item dalam urutan **benar**; komponen mengacaknya saat halaman dibuka (tid
 
 Latihan urutan tidak masuk bank soal (bank hanya `mc`/`oral`); ubah materinya menjadi soal `mc` kalau perlu ditarik review.
 
+## Hands-on database (`hands-on.js`, lesson 0019+)
+
+Skrip lab ada di `lab/` (root): `lab/00-setup-product-catalog-lab.sql` (setup/reset `ProductCatalogLab`) dan `lab/NNNN-*.sql` per lesson. **File `.sql` adalah sumber kebenaran**: lesson menampilkan isinya sama persis (HTML-escaped: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`). `data-file` ditulis relatif ke root repo.
+
+```html
+<pre class="script" data-file="lab/0019-sql-dasar.sql"><code>SELECT …</code></pre>
+
+<div class="sql-exercise">
+  <p class="prompt">Tulis query untuk 3 Product termahal per Category.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+    <pre><code>WITH ranked AS (…) SELECT …</code></pre>
+  </details>
+</div>
+
+<script src="../assets/hands-on.js"></script>
+```
+
+Latihan tulis query tidak dinilai otomatis dan tidak masuk bank soal. Test lesson memeriksa blok skrip lewat `assertScriptsMatchFiles("lessons/0019-….html", { min: 1 })` dari `tests/helpers.js` (contoh: `tests/hands-on.test.js`).
+
 ## Halaman review (0007, 0012, 0018)
 
 ```html
@@ -103,4 +123,4 @@ Satu baris `<li>` per lesson. Saat lesson selesai, ganti hanya baris lesson itu 
 node --test      # dari root repo; menjalankan tests/*.test.js, tanpa npm
 ```
 
-Test bank soal per lesson (`tests/questions-NNNN.test.js`) dan review (`tests/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal ke bank baru, `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, dan aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.
+Test bank soal per lesson (`tests/questions-NNNN.test.js`) dan review (`tests/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal ke bank baru, `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`), dan untuk lesson database `scriptBlocks(html)` / `assertScriptsMatchFiles(html, { min })` (blok skrip identik dengan file `.sql`-nya). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.

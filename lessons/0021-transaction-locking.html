@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0021 · Transaction, isolation level, locking, deadlock</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0021 · Database · ±30 menit (15 konsep + kuis, 15 hands-on) · Hari 4</div>
+  <h1>Transaction, isolation level, locking, dan deadlock</h1>
+  <p class="subtitle">ACID, transaction yang benar di T-SQL dan EF Core, lima isolation level beserta anomalinya, dan blocking serta deadlock yang Anda buat sendiri di dua jendela query</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Jelaskan isolation level di SQL Server. Apa itu deadlock dan bagaimana mencegahnya?"</em>
+  tanpa melihat catatan, dan sudah melihat sendiri blocking, dirty read, phantom, dan deadlock antara dua sesi di <code>ProductCatalogLab</code>.
+</div>
+
+<p class="note">
+  Lanjutan <a href="0020-stored-procedure.html">lesson 0020</a>: pola <code>SET XACT_ABORT ON</code> + <code>TRY/CATCH</code> + <code>THROW</code> di <code>usp_UpdatePrice</code> kini dijelaskan alasannya.
+  Padanan Node: <code>prisma.$transaction(...)</code> atau <code>BEGIN</code>/<code>COMMIT</code> lewat <code>pg</code>. Konsep isolation level dan deadlock sama di semua database relasional; yang khas SQL Server adalah default-nya (READ COMMITTED berbasis lock) dan nama fiturnya.
+</p>
+<p class="note">
+  <strong>Catatan versi:</strong> dokumentasi Microsoft terbaru banyak menyebut <em>optimized locking</em>. Fitur itu hanya ada di Azure SQL dan SQL Server 2025
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/optimized-locking">[11]</a></sup>.
+  Container <code>sql2022</code> memakai perilaku <em>"without optimized locking"</em>, dan itulah yang diajarkan di sini.
+</p>
+
+<h2>1. ACID dan dasar transaction</h2>
+<p>
+  "A transaction is a sequence of operations performed as a single logical unit of work." Empat properti yang wajib dimilikinya:
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Properti</th><th>Arti (kutipan Microsoft Learn)</th><th>Contoh Product Catalog</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A</strong>tomicity</td><td>"either all of its data modifications are performed, or none of them are performed"</td><td>Transfer Stock: kurangi Product A <em>dan</em> tambah Product B, tidak boleh salah satu saja</td></tr>
+    <tr><td><strong>C</strong>onsistency</td><td>"all rules must be applied to the transaction's modifications to maintain all data integrity"</td><td>CHECK <code>Stock &gt;= 0</code>, FK ke Category tetap terpenuhi</td></tr>
+    <tr><td><strong>I</strong>solation</td><td>"Modifications made by concurrent transactions must be isolated from the modifications made by any other concurrent transactions"</td><td>Dua request mengubah Product yang sama tidak saling melihat data setengah jadi</td></tr>
+    <tr><td><strong>D</strong>urability</td><td>"its effects are permanently in place in the system. The modifications persist even in the event of a system failure"</td><td>Setelah COMMIT, server mati pun perubahan tetap ada</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Mesinnya: "Locking facilities that preserve transaction isolation" dan "Logging facilities to ensure transaction durability" (transaction log). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+  <li><strong>Autocommit adalah default:</strong> "Every Transact-SQL statement is committed or rolled back when it completes." Satu <code>UPDATE</code> yang mengubah 2.495 baris sudah atomik. Explicit transaction (<code>BEGIN TRANSACTION</code> … <code>COMMIT</code>/<code>ROLLBACK</code>) dibutuhkan saat <em>beberapa</em> statement harus berhasil atau gagal bersama. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+  <li><strong>Jebakan interview:</strong> "If a run-time statement error (such as a constraint violation) occurs in a batch, the default behavior in the Database Engine is to roll back only the statement that generated the error."
+    Jadi <code>BEGIN TRAN; UPDATE (ok); UPDATE (gagal); COMMIT;</code> tanpa pengaman menyimpan setengah transaction. Lab Langkah 3a memperlihatkannya. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — ACID</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review database 0024.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0024.</p>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="tx-acid" data-stack></div>
+</section>
+
+<h2>2. Transaction yang benar di T-SQL</h2>
+<pre><code>SET XACT_ABORT ON;                         -- error run-time apa pun me-rollback SELURUH transaction
+BEGIN TRY
+    BEGIN TRANSACTION;
+        UPDATE dbo.Product SET Stock = Stock - 5 WHERE Id = 1;
+        UPDATE dbo.Product SET Stock = Stock + 5 WHERE Id = 2;
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF XACT_STATE() &lt;&gt; 0 ROLLBACK TRANSACTION;   -- 1 (masih aktif) atau -1 (uncommittable)
+    THROW;                                     -- lempar ulang ke aplikasi (lesson 0020)
+END CATCH;</code></pre>
+<ul>
+  <li><code>SET XACT_ABORT ON</code>: "if a Transact-SQL statement raises a run-time error, the entire transaction is terminated and rolled back." Default-nya OFF ("OFF is the default setting in a T-SQL statement, while ON is the default setting in a trigger"). Compile error (syntax) tidak terpengaruh.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-xact-abort-transact-sql">[3]</a></sup></li>
+  <li><code>XACT_STATE()</code>: <code>1</code> = ada transaction aktif yang bisa di-commit; <code>0</code> = tidak ada transaction; <code>-1</code> = transaction "uncommittable": "it can only request a full rollback of the transaction."
+    Bedanya dengan <code>@@TRANCOUNT</code>: "@@TRANCOUNT can't be used to determine whether that transaction is classified as an uncommittable transaction." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/functions/xact-state-transact-sql">[4]</a></sup>
+    <code>IF @@TRANCOUNT &gt; 0 ROLLBACK</code> seperti di lesson 0020 juga benar untuk pola ini, karena keduanya hanya me-rollback.</li>
+  <li><strong>Nested transaction itu ilusi:</strong> "BEGIN TRANSACTION increments @@TRANCOUNT by 1." "A commit of an inner transaction decrements @@TRANCOUNT but has no other effects. A rollback of an inner transaction always rolls back the outer transaction". Yang menentukan hanya COMMIT terluar (lab Langkah 3c).
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/begin-transaction-transact-sql">[2]</a></sup></li>
+</ul>
+<p class="note">Padanan Node: <code>await prisma.$transaction(async tx =&gt; { ... })</code> otomatis rollback bila callback melempar error. Di T-SQL, perilaku "semua atau tidak sama sekali" itu harus Anda minta sendiri lewat <code>XACT_ABORT</code> dan <code>TRY/CATCH</code>.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — XACT_ABORT dan @@TRANCOUNT</h2>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="tx-tsql" data-stack></div>
+</section>
+
+<h2>3. Transaction di EF Core</h2>
+<ul>
+  <li><strong>Default sudah aman untuk satu SaveChanges:</strong> "all changes in a single call to SaveChanges are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database."
+    Microsoft menambahkan: "You should only manually control transactions if your application requirements deem it necessary."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/transactions">[5]</a></sup></li>
+  <li><strong>Manual</strong>, bila beberapa <code>SaveChanges</code> (atau SaveChanges + raw SQL) harus atomik: "You can use the DbContext.Database API to begin, commit, and rollback transactions."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/transactions">[5]</a></sup>
+    Isolation level dipilih lewat overload <code>BeginTransaction(IsolationLevel)</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.relationaldatabasefacadeextensions.begintransaction">[6]</a></sup></li>
+</ul>
+<pre><code>// Pola dari dokumentasi EF Core. StockMovement hanya contoh tabel riwayat (tidak ada di mini project).
+await using var tx = await context.Database.BeginTransactionAsync();   // opsional: (IsolationLevel.Serializable)
+try
+{
+    from.Stock -= qty;
+    await context.SaveChangesAsync();
+
+    context.StockMovements.Add(new StockMovement { ProductId = from.Id, Delta = -qty });
+    await context.SaveChangesAsync();
+
+    await tx.CommitAsync();       // tanpa Commit, transaction di-rollback saat tx di-dispose
+}
+catch (Exception)
+{
+    // log; transaction otomatis di-rollback saat dispose
+    throw;
+}</code></pre>
+<ul>
+  <li>Bila <code>EnableRetryOnFailure</code> aktif, transaction manual tidak bisa langsung dipakai: "Manually controlling transactions in this way is incompatible with implicitly invoked retrying execution strategies." <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/transactions">[5]</a></sup>
+    Tanpa itu, EF Core melempar <code>InvalidOperationException</code>: "The configured execution strategy 'SqlServerRetryingExecutionStrategy' does not support user-initiated transactions."
+    Solusinya: "manually invoke the execution strategy with a delegate representing everything that needs to be executed. If a transient failure occurs, the execution strategy will invoke the delegate again."
+    Jadi bungkus seluruh unit kerja (begin, <code>SaveChangesAsync</code>, commit) dengan <code>context.Database.CreateExecutionStrategy().ExecuteAsync(...)</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[12]</a></sup></li>
+  <li><strong>Lost update tanpa lock panjang:</strong> EF Core mendukung <em>optimistic concurrency</em>: kolom <code>[Timestamp] byte[] Version</code> (rowversion) ikut di WHERE saat UPDATE; kalau baris sudah diubah orang lain, <code>SaveChanges</code> melempar <code>DbUpdateConcurrencyException</code>.
+    Kata dokumentasinya: "optimistic concurrency takes no locks, but arranges for the data modification to fail on save if the data has changed since it was queried."
+    SQL yang dikirim: <code>UPDATE [People] SET [FirstName] = @p0 WHERE [PersonId] = @p1 AND [Version] = @p2;</code>, dan bila ada update bersamaan "the UPDATE fails to find any matching rows and reports that zero were affected", sehingga <code>SaveChanges()</code> "throws a DbUpdateConcurrencyException". <code>[Timestamp]</code> memetakan properti ke kolom <code>rowversion</code> SQL Server yang "automatically changes when the row is updated".
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/concurrency">[13]</a></sup>
+    Microsoft menyebut dua pendekatan: pessimistic ("A system of locks prevents transactions from modifying data in a way that affects other transactions") dan optimistic ("transactions don't lock data when they read it"). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 3 — EF Core</h2>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="tx-efcore" data-stack></div>
+</section>
+
+<h2>4. Isolation level dan anomalinya</h2>
+<p>Tiga anomali yang menjadi dasar semua pertanyaan isolation level <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup>:</p>
+<ul>
+  <li><strong>Dirty read:</strong> "a second transaction reads a row that's being updated by another transaction. The second transaction is reading data that hasn't been committed yet". Kalau penulisnya ROLLBACK, data yang dibaca tidak pernah ada.</li>
+  <li><strong>Non-repeatable read:</strong> "a second transaction accesses the same row several times and reads different data each time."</li>
+  <li><strong>Phantom:</strong> "two identical queries are executed and the set of rows returned by the second query is different." Penyebabnya INSERT/DELETE baris yang cocok dengan WHERE.</li>
+  <li>Bonus: <strong>lost update</strong>, dua transaction membaca baris yang sama lalu meng-UPDATE berdasarkan nilai lama: "The last update overwrites updates made by the other transactions". Obatnya UPDATE bersyarat dalam satu statement (seperti <code>usp_AdjustStock</code> di 0020), <code>UPDLOCK</code>, atau optimistic concurrency.</li>
+</ul>
+<table>
+  <thead><tr><th>Isolation level</th><th>Dirty read</th><th>Non-repeatable read</th><th>Phantom</th><th>Cara kerja (tanpa optimized locking)</th></tr></thead>
+  <tbody>
+    <tr><td>READ UNCOMMITTED</td><td>bisa</td><td>bisa</td><td>bisa</td><td>tidak meminta S lock; setara hint <code>NOLOCK</code></td></tr>
+    <tr><td><strong>READ COMMITTED</strong> (default)</td><td>tidak</td><td>bisa</td><td>bisa</td><td>S lock dilepas begitu baris selesai dibaca</td></tr>
+    <tr><td>REPEATABLE READ</td><td>tidak</td><td>tidak</td><td>bisa</td><td>S lock ditahan sampai akhir transaction, tanpa range lock</td></tr>
+    <tr><td>SNAPSHOT</td><td>tidak</td><td>tidak</td><td>tidak</td><td>row versioning: membaca versi saat transaction dimulai</td></tr>
+    <tr><td>SERIALIZABLE</td><td>tidak</td><td>tidak</td><td>tidak</td><td>key-range lock atas rentang WHERE</td></tr>
+  </tbody>
+</table>
+<p class="note">Tabel diringkas dari <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a> dan <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql">[7]</a>. Dipasang per sesi dengan <code>SET TRANSACTION ISOLATION LEVEL ...</code>; di dalam SP, level kembali ke semula saat SP selesai.</p>
+<ul>
+  <li><strong>READ COMMITTED</strong>: "statements can't read data that was modified but not committed by other transactions. ... This option is the SQL Server default." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql">[7]</a></sup></li>
+  <li><strong>REPEATABLE READ</strong> "keeps read and write locks that are acquired on selected data until the end of the transaction. However, because range-locks aren't managed, phantom reads can occur." <strong>SERIALIZABLE</strong>: "Range-locks are acquired when a SELECT operation uses a range WHERE clause to avoid phantom reads", "the most restrictive of the isolation levels." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+  <li><strong>Isolation level tidak mengubah lock untuk menulis:</strong> "A transaction always holds an exclusive lock to perform data modification, and holds that lock until the transaction completes, regardless of the isolation level". Isolation level hanya mengatur perilaku <em>membaca</em>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+  <li><strong>Trade-off:</strong> level rendah = lebih banyak akses bersamaan tapi lebih banyak anomali; level tinggi "requires more system resources and increases the chances that one transaction blocks another." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+</ul>
+
+<h3>Row versioning: RCSI vs SNAPSHOT (ringkas)</h3>
+<table>
+  <thead><tr><th></th><th>READ COMMITTED SNAPSHOT (RCSI)</th><th>SNAPSHOT isolation</th></tr></thead>
+  <tbody>
+    <tr><td>Diaktifkan dengan</td><td><code>ALTER DATABASE ... SET READ_COMMITTED_SNAPSHOT ON</code></td><td><code>ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON</code>, lalu <code>SET TRANSACTION ISOLATION LEVEL SNAPSHOT</code> di sesi</td></tr>
+    <tr><td>Data yang dibaca</td><td>"committed before the start of each statement"</td><td>"committed before the start of each transaction"</td></tr>
+    <tr><td>Konflik UPDATE</td><td>tidak dideteksi</td><td>dideteksi: Msg 3960 "Snapshot isolation transaction aborted due to update conflict"</td></tr>
+    <tr><td>Bagi aplikasi</td><td>transparan: tetap READ COMMITTED biasa</td><td>harus diminta eksplisit per transaction</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Dengan row versioning, "read operations don't acquire shared (S) locks on the data being read, and therefore don't block transactions that are modifying data." Biayanya version store (tempdb). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+  <li><strong>Default berbeda per platform:</strong> di SQL Server (termasuk 2022) <code>READ_COMMITTED_SNAPSHOT</code> OFF ("the default setting in SQL Server") dan <code>ALLOW_SNAPSHOT_ISOLATION</code> OFF; di Azure SQL Database RCSI ON. Jadi di <code>sql2022</code>, pembaca menunggu penulis. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+  <li>Rekomendasi Microsoft: "Microsoft recommends the row versioning-based READ COMMITTED isolation level for all applications, unless an application relies upon the blocking behavior of the lock-based READ COMMITTED isolation level." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 4 — Isolation level</h2>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="tx-isolation" data-stack></div>
+</section>
+
+<h2>5. Lock dan blocking</h2>
+<p>
+  "Locking is a mechanism used by the Database Engine to synchronize access by multiple users to the same piece of data at the same time." "All locks held by a transaction are released when the transaction completes (either commits or rolls back)."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Mode</th><th>Dipakai untuk</th></tr></thead>
+  <tbody>
+    <tr><td>Shared (S)</td><td>membaca; di READ COMMITTED dilepas "as soon as the read operation completes"</td></tr>
+    <tr><td>Update (U)</td><td>tahap "cari baris" sebelum mengubah; "Prevents a common form of deadlock"</td></tr>
+    <tr><td>Exclusive (X)</td><td>INSERT/UPDATE/DELETE; ditahan sampai transaction selesai</td></tr>
+    <tr><td>Intent (IS, IX)</td><td>tanda di level page/tabel bahwa ada lock di bawahnya ("lock hierarchy")</td></tr>
+    <tr><td>Key-range</td><td>dipakai SERIALIZABLE untuk mencegah phantom</td></tr>
+  </tbody>
+</table>
+<table>
+  <thead><tr><th>Diminta ↓ / sudah dipegang →</th><th>S</th><th>U</th><th>X</th></tr></thead>
+  <tbody>
+    <tr><td>S</td><td>boleh</td><td>boleh</td><td>menunggu</td></tr>
+    <tr><td>U</td><td>boleh</td><td>menunggu</td><td>menunggu</td></tr>
+    <tr><td>X</td><td>menunggu</td><td>menunggu</td><td>menunggu</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>Granularitas:</strong> KEY/RID (baris), PAGE, OBJECT (tabel). "Locking at a smaller granularity, such as rows, increases concurrency but has a higher overhead". Lock escalation ke tabel terjadi bila "A single Transact-SQL statement acquires at least 5,000 locks on a single nonpartitioned table or index." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
+  <li><strong>Blocking itu normal:</strong> "When a transaction requests a lock on a resource locked by another transaction, the requesting transaction waits until the lock is released. By default, transactions in the Database Engine don't time out, unless LOCK_TIMEOUT is set." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup>
+    <code>SET LOCK_TIMEOUT</code> menentukan "the number of milliseconds a statement waits for a lock to be released"; "A value of -1 (default) indicates no time-out period (that is, wait forever)." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[14]</a></sup>
+    Jadi <code>SET LOCK_TIMEOUT 3000</code> membuat statement menyerah setelah 3 detik dengan error 1222 "Lock request time out period exceeded." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[15]</a></sup>
+    Di aplikasi .NET, yang biasanya terlihat adalah command timeout dari sisi client.</li>
+  <li><strong>Melihat blocking:</strong> <code>sys.dm_exec_requests</code> kolom <code>blocking_session_id</code> ("If this column is NULL or 0, the request isn't blocked"), <code>wait_type</code>, <code>wait_time</code>; <code>sys.dm_tran_locks</code> menampilkan setiap lock beserta <code>request_mode</code> dan <code>request_status</code> (GRANTED/WAIT). Di SQL Server 2022 keduanya butuh izin <code>VIEW SERVER PERFORMANCE STATE</code> (<code>sa</code> di lab sudah punya).
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-exec-requests-transact-sql">[10]</a></sup>
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-locks-transact-sql">[9]</a></sup></li>
+  <li><strong>Pedoman transaction:</strong> "Don't require input from users during a transaction.", "Keep the transaction as short as possible.", "Access the least amount of data possible while in a transaction.", "Few transactions require the SERIALIZABLE transaction isolation level." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup>
+    Di .NET artinya: jangan memanggil HTTP API eksternal atau menunggu user di antara <code>BeginTransaction</code> dan <code>Commit</code>.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 5 — Lock dan blocking</h2>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="tx-locking" data-stack></div>
+</section>
+
+<h2>6. Deadlock</h2>
+<div class="flow">
+  <span class="box">A: X lock Product 1</span><span class="arrow">→ minta</span><span class="box">Product 2 (milik B)</span>
+  <span class="arrow">·</span>
+  <span class="box">B: X lock Product 2</span><span class="arrow">→ minta</span><span class="box">Product 1 (milik A)</span>
+</div>
+<ul>
+  <li>Definisi: "A deadlock occurs when two or more tasks permanently block each other by each task having a lock on a resource that the other tasks are trying to lock." Beda dengan blocking: blocking selesai sendiri saat lock dilepas; deadlock adalah siklus yang tidak akan pernah selesai sendiri.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup></li>
+  <li><strong>Deteksi dan victim:</strong> deadlock monitor memeriksa secara berkala ("The default interval is 5 seconds"). Engine "rolls back the transaction of the deadlock victim, and returns error 1205 to the application." Victim default adalah transaction "least expensive to roll back"; bisa diatur dengan <code>SET DEADLOCK_PRIORITY</code>.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup></li>
+  <li><strong>Pencegahan</strong> (judul-judul dari bagian "Minimize deadlocks"): "Access objects in the same order.", "Avoid user interaction in transactions.", "Keep transactions short and in one batch.", "Avoid higher isolation levels such as REPEATABLE READ and SERIALIZABLE when not required.", "Use a row versioning-based isolation level."
+    Tetapi "deadlocks can't be completely avoided", jadi aplikasi tetap harus siap. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup></li>
+  <li><strong>Pola baca-lalu-ubah:</strong> dua transaction sama-sama memegang S lock lalu sama-sama minta X adalah deadlock klasik. Solusi resmi: "select a row with UPDLOCK hint, then update the row". <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup>
+    Lebih sederhana lagi: satu UPDATE bersyarat (<code>WHERE Id = @Id AND Stock + @Delta &gt;= 0</code>) seperti <code>usp_AdjustStock</code>.</li>
+  <li><strong>Investigasi:</strong> "The system_health event session captures xml_deadlock_report events by default", jadi deadlock graph sudah tersedia tanpa setup (lab Langkah 30). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup></li>
+</ul>
+<pre><code>-- T-SQL: kunci baris untuk diubah sejak dibaca (U lock ditahan sampai COMMIT)
+BEGIN TRANSACTION;
+SELECT @stock = Stock FROM dbo.Product WITH (UPDLOCK) WHERE Id = @Id;
+IF @stock &gt;= @Qty
+    UPDATE dbo.Product SET Stock = Stock - @Qty WHERE Id = @Id;
+COMMIT TRANSACTION;</code></pre>
+<pre><code>// C#: tangani 1205 dengan mengulang SELURUH unit kerja setelah jeda acak.
+for (var attempt = 1; ; attempt++)
+{
+    try
+    {
+        await using var tx = await context.Database.BeginTransactionAsync();
+        // ... baca dan ubah Product ...
+        await context.SaveChangesAsync();
+        await tx.CommitAsync();
+        break;
+    }
+    catch (Exception ex) when (ex.GetBaseException() is SqlException { Number: 1205 } &amp;&amp; attempt &lt; 3)
+    {
+        context.ChangeTracker.Clear();                       // buang state yang sudah di-rollback
+        await Task.Delay(Random.Shared.Next(50, 250));       // jeda acak
+    }
+}</code></pre>
+<p class="note">Dasar pola retry: "applications should have an error handler that can handle error 1205", dan "The application should pause briefly before resubmitting its query ... Randomizing the duration of the pause minimizes the likelihood of the deadlock reoccurring".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup>
+  Error 1205 juga bisa ditangkap di blok CATCH T-SQL.</p>
+
+<section class="exercise">
+  <h2>Latihan 6 — Deadlock</h2>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="tx-deadlock" data-stack></div>
+</section>
+
+<!-- ============ HANDS-ON ============ -->
+<h2>7. Hands-on (±15 menit): dua jendela, dua sesi</h2>
+<ol>
+  <li>Pastikan container jalan (<code>docker start sql2022</code>) dan setup lab sudah dijalankan (6 Category, 100000 Product). Kalau ragu, jalankan ulang <code>lab/00-setup-product-catalog-lab.sql</code>.</li>
+  <li>Buka <strong>dua</strong> jendela query di Azure Data Studio atau VS Code mssql, masing-masing koneksi sendiri ke <code>localhost,1433</code>, user <code>sa</code>.
+    Jendela kiri: <code>lab/0021-sesi-a.sql</code>. Jendela kanan: <code>lab/0021-sesi-b.sql</code>.</li>
+  <li>Jalankan <strong>satu langkah saja</strong> setiap kali (pilih blok di antara dua penanda <code>-- Langkah N</code>, lalu Run selection), ikuti urutan di tabel. Setiap langkah diakhiri penanda <code>&gt;&gt;&gt; lanjut</code> yang menyebut jendela berikutnya.
+    <strong>Jangan</strong> menjalankan seluruh file: langkah yang menunggu akan menggantung.</li>
+  <li>Sebelum menjalankan, tebak dulu: langkah mana yang akan <em>menunggu</em> (ikon query berputar), dan angka berapa yang muncul?</li>
+</ol>
+
+<table>
+  <thead><tr><th>Bagian</th><th>Urutan langkah (A = Sesi A, B = Sesi B)</th><th>Yang harus terlihat</th></tr></thead>
+  <tbody>
+    <tr><td>0 · Persiapan</td><td>1 A → 2 B</td><td>dua session id berbeda; <code>is_read_committed_snapshot_on</code> = 0, snapshot OFF</td></tr>
+    <tr><td>1 · Atomicity</td><td>3 A</td><td>3a: Stock Id 1 = 36 (setengah transaction tersimpan); 3b: <code>XactState</code> -1, error 547, Stock tetap 31 dan 62; 3c: <code>@@TRANCOUNT</code> 2 → 1 → 0, Stock 31</td></tr>
+    <tr><td>2 · Blocking</td><td>4 A → 5 B <em>(menunggu)</em> → 6 A → 7 A</td><td>B diblok A dengan <code>LCK_M_S</code>; A: X pada KEY GRANTED, B: S pada KEY WAIT; setelah ROLLBACK, B langsung menampilkan 80.19</td></tr>
+    <tr><td>3 · Dirty read</td><td>8 A → 9 B → 10 A → 11 B</td><td>B membaca 99999.99 tanpa menunggu, lalu 80.19 setelah A ROLLBACK</td></tr>
+    <tr><td>4 · Non-repeatable read</td><td>12 B → 13 A → 14 B → 15 B → 16 A <em>(menunggu)</em> → 17 B</td><td>READ COMMITTED: 80.19 lalu 90.00 di transaction yang sama; REPEATABLE READ: 90.00 dua kali, UPDATE A menunggu sampai B COMMIT</td></tr>
+    <tr><td>5 · Phantom</td><td>18 B → 19 A → 20 B → 21 B → 22 A <em>(menunggu)</em> → 23 B → 24 A</td><td>REPEATABLE READ: 6 lalu 7; SERIALIZABLE: 7 dua kali, INSERT A menunggu; akhir: 100000 Product</td></tr>
+    <tr><td>6 · Deadlock</td><td>25 A → 26 B → 27 A <em>(menunggu)</em> → 28 B → 29 A dan B → (30 A) → 31 A → 32 B <em>(menunggu)</em> → 33 A → 34 B</td><td>dalam ±5 detik satu sesi mendapat Msg 1205; deadlock graph di <code>system_health</code>; dengan urutan akses sama hanya terjadi blocking</td></tr>
+    <tr><td>7 · SNAPSHOT (opsional)</td><td>35 A → 36 B → 37 A → 38 B → 39 A → 40 B → 41 B → 42 A</td><td>B tidak menunggu dan tetap membaca 80.19; UPDATE di B gagal dengan Msg 3960; akhir: lab kembali seperti setup</td></tr>
+  </tbody>
+</table>
+<p class="note">Tanpa GUI: buka dua terminal, masing-masing <code>docker exec -it sql2022 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Dev_Passw0rd!' -C</code>, tempel satu langkah, lalu ketik <code>GO</code>.
+  Kalau sebuah langkah tidak menunggu padahal seharusnya, cek Langkah 1: RCSI mungkin ON. Kalau lab berantakan, jalankan <code>IF @@TRANCOUNT &gt; 0 ROLLBACK;</code> di kedua jendela, lalu setup ulang.</p>
+
+<h3>Jendela 1: <code>lab/0021-sesi-a.sql</code></h3>
+<pre class="script" data-file="lab/0021-sesi-a.sql"><code>-- Lesson 0021 · Transaction, isolation level, locking, deadlock · SESI A
+-- Pasangan file ini: lab/0021-sesi-b.sql. Buka KEDUA file di dua jendela query (dua koneksi
+-- terpisah ke localhost,1433) setelah lab/00-setup-product-catalog-lab.sql dijalankan.
+--
+-- JANGAN jalankan seluruh file sekaligus. Jalankan satu langkah saja (blok selection
+-- antara dua penanda "Langkah"), lalu ikuti penanda "&gt;&gt;&gt; lanjut" ke jendela berikutnya.
+-- Langkah bernomor urut di kedua file: Langkah 1 (A), Langkah 2 (B), Langkah 3 (A), dst.
+-- Langkah yang "menunggu" (ikon query berputar) memang disengaja: itulah blocking.
+--
+-- Data yang dipakai (dari setup): Product Id 1 = Price 80.19, Stock 31; Product Id 2 = Price 159.38,
+-- Stock 62. Semua langkah mengembalikan data ke nilai ini.
+
+-- ============ Bagian 0 · Persiapan ============================================================
+
+-- Langkah 1 (Sesi A) -----------------------------------------------------------------------
+USE ProductCatalogLab;
+SELECT @@SPID AS SesiA;                        -- catat angkanya: session id jendela ini
+
+-- Default SQL Server 2022: READ COMMITTED berbasis lock (RCSI OFF), SNAPSHOT tidak diizinkan.
+-- Harus 0 dan OFF. Kalau is_read_committed_snapshot_on = 1, demo blocking di Bagian 2 tidak terjadi.
+SELECT name, is_read_committed_snapshot_on, snapshot_isolation_state_desc
+FROM sys.databases
+WHERE name = N'ProductCatalogLab';
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 2
+
+-- ============ Bagian 1 · Atomicity, XACT_ABORT, TRY/CATCH (Sesi A saja) ======================
+
+-- Langkah 3 (Sesi A) -----------------------------------------------------------------------
+-- 3a) JEBAKAN: XACT_ABORT OFF (default) tanpa TRY/CATCH. Error 547 hanya membatalkan
+--     STATEMENT yang gagal; batch lanjut, COMMIT tetap jalan, UPDATE pertama tersimpan.
+SET XACT_ABORT OFF;
+BEGIN TRANSACTION;
+    UPDATE dbo.Product SET Stock = Stock + 5 WHERE Id = 1;   -- berhasil
+    UPDATE dbo.Product SET Stock = -1 WHERE Id = 2;          -- gagal: CK_Product_Stock (547)
+COMMIT TRANSACTION;
+SELECT Id, Stock FROM dbo.Product WHERE Id IN (1, 2);        -- Id 1 = 36: setengah transaction tersimpan
+UPDATE dbo.Product SET Stock = 31 WHERE Id = 1;              -- kembalikan
+
+-- 3b) POLA BENAR: XACT_ABORT ON + TRY/CATCH. Error apa pun membatalkan SELURUH transaction.
+SET XACT_ABORT ON;
+BEGIN TRY
+    BEGIN TRANSACTION;
+        UPDATE dbo.Product SET Stock = Stock + 5 WHERE Id = 1;
+        UPDATE dbo.Product SET Stock = -1 WHERE Id = 2;
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    -- XACT_STATE: 1 = masih bisa di-commit, -1 = uncommittable (hanya boleh ROLLBACK), 0 = tidak ada.
+    SELECT XACT_STATE() AS XactState, ERROR_NUMBER() AS ErrorNumber;   -- -1 dan 547
+    IF XACT_STATE() &lt;&gt; 0 ROLLBACK TRANSACTION;
+    -- Di Stored Procedure, akhiri CATCH dengan THROW; (lesson 0020). Di sini tidak, supaya demo lanjut.
+END CATCH;
+SELECT Id, Stock FROM dbo.Product WHERE Id IN (1, 2);        -- 31 dan 62: tidak ada yang berubah
+SET XACT_ABORT OFF;
+
+-- 3c) Nested transaction bukan transaction sungguhan: COMMIT dalam hanya mengurangi @@TRANCOUNT.
+BEGIN TRANSACTION;
+    BEGIN TRANSACTION;
+        SELECT @@TRANCOUNT AS TranCount;                     -- 2
+        UPDATE dbo.Product SET Stock = 999 WHERE Id = 1;
+    COMMIT TRANSACTION;                                      -- tidak menyimpan apa pun
+    SELECT @@TRANCOUNT AS TranCount;                         -- 1
+ROLLBACK TRANSACTION;                                        -- membatalkan SEMUANYA, termasuk yang "di-commit"
+SELECT @@TRANCOUNT AS TranCount, Stock FROM dbo.Product WHERE Id = 1;   -- 0 dan 31
+-- &gt;&gt;&gt; lanjut: Langkah 4 (masih Sesi A)
+
+-- ============ Bagian 2 · Blocking dan cara melihatnya ========================================
+
+-- Langkah 4 (Sesi A) -----------------------------------------------------------------------
+-- Ambil exclusive (X) lock pada baris Id 1 dan JANGAN commit.
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Price = 99999.99 WHERE Id = 1;
+SELECT @@TRANCOUNT AS TranCount;                             -- 1: transaction masih terbuka
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 5
+
+-- Langkah 6 (Sesi A) -----------------------------------------------------------------------
+-- Sesi B sedang menunggu. Siapa yang mem-block siapa?
+SELECT session_id, status, blocking_session_id, wait_type, wait_time, wait_resource
+FROM sys.dm_exec_requests
+WHERE blocking_session_id &lt;&gt; 0;        -- session Sesi B, diblok oleh Sesi A, wait_type LCK_M_S
+
+-- Lock apa saja yang dipegang dan diminta di database ini?
+SELECT request_session_id, resource_type, request_mode, request_status, resource_description
+FROM sys.dm_tran_locks
+WHERE resource_database_id = DB_ID(N'ProductCatalogLab')
+  AND resource_type &lt;&gt; 'DATABASE'
+ORDER BY request_session_id, resource_type;
+-- Sesi A: X pada KEY (GRANTED), IX pada PAGE dan OBJECT (intent lock).
+-- Sesi B: S pada KEY yang sama (WAIT), IS pada PAGE dan OBJECT.
+
+-- Langkah 7 (Sesi A) -----------------------------------------------------------------------
+ROLLBACK TRANSACTION;          -- lock dilepas, SELECT di Sesi B langsung selesai: 80.19
+-- &gt;&gt;&gt; lanjut: Langkah 8 (masih Sesi A)
+
+-- ============ Bagian 3 · Dirty read (READ UNCOMMITTED) =======================================
+
+-- Langkah 8 (Sesi A) -----------------------------------------------------------------------
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Price = 99999.99 WHERE Id = 1;        -- belum di-commit
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 9
+
+-- Langkah 10 (Sesi A) ----------------------------------------------------------------------
+ROLLBACK TRANSACTION;          -- 99999.99 yang dibaca Sesi B tidak pernah ada secara resmi
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 11
+
+-- ============ Bagian 4 · Non-repeatable read (READ COMMITTED vs REPEATABLE READ) =============
+
+-- Langkah 13 (Sesi A) ----------------------------------------------------------------------
+UPDATE dbo.Product SET Price = 90.00 WHERE Id = 1;           -- autocommit; tidak menunggu
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 14
+
+-- Langkah 16 (Sesi A) ----------------------------------------------------------------------
+-- Sesi B (REPEATABLE READ) memegang S lock sampai transaction-nya selesai: UPDATE ini MENUNGGU.
+UPDATE dbo.Product SET Price = 80.19 WHERE Id = 1;           -- selesai setelah Sesi B COMMIT (Langkah 17)
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 80.19
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 17
+
+-- ============ Bagian 5 · Phantom (REPEATABLE READ vs SERIALIZABLE) ===========================
+
+-- Langkah 19 (Sesi A) ----------------------------------------------------------------------
+-- Id baru (IDENTITY) &gt; 100000, jadi masuk ke rentang "Id &gt;= 99995" yang sedang dibaca Sesi B.
+INSERT INTO dbo.Product (Name, Price, Stock, CategoryId, CreatedAt)
+VALUES (N'Phantom 0021 RR', 10.00, 1, 6, SYSDATETIME());     -- langsung berhasil
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 20
+
+-- Langkah 22 (Sesi A) ----------------------------------------------------------------------
+-- Sesi B (SERIALIZABLE) memegang key-range lock atas rentang itu: INSERT ini MENUNGGU.
+INSERT INTO dbo.Product (Name, Price, Stock, CategoryId, CreatedAt)
+VALUES (N'Phantom 0021 SER', 10.00, 1, 6, SYSDATETIME());    -- selesai setelah Sesi B COMMIT (Langkah 23)
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 23
+
+-- Langkah 24 (Sesi A) ----------------------------------------------------------------------
+DELETE FROM dbo.Product WHERE Name LIKE N'Phantom 0021%';    -- bersihkan
+SELECT COUNT(*) AS ProductCount FROM dbo.Product;            -- 100000
+-- &gt;&gt;&gt; lanjut: Langkah 25 (masih Sesi A)
+
+-- ============ Bagian 6 · Deadlock, lalu pencegahannya ========================================
+
+-- Langkah 25 (Sesi A) ----------------------------------------------------------------------
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 1;       -- A memegang X lock baris 1
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 26
+
+-- Langkah 27 (Sesi A) ----------------------------------------------------------------------
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 2;       -- MENUNGGU baris 2 milik Sesi B
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 28 (jangan tunggu langkah ini selesai)
+
+-- Langkah 29 (Sesi A DAN Sesi B) -----------------------------------------------------------
+-- Satu sesi mendapat Msg 1205 (deadlock victim, transaction-nya sudah di-rollback engine);
+-- UPDATE di sesi lain selesai. Jalankan blok ini di KEDUA jendela.
+IF @@TRANCOUNT &gt; 0 ROLLBACK TRANSACTION;
+SELECT @@TRANCOUNT AS TranCount, Id, Stock FROM dbo.Product WHERE Id IN (1, 2);   -- 0; 31 dan 62
+
+-- Langkah 30 (Sesi A, opsional) ------------------------------------------------------------
+-- Deadlock graph dicatat otomatis oleh extended event session bawaan system_health.
+-- Klik kolom XML untuk melihat proses, resource, dan siapa victim-nya.
+SELECT x.ev.value('@timestamp', 'datetime2') AS EventTime, x.ev.query('.') AS DeadlockReport
+FROM (
+    SELECT CAST(st.target_data AS xml) AS TargetData
+    FROM sys.dm_xe_session_targets AS st
+    INNER JOIN sys.dm_xe_sessions AS s ON s.address = st.event_session_address
+    WHERE s.name = N'system_health' AND st.target_name = N'ring_buffer'
+) AS t
+CROSS APPLY t.TargetData.nodes('RingBufferTarget/event[@name="xml_deadlock_report"]') AS x(ev)
+ORDER BY EventTime DESC;
+
+-- Langkah 31 (Sesi A) ----------------------------------------------------------------------
+-- PENCEGAHAN: kedua sesi mengakses baris dalam URUTAN YANG SAMA (Id 1 dulu, lalu Id 2).
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 1;
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 32
+
+-- Langkah 33 (Sesi A) ----------------------------------------------------------------------
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 2;       -- tidak menunggu: baris 2 bebas
+ROLLBACK TRANSACTION;          -- lock dilepas; Sesi B (yang hanya blocking, bukan deadlock) lanjut
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 34
+
+-- ============ Bagian 7 · SNAPSHOT isolation (ringkas, opsional) ==============================
+
+-- Langkah 35 (Sesi A) ----------------------------------------------------------------------
+-- Pastikan kedua sesi tidak punya transaction terbuka dulu.
+ALTER DATABASE ProductCatalogLab SET ALLOW_SNAPSHOT_ISOLATION ON;
+SELECT snapshot_isolation_state_desc FROM sys.databases WHERE name = N'ProductCatalogLab';   -- ON
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 36
+
+-- Langkah 37 (Sesi A) ----------------------------------------------------------------------
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Price = 70.00 WHERE Id = 1;           -- X lock, belum commit
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 38
+
+-- Langkah 39 (Sesi A) ----------------------------------------------------------------------
+COMMIT TRANSACTION;            -- Price kini 70.00
+-- &gt;&gt;&gt; lanjut: Sesi B, Langkah 40
+
+-- Langkah 42 (Sesi A) ----------------------------------------------------------------------
+-- Kembalikan lab ke kondisi setup.
+UPDATE dbo.Product SET Price = 80.19 WHERE Id = 1;
+ALTER DATABASE ProductCatalogLab SET ALLOW_SNAPSHOT_ISOLATION OFF;
+SELECT name, is_read_committed_snapshot_on, snapshot_isolation_state_desc
+FROM sys.databases
+WHERE name = N'ProductCatalogLab';                           -- 0 dan OFF
+SELECT Id, Price, Stock FROM dbo.Product WHERE Id IN (1, 2);  -- 80.19/31 dan 159.38/62
+-- Selesai.
+</code></pre>
+
+<h3>Jendela 2: <code>lab/0021-sesi-b.sql</code></h3>
+<pre class="script" data-file="lab/0021-sesi-b.sql"><code>-- Lesson 0021 · Transaction, isolation level, locking, deadlock · SESI B
+-- Pasangan file ini: lab/0021-sesi-a.sql. Mulai dari Langkah 1 di Sesi A.
+-- JANGAN jalankan seluruh file sekaligus: jalankan satu langkah, lalu ikuti penanda "&gt;&gt;&gt; lanjut".
+-- SET TRANSACTION ISOLATION LEVEL berlaku untuk seluruh sesi sampai diganti, jadi setiap
+-- bagian menyetel ulang isolation level-nya sendiri.
+
+-- ============ Bagian 0 · Persiapan ============================================================
+
+-- Langkah 2 (Sesi B) -----------------------------------------------------------------------
+USE ProductCatalogLab;
+SELECT @@SPID AS SesiB;                        -- session id jendela ini, berbeda dari Sesi A
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 3
+
+-- ============ Bagian 2 · Blocking ============================================================
+
+-- Langkah 5 (Sesi B) -----------------------------------------------------------------------
+-- READ COMMITTED berbasis lock butuh shared (S) lock untuk membaca; baris Id 1 dipegang X lock
+-- oleh Sesi A, jadi query ini MENUNGGU. Tanpa LOCK_TIMEOUT, ia menunggu selamanya.
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+SELECT Id, Name, Price FROM dbo.Product WHERE Id = 1;        -- berputar... lalu 80.19 setelah Langkah 7
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 6 (biarkan query ini tetap menunggu)
+
+-- ============ Bagian 3 · Dirty read ==========================================================
+
+-- Langkah 9 (Sesi B) -----------------------------------------------------------------------
+-- READ UNCOMMITTED tidak meminta S lock (sama dengan hint WITH (NOLOCK)): tidak menunggu,
+-- tapi membaca data yang belum di-commit.
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 99999.99, langsung
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 10
+
+-- Langkah 11 (Sesi B) ----------------------------------------------------------------------
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 80.19: yang tadi adalah dirty read
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+-- &gt;&gt;&gt; lanjut: Langkah 12 (masih Sesi B)
+
+-- ============ Bagian 4 · Non-repeatable read =================================================
+
+-- Langkah 12 (Sesi B) ----------------------------------------------------------------------
+-- READ COMMITTED: S lock dilepas begitu baris selesai dibaca, bukan di akhir transaction.
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+BEGIN TRANSACTION;
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 80.19
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 13
+
+-- Langkah 14 (Sesi B) ----------------------------------------------------------------------
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 90.00: transaction yang SAMA, hasil beda
+COMMIT TRANSACTION;
+-- &gt;&gt;&gt; lanjut: Langkah 15 (masih Sesi B)
+
+-- Langkah 15 (Sesi B) ----------------------------------------------------------------------
+-- REPEATABLE READ: S lock ditahan sampai akhir transaction.
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+BEGIN TRANSACTION;
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 90.00
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 16
+
+-- Langkah 17 (Sesi B) ----------------------------------------------------------------------
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- tetap 90.00: UPDATE Sesi A masih menunggu
+COMMIT TRANSACTION;            -- S lock dilepas; UPDATE di Sesi A langsung selesai (80.19)
+-- &gt;&gt;&gt; lanjut: Langkah 18 (masih Sesi B)
+
+-- ============ Bagian 5 · Phantom =============================================================
+
+-- Langkah 18 (Sesi B) ----------------------------------------------------------------------
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+BEGIN TRANSACTION;
+SELECT COUNT(*) AS Jumlah FROM dbo.Product WHERE Id &gt;= 99995;   -- 6 (Id 99995..100000)
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 19
+
+-- Langkah 20 (Sesi B) ----------------------------------------------------------------------
+SELECT COUNT(*) AS Jumlah FROM dbo.Product WHERE Id &gt;= 99995;   -- 7: baris baru muncul = phantom
+COMMIT TRANSACTION;
+-- &gt;&gt;&gt; lanjut: Langkah 21 (masih Sesi B)
+
+-- Langkah 21 (Sesi B) ----------------------------------------------------------------------
+-- SERIALIZABLE: range lock atas rentang WHERE, jadi tidak ada baris baru yang bisa masuk.
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+BEGIN TRANSACTION;
+SELECT COUNT(*) AS Jumlah FROM dbo.Product WHERE Id &gt;= 99995;   -- 7
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 22
+
+-- Langkah 23 (Sesi B) ----------------------------------------------------------------------
+SELECT COUNT(*) AS Jumlah FROM dbo.Product WHERE Id &gt;= 99995;   -- tetap 7: INSERT Sesi A masih menunggu
+COMMIT TRANSACTION;            -- range lock dilepas; INSERT di Sesi A langsung selesai
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 24
+
+-- ============ Bagian 6 · Deadlock ============================================================
+
+-- Langkah 26 (Sesi B) ----------------------------------------------------------------------
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 2;       -- B memegang X lock baris 2
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 27
+
+-- Langkah 28 (Sesi B) ----------------------------------------------------------------------
+-- B meminta baris 1 (milik A), A meminta baris 2 (milik B): siklus. Deadlock monitor
+-- (default memeriksa tiap 5 detik) memilih satu victim: Msg 1205, transaction-nya di-rollback.
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 1;
+-- &gt;&gt;&gt; lanjut: Langkah 29 di KEDUA jendela
+
+-- Langkah 29 (Sesi A DAN Sesi B) -----------------------------------------------------------
+IF @@TRANCOUNT &gt; 0 ROLLBACK TRANSACTION;
+SELECT @@TRANCOUNT AS TranCount, Id, Stock FROM dbo.Product WHERE Id IN (1, 2);   -- 0; 31 dan 62
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 30 atau 31
+
+-- Langkah 32 (Sesi B) ----------------------------------------------------------------------
+-- Urutan sama dengan Sesi A: Id 1 dulu. Ini hanya BLOCKING (menunggu A selesai), bukan deadlock.
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 1;       -- menunggu sampai Sesi A ROLLBACK
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 33
+
+-- Langkah 34 (Sesi B) ----------------------------------------------------------------------
+UPDATE dbo.Product SET Stock = Stock - 1 WHERE Id = 2;
+ROLLBACK TRANSACTION;
+SELECT Id, Stock FROM dbo.Product WHERE Id IN (1, 2);        -- 31 dan 62
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 35 (opsional) atau selesai
+
+-- ============ Bagian 7 · SNAPSHOT isolation (ringkas, opsional) ==============================
+
+-- Langkah 36 (Sesi B) ----------------------------------------------------------------------
+SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+BEGIN TRANSACTION;
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 80.19 (snapshot diambil di sini)
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 37
+
+-- Langkah 38 (Sesi B) ----------------------------------------------------------------------
+-- Baris Id 1 sedang dipegang X lock oleh Sesi A, tapi SNAPSHOT membaca versi lama dari
+-- version store (tempdb): tidak menunggu.
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- 80.19, langsung
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 39
+
+-- Langkah 40 (Sesi B) ----------------------------------------------------------------------
+SELECT Id, Price FROM dbo.Product WHERE Id = 1;              -- tetap 80.19 walau Sesi A sudah commit 70.00
+-- Mengubah baris yang sudah diubah transaction lain setelah snapshot diambil:
+-- Msg 3960 (update conflict), transaction ini dibatalkan.
+UPDATE dbo.Product SET Price = Price + 1 WHERE Id = 1;
+-- &gt;&gt;&gt; lanjut: Langkah 41 (masih Sesi B)
+
+-- Langkah 41 (Sesi B) ----------------------------------------------------------------------
+SELECT @@TRANCOUNT AS TranCount;                             -- 0: sudah di-rollback engine
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+-- &gt;&gt;&gt; lanjut: Sesi A, Langkah 42
+</code></pre>
+
+<h2>8. Latihan tulis query</h2>
+<p>Tulis sendiri di editor SQL, jalankan di lab, baru buka jawaban. Tidak dinilai otomatis; bandingkan hasil dan bentuk kodenya.</p>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>A.</strong> Tulis Stored Procedure <code>dbo.usp_TransferStock</code> dengan parameter <code>@FromId int</code>, <code>@ToId int</code>, <code>@Qty int</code>.
+    SP memindahkan <code>@Qty</code> Stock dari satu Product ke Product lain secara <strong>atomik</strong>, menolak bila Stock asal tidak cukup (<code>THROW 50003</code>),
+    dan <strong>tidak bisa deadlock</strong> walau dua request memanggil <code>(1, 2)</code> dan <code>(2, 1)</code> bersamaan.
+    Uji: pindahkan 5 dari Id 1 ke Id 2, lalu coba pindahkan 100000, lalu kembalikan 5 dari Id 2 ke Id 1.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>CREATE OR ALTER PROCEDURE dbo.usp_TransferStock
+    @FromId int,
+    @ToId   int,
+    @Qty    int
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    DECLARE @FirstId  int = IIF(@FromId &lt; @ToId, @FromId, @ToId),
+            @SecondId int = IIF(@FromId &lt; @ToId, @ToId, @FromId),
+            @FirstStock int, @SecondStock int;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- Kunci kedua baris dalam urutan Id naik, sama untuk SEMUA pemanggil: tidak ada siklus.
+        -- UPDLOCK: lock ditahan sampai COMMIT, dan dua pembaca UPDLOCK tidak bisa sama-sama lolos.
+        SELECT @FirstStock  = Stock FROM dbo.Product WITH (UPDLOCK) WHERE Id = @FirstId;
+        SELECT @SecondStock = Stock FROM dbo.Product WITH (UPDLOCK) WHERE Id = @SecondId;
+
+        IF @FirstStock IS NULL OR @SecondStock IS NULL
+            THROW 50001, N'Product tidak ditemukan.', 1;
+        IF IIF(@FromId = @FirstId, @FirstStock, @SecondStock) &lt; @Qty
+            THROW 50003, N'Stock asal tidak cukup.', 1;
+
+        UPDATE dbo.Product SET Stock = Stock - @Qty WHERE Id = @FromId;
+        UPDATE dbo.Product SET Stock = Stock + @Qty WHERE Id = @ToId;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() &lt;&gt; 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+EXEC dbo.usp_TransferStock @FromId = 1, @ToId = 2, @Qty = 5;
+SELECT Id, Stock FROM dbo.Product WHERE Id IN (1, 2);           -- 26 dan 67
+
+BEGIN TRY
+    EXEC dbo.usp_TransferStock @FromId = 1, @ToId = 2, @Qty = 100000;
+END TRY
+BEGIN CATCH
+    SELECT ERROR_NUMBER() AS ErrorNumber, ERROR_MESSAGE() AS Message;   -- 50003
+END CATCH;
+
+EXEC dbo.usp_TransferStock @FromId = 2, @ToId = 1, @Qty = 5;   -- kembali 31 dan 62
+SELECT Id, Stock FROM dbo.Product WHERE Id IN (1, 2);
+GO</code></pre>
+    <p>Poin yang dinilai interviewer: <code>XACT_ABORT ON</code> + <code>TRY/CATCH</code> + <code>THROW;</code> (atomicity dan error sampai ke aplikasi); <strong>urutan akses yang sama</strong> (Id kecil dulu) sebagai pencegah deadlock;
+      <code>UPDLOCK</code> supaya pola baca-lalu-ubah tidak berubah menjadi deadlock S→X atau lost update. Uji deadlock-nya sendiri: jalankan <code>EXEC dbo.usp_TransferStock 1, 2, 1</code> dan <code>2, 1, 1</code> bersamaan di dua jendela, dibungkus <code>BEGIN TRAN</code> tanpa COMMIT: yang kedua hanya menunggu, tidak ada 1205 (lalu ROLLBACK di kedua jendela).
+      Kalau ditanya "kenapa tidak cukup CHECK constraint?": constraint tetap penjaga terakhir (547), tapi 50003 lebih jelas untuk dipetakan ke response 409.</p>
+  </details>
+</div>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>B.</strong> Tulis query "siapa mem-block siapa" untuk dipakai saat aplikasi terasa macet: tampilkan <code>session_id</code> yang menunggu, <code>blocking_session_id</code>, <code>wait_type</code>, lama menunggu dalam detik,
+    nama isolation level sesi yang menunggu (bukan angkanya), dan teks SQL yang sedang menunggu.
+    Jalankan di jendela ketiga saat lab sedang di Langkah 5 (Sesi B menunggu Sesi A).</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>SELECT r.session_id,
+       r.blocking_session_id,
+       r.wait_type,
+       r.wait_time / 1000.0 AS WaitSeconds,
+       CASE r.transaction_isolation_level
+           WHEN 1 THEN 'READ UNCOMMITTED'
+           WHEN 2 THEN 'READ COMMITTED'
+           WHEN 3 THEN 'REPEATABLE READ'
+           WHEN 4 THEN 'SERIALIZABLE'
+           WHEN 5 THEN 'SNAPSHOT'
+           ELSE 'UNSPECIFIED'
+       END AS IsolationLevel,
+       t.text AS WaitingSql
+FROM sys.dm_exec_requests AS r
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) AS t
+WHERE r.blocking_session_id &lt;&gt; 0
+ORDER BY r.wait_time DESC;</code></pre>
+    <p><code>blocking_session_id</code> bukan 0 berarti request itu diblok; angka isolation level (1–5) dipetakan sesuai dokumentasi <code>sys.dm_exec_requests</code>.
+      <code>CROSS APPLY</code> memanggil function per baris (mirip JOIN ke table-valued function di lesson 0020). Langkah berikutnya di dunia nyata: lihat apa yang dikerjakan sesi pemblokir (biasanya transaction yang lupa di-commit atau terlalu panjang),
+      bukan langsung <code>KILL</code>.</p>
+  </details>
+</div>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 7 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Jelaskan isolation level di SQL Server: anomali apa yang dicegah masing-masing, apa default-nya, dan level mana yang Anda pilih." (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Isolation level menentukan seberapa jauh transaction terlindung dari perubahan transaction lain yang berjalan bersamaan. Ada tiga anomali: dirty read, yaitu membaca data yang belum di-commit;
+      non-repeatable read, membaca baris yang sama dua kali dengan hasil berbeda; dan phantom, query yang sama mengembalikan himpunan baris berbeda karena ada INSERT.
+      READ UNCOMMITTED membolehkan ketiganya, sama dengan NOLOCK. READ COMMITTED, default SQL Server, mencegah dirty read. REPEATABLE READ menahan shared lock sampai akhir transaction
+      sehingga mencegah non-repeatable read, tapi phantom masih bisa. SERIALIZABLE menambah range lock sehingga phantom pun tercegah, dengan biaya blocking paling besar.
+      SNAPSHOT mencegah ketiganya lewat row versioning, pembaca tidak memblok penulis, tapi harus diaktifkan dengan ALLOW_SNAPSHOT_ISOLATION dan bisa gagal dengan update conflict 3960.
+      Di SQL Server 2022 READ_COMMITTED_SNAPSHOT default OFF, jadi pembaca menunggu penulis; Microsoft menyarankan RCSI untuk kebanyakan aplikasi. Apa pun levelnya, UPDATE tetap memegang X lock sampai commit.
+      Pilihan saya: default READ COMMITTED, idealnya dengan RCSI, dan level lebih tinggi hanya untuk transaction tertentu yang memang butuh."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>tiga anomali dengan definisi: dirty read, non-repeatable read, phantom?</li>
+      <li>READ UNCOMMITTED (= NOLOCK) membolehkan dirty read; READ COMMITTED adalah default dan mencegahnya?</li>
+      <li>REPEATABLE READ menahan shared lock sampai akhir transaction, phantom masih bisa; SERIALIZABLE memakai range lock?</li>
+      <li>SNAPSHOT memakai row versioning: pembaca tidak memblok penulis, perlu <code>ALLOW_SNAPSHOT_ISOLATION</code>, bisa update conflict?</li>
+      <li>trade-off: level lebih tinggi berarti lebih banyak blocking dan risiko deadlock; RCSI default OFF di SQL Server 2022?</li>
+      <li>pilihan yang dibela: READ COMMITTED (idealnya RCSI), level tinggi hanya bila perlu; UPDATE tetap memegang X lock?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Apa itu deadlock, apa bedanya dengan blocking, dan bagaimana Anda mencegah serta menanganinya di aplikasi .NET?" (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Blocking itu normal: transaction B menunggu lock yang dipegang transaction A, dan begitu A commit atau rollback, B lanjut. Deadlock adalah siklus: A memegang baris 1 dan menunggu baris 2,
+      sementara B memegang baris 2 dan menunggu baris 1, jadi tidak ada yang bisa lanjut. SQL Server punya deadlock monitor yang memeriksa secara berkala, default tiap 5 detik; ia memilih satu victim,
+      biasanya yang paling murah di-rollback, me-rollback transaction-nya, dan mengirim error 1205. Pencegahannya: akses tabel dan baris dalam urutan yang sama di semua kode, transaction sependek mungkin
+      tanpa menunggu input user, jangan pakai REPEATABLE READ atau SERIALIZABLE kalau tidak perlu, pertimbangkan RCSI supaya pembaca tidak memblok penulis, dan untuk pola baca-lalu-ubah pakai UPDLOCK saat membaca.
+      Karena deadlock tidak bisa dihilangkan seratus persen, aplikasi harus menangkap SqlException nomor 1205 lalu mengulang seluruh transaction setelah jeda singkat yang diacak.
+      Untuk investigasi, deadlock graph sudah dicatat otomatis oleh extended event system_health."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>blocking = menunggu lock lalu lanjut setelah dilepas; deadlock = siklus saling menunggu?</li>
+      <li>contoh konkret dua transaction yang mengunci dua baris dengan urutan terbalik?</li>
+      <li>deadlock monitor memilih victim (paling murah di-rollback), me-rollback, error 1205?</li>
+      <li>pencegahan: urutan akses sama, transaction pendek, tanpa input user di tengah transaction?</li>
+      <li>hindari isolation level tinggi bila tidak perlu, RCSI, atau <code>UPDLOCK</code> untuk pola baca-lalu-ubah?</li>
+      <li>aplikasi menangkap 1205 dan retry seluruh transaction dengan jeda acak; deadlock graph di <code>system_health</code>?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Apa itu ACID? Tunjukkan cara menulis transaction yang benar di T-SQL dan di EF Core." (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "ACID adalah empat jaminan transaction: Atomicity, semua perubahan tersimpan atau tidak sama sekali; Consistency, data selalu memenuhi aturan seperti constraint; Isolation, transaction yang berjalan bersamaan
+      tidak saling mengganggu, diatur lewat isolation level dan lock; Durability, yang sudah di-commit tetap ada walau server crash, dijamin transaction log. Di T-SQL tiap statement sudah autocommit,
+      tapi kalau beberapa statement harus atomik saya tulis <code>SET XACT_ABORT ON</code>, lalu <code>BEGIN TRY</code>, <code>BEGIN TRANSACTION</code>, statement-statementnya, <code>COMMIT</code>.
+      Di <code>BEGIN CATCH</code>: <code>IF XACT_STATE() &lt;&gt; 0 ROLLBACK</code>, lalu <code>THROW</code> supaya error sampai ke aplikasi. XACT_ABORT penting karena default-nya hanya statement yang gagal yang di-rollback,
+      sehingga tanpa itu COMMIT bisa menyimpan setengah transaction. Saya juga tahu nested BEGIN TRAN tidak independen: COMMIT dalam hanya mengurangi <code>@@TRANCOUNT</code>.
+      Di EF Core, satu <code>SaveChanges</code> sudah otomatis satu transaction. Kalau beberapa SaveChanges harus atomik, saya pakai <code>await using var tx = await context.Database.BeginTransactionAsync()</code>,
+      bisa dengan <code>IsolationLevel</code>, lalu <code>CommitAsync</code>; kalau exception, transaction di-rollback saat dispose. Kalau retry on failure aktif, bungkus dengan execution strategy."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>keempat huruf ACID dengan arti yang benar?</li>
+      <li>autocommit: tiap statement sudah transaction; explicit transaction untuk beberapa statement?</li>
+      <li><code>SET XACT_ABORT ON</code> + <code>BEGIN TRY</code>/<code>BEGIN TRANSACTION</code>/<code>COMMIT</code>?</li>
+      <li>CATCH: <code>IF XACT_STATE() &lt;&gt; 0</code> (atau <code>@@TRANCOUNT &gt; 0</code>) ROLLBACK lalu <code>THROW;</code>?</li>
+      <li>EF Core: satu <code>SaveChanges</code> = satu transaction; <code>BeginTransactionAsync</code> untuk beberapa SaveChanges, lalu <code>CommitAsync</code>?</li>
+      <li>jebakan: tanpa XACT_ABORT hanya statement gagal yang di-rollback, atau nested COMMIT hanya mengurangi <code>@@TRANCOUNT</code>?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review 0024 akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">Microsoft Learn: Transaction locking and row versioning guide</a>.
+  Baca bagian "Transaction basics", "Concurrency effects", dan "Isolation levels in the Database Engine" (lewati paragraf "with optimized locking"), lalu bagian "Minimize deadlocks" di <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">Deadlocks guide</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/transaction-locking.html">Reference: Transaction, isolation level, locking, deadlock</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Database (SQL Server)")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kenapa UPDATE yang memakai index bisa deadlock dengan SELECT?", "kapan RCSI justru berbahaya untuk logika bisnis?", atau "bagaimana optimistic concurrency EF Core menulis SQL-nya?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1] Transaction locking and row versioning guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/language-elements/begin-transaction-transact-sql">[2] BEGIN TRANSACTION</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-xact-abort-transact-sql">[3] SET XACT_ABORT</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/functions/xact-state-transact-sql">[4] XACT_STATE</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/saving/transactions">[5] EF Core: Transactions</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.relationaldatabasefacadeextensions.begintransaction">[6] BeginTransaction(IsolationLevel)</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql">[7] SET TRANSACTION ISOLATION LEVEL</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8] Deadlocks guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-locks-transact-sql">[9] sys.dm_tran_locks</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-exec-requests-transact-sql">[10] sys.dm_exec_requests</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/optimized-locking">[11] Optimized locking</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[12] EF Core: Connection resiliency</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/saving/concurrency">[13] EF Core: Handling concurrency conflicts</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[14] SET LOCK_TIMEOUT</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[15] MSSQLSERVER_1222</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0020-stored-procedure.html">← 0020 · Stored Procedure</a>
+  <a href="0022-index.html">0022 · Index →</a>
+</nav>
+
+</main>
+<script src="../assets/bank.js"></script>
+<script src="../assets/questions/0021.js"></script>
+<script src="../assets/bank-quiz.js"></script>
+<script src="../assets/quiz.js"></script>
+<script src="../assets/hands-on.js"></script>
+</body>
+</html>
