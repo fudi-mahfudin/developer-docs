@@ -15,7 +15,7 @@
 <h2>Alur "query ini lambat" <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1]</a></sup></h2>
 <ol>
   <li>Ambil SQL: log EF Core (<code>LogTo</code>, level Information, ada durasi) / <code>ToQueryString()</code>. Cek N+1, tracking, kolom berlebih (0006).</li>
-  <li>Jalankan dengan <strong>actual plan</strong> + <code>SET STATISTICS IO, TIME ON</code>.</li>
+  <li>Jalankan dengan <strong>actual plan</strong> + <code>SET STATISTICS IO ON</code>.</li>
   <li>Baca plan: operator mahal, scan vs seek, Key Lookup berulang, estimated vs actual rows, warning (mis. <code>CONVERT_IMPLICIT</code>).</li>
   <li>Perbaiki: SARGable, index (composite/covering), parameter sniffing, keyset pagination.</li>
   <li>Ukur lagi: logical reads + plan.</li>

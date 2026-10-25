@@ -600,7 +600,7 @@ Siapkan 4 cerita dari pengalaman Node/React:
 > Lesson 0019–0024, ±30 menit per lesson (±15 menit konsep + kuis, ±15 menit hands-on). Total ±3 jam, sisanya untuk mengulang latihan tulis query.
 
 ### Setup lab `ProductCatalogLab` (sekali sebelum 0019, ulangi kapan saja untuk reset)
-Container `sql2022` dari Hari 0 harus jalan (`docker start sql2022`). Database lab terpisah dari `ProductCatalog` milik EF Core. Skrip `lab/00-setup-product-catalog-lab.sql` membuat database bila belum ada, menghapus sisa view/SP/function dari lab 0019–0023, membuat ulang tabel Category dan Product (index tambahan ikut hilang), lalu men-seed 6 Category dan 100.000 Product. Pilih salah satu cara:
+Container `sql2022` dari Hari 0 harus jalan (`docker start sql2022`). Database lab terpisah dari `ProductCatalog` milik EF Core. Skrip `lab/00-setup-product-catalog-lab.sql` membuat database bila belum ada, membuat ulang tabel Category dan Product, lalu men-seed 6 Category dan 100.000 Product. Pilih salah satu cara:
 
 - **sqlcmd** (dari root repo):
   ```bash
