@@ -428,3 +428,28 @@ _Avoid_: Kardinalitas (terkait, tapi itu jumlah nilai atau baris, bukan rasio)
 Jumlah page 8 KiB yang dibaca dari buffer cache untuk satu query, ditampilkan oleh `SET STATISTICS IO ON`. Dipakai untuk membandingkan query sebelum dan sesudah index karena stabil, tidak seperti waktu eksekusi (lesson 0022).
 Padanan Node: `shared hit` / `read` pada `EXPLAIN (ANALYZE, BUFFERS)` di PostgreSQL.
 _Avoid_: Disk reads (itu physical reads)
+
+**Execution Plan**:
+Urutan langkah yang dipilih optimizer untuk menjalankan query: tabel mana dibaca dulu, lewat operator apa (scan, seek, key lookup, join, sort). *Estimated plan* dibuat tanpa menjalankan query (`SET SHOWPLAN_XML ON`); *actual plan* menambahkan angka runtime seperti jumlah baris aktual (`SET STATISTICS XML ON`). Selisih besar estimated vs actual rows menandakan plan dipilih dari perkiraan yang salah (lesson 0023).
+Padanan Node: `EXPLAIN` (estimated) dan `EXPLAIN ANALYZE` (actual) di PostgreSQL.
+_Avoid_: Query plan saja tanpa menyebut estimated/actual saat konteksnya penting, "explain"
+
+**SARGable**:
+Predikat yang bisa memakai Index Seek (Search ARGument-able). Fungsi atau perhitungan pada kolom (`YEAR(CreatedAt)`, `LEFT(Name, 3)`, `Price * 1.1`, `ISNULL(col, ...)`, konversi tipe implisit) membuatnya non-SARGable sehingga engine harus scan. Perbaikan: biarkan kolom polos dan pindahkan perhitungan ke sisi konstanta, mis. rentang tanggal half-open (lesson 0023).
+Padanan Node: aturan yang sama berlaku di PostgreSQL/MySQL; Prisma `where: { createdAt: { gte, lt } }` sudah SARGable.
+_Avoid_: "Index-friendly" (boleh untuk menjelaskan, tapi istilah interview-nya SARGable)
+
+**Parameter Sniffing**:
+Saat query berparameter atau stored procedure dikompilasi, SQL Server memakai nilai parameter saat itu untuk membuat plan, lalu menyimpan dan memakai ulang plan tersebut. Jadi masalah bila data tidak merata (lab: Category 1 = 90.000 baris, Category 6 = 20). Penanganan: `OPTION (RECOMPILE)`, `OPTIMIZE FOR`, `OPTIMIZE FOR UNKNOWN`, atau index yang membuat satu plan bagus untuk semua nilai. SQL Server 2022 menambah PSP optimization (beberapa plan per query) (lesson 0023).
+Padanan Node: PostgreSQL punya masalah serupa pada prepared statement (generic vs custom plan).
+_Avoid_: Parameter sensitivity (nama resmi alternatif, boleh), "cache plan bug"
+
+**Keyset Pagination**:
+Pagination yang melompati baris dengan `WHERE` pada kunci urutan baris terakhir (`WHERE Id > @lastId ORDER BY Id`), bukan dengan `OFFSET`. Cepat untuk halaman jauh dan stabil saat data berubah, tapi tidak bisa lompat ke nomor halaman tertentu. Urutan harus unik (tambahkan `Id` sebagai pemecah seri) dan didukung index yang cocok. Lawannya OFFSET pagination (`OFFSET n ROWS FETCH NEXT m ROWS ONLY`, EF Core `Skip/Take`), yang tetap memproses semua baris yang dilewati (lesson 0023).
+Padanan Node: Prisma `cursor` + `take` (keyset) vs `skip` + `take` (offset).
+_Avoid_: Cursor pagination (sebutan umum di API, boleh, tapi jangan tertukar dengan cursor T-SQL), seek method
+
+**SQL Logging EF Core**:
+Cara melihat SQL yang dikirim EF Core: `LogTo(Console.WriteLine, LogLevel.Information)` (setiap perintah beserta durasinya; jangan dibiarkan di production), `EnableSensitiveDataLogging()` untuk menampilkan nilai parameter (development saja), `ToQueryString()` untuk melihat SQL satu query tanpa menjalankannya, dan `TagWith()` untuk menandai query di log (lesson 0023).
+Padanan Node: Prisma `log: ['query']` / knex `debug`; `ToQueryString` ≈ knex `.toSQL()`.
+_Avoid_: SQL Profiler (tool server terpisah, bukan fitur EF Core)
