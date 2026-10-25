@@ -1,0 +1,157 @@
+// Soal lesson 0023 · Optimasi query: execution plan, SARGable, parameter sniffing, pagination OFFSET vs keyset, SQL dari EF Core. Format: assets/README.md.
+QuestionBank.labelTopics({
+  "opt-plan": "Membaca execution plan",
+  "opt-sargable": "SARGable query",
+  "opt-sniffing": "Parameter sniffing",
+  "opt-pagination": "Pagination OFFSET vs keyset",
+  "opt-ef-sql": "Melihat SQL dari EF Core",
+});
+
+QuestionBank.register([
+  {
+    id: "0023-01", lesson: "0023", topic: "opt-plan", type: "mc",
+    prompt: "Apa beda <em>estimated</em> dan <em>actual</em> execution plan?",
+    options: {
+      a: "Estimated memakai index, actual selalu membaca seluruh tabel",
+      b: "Estimated tanpa eksekusi, actual menambahkan angka runtime nyata",
+      c: "Estimated untuk SELECT, actual khusus INSERT dan UPDATE",
+      d: "Estimated dari aplikasi, actual dibuat ulang oleh server",
+    },
+    answer: "b",
+    explain: "\"When estimated execution plans are generated, the T-SQL queries or batches do not execute. Because of this, an estimated execution plan does not contain any runtime information, such as actual resource usage metrics or runtime warnings.\" Actual plan = \"the compiled plan plus its execution context\", misalnya jumlah baris aktual per operator. Di T-SQL: <code>SET SHOWPLAN_XML ON</code> (estimated) vs <code>SET STATISTICS XML ON</code> (actual).",
+  },
+  {
+    id: "0023-02", lesson: "0023", topic: "opt-plan", type: "mc",
+    prompt: "Di actual plan sebuah query lambat, operator Clustered Index Scan menunjukkan <em>Estimated Number of Rows</em> 16.667 dan <em>Actual Number of Rows</em> 20. Apa artinya?",
+    options: {
+      a: "Plan dipilih dari perkiraan yang meleset jauh",
+      b: "Query mengembalikan data yang salah ke aplikasi",
+      c: "Index rusak dan harus dibuat ulang segera",
+      d: "Scan selalu lebih cepat untuk 20 baris",
+    },
+    answer: "a",
+    explain: "Optimizer memilih plan berdasarkan perkiraan baris. Mengira 16.667 baris, ia memilih scan; untuk 20 baris sebenarnya, Index Seek + Key Lookup jauh lebih murah. Selisih besar estimated vs actual menunjuk ke statistik, local variable (memakai rata-rata density), atau parameter sniffing. Data tetap benar, plan saja yang buruk.",
+  },
+  {
+    id: "0023-03", lesson: "0023", topic: "opt-sargable", type: "mc",
+    prompt: "Ada index pada <code>CreatedAt</code>. Query mana yang bisa memakai <strong>Index Seek</strong> untuk Product yang dibuat Juni 2025?",
+    options: {
+      a: "<code>WHERE YEAR(CreatedAt) = 2025 AND MONTH(CreatedAt) = 6</code>",
+      b: "<code>WHERE DATEPART(yy,CreatedAt) = 2025 AND DATEPART(mm,CreatedAt) = 6</code>",
+      c: "<code>WHERE EOMONTH(CreatedAt) &gt;= '2025-06-30' AND EOMONTH(CreatedAt) &lt; '2025-07-31'</code>",
+      d: "<code>WHERE CreatedAt &gt;= '2025-06-01' AND CreatedAt &lt; '2025-07-01'</code>",
+    },
+    answer: "d",
+    explain: "\"Applying any function or computation on the column(s) in the search predicate generally makes the query non-sargable\". Tiga opsi lain membungkus kolom dengan fungsi (<code>YEAR</code>/<code>MONTH</code>, <code>DATEPART</code>, <code>EOMONTH</code>), jadi engine harus menghitungnya untuk setiap baris (scan). Rentang half-open pada kolom polos bisa di-seek, dan <code>&lt; '2025-07-01'</code> tidak melewatkan jam di tanggal 30 Juni seperti <code>BETWEEN ... '2025-06-30'</code>.",
+  },
+  {
+    id: "0023-04", lesson: "0023", topic: "opt-sargable", type: "mc",
+    prompt: "<code>WHERE Price * 1.1 &gt; 1000</code> membuat index pada <code>Price</code> tidak bisa di-seek. Perbaikan yang SARGable?",
+    options: {
+      a: "Tambahkan hint WITH INDEX supaya index dipaksa terpakai",
+      b: "Pindahkan perhitungan ke sisi konstanta: Price &gt; 1000/1.1",
+      c: "Ganti perkalian dengan CAST supaya tipe kolomnya sama",
+      d: "Bungkus kolom dengan ISNULL supaya nilai NULL hilang",
+    },
+    answer: "b",
+    explain: "Contoh resmi Microsoft: <code>WHERE UnitPrice * 0.10 &gt; 300</code> ditulis ulang menjadi <code>WHERE UnitPrice &gt; 300/0.10</code>, \"the computation is moved to the other side of the predicate\". Hint hanya memaksa scan index; <code>CAST</code>/<code>ISNULL</code> pada kolom justru penyebab umum non-SARGable.",
+  },
+  {
+    id: "0023-05", lesson: "0023", topic: "opt-sniffing", type: "mc",
+    prompt: "Stored procedure <code>usp_ProductsByCategory @CategoryId</code> cepat untuk Category 6 (20 baris), tapi sangat lambat untuk Category 1 (90.000 baris), hanya kalau Category 6 dipanggil duluan setelah restart. Penyebabnya?",
+    options: {
+      a: "Plan untuk nilai pertama disimpan lalu dipakai ulang",
+      b: "Statistik tabel hilang setiap kali server dinyalakan ulang",
+      c: "Category 1 terkena lock dari transaksi yang berjalan",
+      d: "SQL Server tidak bisa memakai index untuk parameter",
+    },
+    answer: "a",
+    explain: "Parameter sniffing: engine \"sniffs the current parameter values during compilation\" dan menyimpan plan-nya. Plan Index Seek + Key Lookup yang bagus untuk 20 baris lalu dipakai ulang untuk 90.000 baris (90.000 lookup). Masalahnya muncul karena distribusi data tidak merata: \"a single cached plan for a parameterized query isn't optimal for all possible incoming parameter values.\"",
+  },
+  {
+    id: "0023-06", lesson: "0023", topic: "opt-sniffing", type: "mc",
+    prompt: "Manakah penanganan parameter sniffing beserta harga yang benar?",
+    options: {
+      a: "<code>DBCC FREEPROCCACHE</code> rutin: permanen, tanpa efek ke query lain",
+      b: "<code>OPTIMIZE FOR UNKNOWN</code>: plan terbaik untuk setiap nilai parameter",
+      c: "<code>OPTION (RECOMPILE)</code>: plan pas tiap eksekusi, bayar CPU kompilasi",
+      d: "Ganti parameter dengan local variable: perkiraan baris selalu akurat",
+    },
+    answer: "c",
+    explain: "RECOMPILE membuat \"a new, temporary plan for the query and immediately discard that plan\"; Microsoft menyebutnya menyeimbangkan \"the slight increase in compilation CPU usage with a more optimal performance for each query execution.\" <code>OPTIMIZE FOR UNKNOWN</code> dan local variable sama-sama memakai rata-rata (bukan plan terbaik per nilai); <code>FREEPROCCACHE</code> tanpa parameter membuang semua plan di server dan masalahnya kembali. Di lab, covering index menghilangkan akar masalahnya.",
+  },
+  {
+    id: "0023-07", lesson: "0023", topic: "opt-pagination", type: "mc",
+    prompt: "Kenapa <code>ORDER BY Id OFFSET 90000 ROWS FETCH NEXT 20 ROWS ONLY</code> jauh lebih lambat daripada halaman pertama?",
+    options: {
+      a: "FETCH NEXT mengunci seluruh tabel selama query berjalan",
+      b: "OFFSET besar membuat SQL Server mengabaikan clustered index",
+      c: "Halaman jauh tidak pernah tersimpan di buffer cache",
+      d: "Database tetap harus memproses semua baris yang dilewati",
+    },
+    answer: "d",
+    explain: "EF Core docs tentang Skip/Take: \"The database must still process the first 20 entries, even if they aren't returned to the application; this creates possibly significant computation load that increases with the number of rows being skipped.\" Di lab: OFFSET 90000 membaca hampir seluruh tabel, keyset <code>WHERE Id &gt; 90000</code> hanya beberapa page.",
+  },
+  {
+    id: "0023-08", lesson: "0023", topic: "opt-pagination", type: "mc",
+    prompt: "Kapan keyset pagination <em>tidak</em> cocok?",
+    options: {
+      a: "Saat data sering bertambah selama pengguna sedang menggulir",
+      b: "Saat urutan memakai lebih dari satu kolom kunci",
+      c: "Saat pengguna harus bisa lompat ke halaman tertentu",
+      d: "Saat tabel punya clustered index pada kolom Id",
+    },
+    answer: "c",
+    explain: "\"Keyset pagination is appropriate for pagination interfaces where the user navigates forwards and backwards, but does not support random access, where the user can jump to any specific page.\" Keyset justru unggul saat data berubah (tidak melompati atau menggandakan baris) dan tetap bisa memakai beberapa kolom (<code>A &gt; x OR (A = x AND B &gt; y)</code>) dengan composite index yang sesuai.",
+  },
+  {
+    id: "0023-09", lesson: "0023", topic: "opt-ef-sql", type: "mc",
+    prompt: "Anda ingin melihat SQL yang akan dihasilkan sebuah query LINQ EF Core <em>tanpa</em> menjalankannya. Apa yang dipakai?",
+    options: {
+      a: "<code>ToQueryString()</code> pada objek IQueryable",
+      b: "<code>AsNoTracking()</code> tepat sebelum <code>ToListAsync()</code>",
+      c: "<code>TagWith()</code> di akhir query",
+      d: "<code>SaveChanges()</code> dengan logging Debug",
+    },
+    answer: "a",
+    explain: "EF Core 5+: \"it is now possible to call ToQueryString on any LINQ query, retrieving the SQL that the query would execute\". Hasilnya untuk debugging (\"may not be suitable for direct execution\"). <code>TagWith</code> hanya menambah komentar ke SQL; <code>AsNoTracking</code> soal change tracking (lesson 0006).",
+  },
+  {
+    id: "0023-10", lesson: "0023", topic: "opt-ef-sql", type: "mc",
+    prompt: "Pernyataan mana yang benar tentang <code>LogTo</code> dan <code>EnableSensitiveDataLogging</code> di EF Core?",
+    options: {
+      a: "Keduanya wajib aktif di production supaya error terlacak",
+      b: "LogTo butuh paket NuGet tambahan khusus SQL Server",
+      c: "Nilai parameter tersembunyi kecuali sensitive data logging dinyalakan",
+      d: "Sensitive data logging mempercepat query karena plan di-cache",
+    },
+    answer: "c",
+    explain: "\"By default, EF Core will not include the values of any data in exception messages.\" <code>EnableSensitiveDataLogging()</code> menampilkan nilai parameter, hanya \"if you have the appropriate security measures in place\" (development). Simple logging \"requires minimal configuration and no additional NuGet packages\", dan \"Leaving command execution logging enabled in your production environment is usually a bad idea.\"",
+  },
+  {
+    id: "0023-oral-1", lesson: "0023", topic: "opt-plan", type: "oral",
+    prompt: "Endpoint daftar Product tiba-tiba lambat. Query-nya dari EF Core. Bagaimana Anda menganalisis dan memperbaikinya? (90 detik)",
+    sample: "\"Pertama saya ambil SQL-nya: log EF Core di level Information menampilkan setiap perintah beserta durasinya, atau <code>ToQueryString</code> untuk satu query. Sekalian saya cek sisi aplikasi: N+1, tracking yang tidak perlu, kolom berlebih. Lalu SQL itu saya jalankan di Azure Data Studio dengan actual execution plan dan <code>SET STATISTICS IO ON</code>. Di plan saya cari Clustered Index Scan pada tabel besar, Key Lookup yang dieksekusi ribuan kali, dan selisih besar estimated vs actual rows. Kalau ada fungsi di kolom WHERE, misalnya <code>YEAR(CreatedAt)</code>, saya tulis ulang jadi rentang supaya SARGable. Kalau index-nya kurang, saya buat composite atau covering index. Kalau lambatnya hanya untuk nilai parameter tertentu, saya curigai parameter sniffing. Kalau halaman jauh yang lambat, saya ganti OFFSET dengan keyset pagination. Terakhir saya ukur lagi: logical reads harus turun dan plan berubah.\"",
+    checklist: [
+      "ambil SQL yang sebenarnya: logging EF Core (durasi per perintah) atau <code>ToQueryString</code>",
+      "cek sisi aplikasi dulu: N+1, <code>AsNoTracking</code>, projection (lesson 0006)",
+      "jalankan dengan actual execution plan + <code>SET STATISTICS IO</code> (logical reads)",
+      "baca plan: scan vs seek, Key Lookup berulang, estimated vs actual rows",
+      "perbaikan sesuai temuan: SARGable, index covering/composite, parameter sniffing, keyset pagination",
+      "ukur lagi sesudah perbaikan dan bandingkan dengan angka sebelumnya",
+    ],
+  },
+  {
+    id: "0023-oral-2", lesson: "0023", topic: "opt-sniffing", type: "oral",
+    prompt: "Apa itu parameter sniffing, kapan jadi masalah, dan bagaimana menanganinya? (60 detik)",
+    sample: "\"Saat query berparameter atau stored procedure pertama kali dikompilasi, SQL Server mengintip nilai parameter saat itu dan membuat plan untuk nilai tersebut, lalu plan itu disimpan dan dipakai ulang. Itu biasanya bagus. Masalahnya muncul kalau datanya tidak merata: di lab saya, Category 6 punya 20 Product dan Category 1 punya 90.000. Kalau 6 dipanggil duluan, plan Index Seek + Key Lookup disimpan, lalu Category 1 menjalankan 90.000 key lookup. EF Core dan Dapper juga kena karena mengirim query berparameter lewat sp_executesql. Penanganannya: <code>OPTION (RECOMPILE)</code> dengan harga CPU kompilasi, <code>OPTIMIZE FOR</code> nilai yang khas, atau memperbaiki akarnya dengan covering index supaya satu plan bagus untuk semua nilai. Di SQL Server 2022 ada PSP optimization yang bisa menyimpan beberapa plan per query.\"",
+    checklist: [
+      "plan dikompilasi untuk nilai parameter pertama, lalu disimpan dan dipakai ulang",
+      "jadi masalah kalau distribusi data tidak merata (contoh 20 vs 90.000 baris)",
+      "berlaku untuk stored procedure dan query berparameter (sp_executesql dari EF Core/Dapper)",
+      "<code>OPTION (RECOMPILE)</code>: plan per eksekusi, bayar CPU kompilasi",
+      "<code>OPTIMIZE FOR</code> / <code>OPTIMIZE FOR UNKNOWN</code>, atau perbaiki akar dengan covering index",
+      "SQL Server 2022: PSP optimization menyimpan beberapa plan per query",
+    ],
+  },
+]);
