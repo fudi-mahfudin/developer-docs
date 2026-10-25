@@ -77,7 +77,7 @@ EXEC @status = dbo.usp_AdjustStock @ProductId = 1, @Delta = -5, @NewStock = @s O
 var list = await context.Products
     .FromSql($"EXECUTE dbo.usp_GetProductsByCategory @CategoryId={categoryId}")
     .AsNoTracking().ToListAsync();                 // tanpa .Where setelah EXEC
-int rows = await context.Database.ExecuteSqlAsync(
+int rows = await context.Database.ExecuteSqlAsync(   // -1: SP memakai SET NOCOUNT ON
     $"EXECUTE dbo.usp_AdjustStock @ProductId={id}, @Delta={delta}");
 
 // BERBAHAYA                                       // AMAN bila terpaksa raw
@@ -91,7 +91,7 @@ var rowsDto = await conn.QueryAsync&lt;ProductDto&gt;("dbo.usp_GetProductsByCate
     commandType: CommandType.StoredProcedure);
 int total = p.Get&lt;int&gt;("@TotalCount");</code></pre>
 <ul>
-  <li><code>FromSql</code>: hanya di <code>DbSet</code>, hasil harus memuat semua kolom entity, SP tidak bisa di-compose. <code>ExecuteSql</code>: tanpa result set, mengembalikan jumlah baris. <code>SqlQuery&lt;T&gt;</code>: scalar/DTO.</li>
+  <li><code>FromSql</code>: hanya di <code>DbSet</code>, hasil harus memuat semua kolom entity, SP tidak bisa di-compose. <code>ExecuteSql</code>: tanpa result set, mengembalikan rows affected, atau -1 bila SP memakai <code>SET NOCOUNT ON</code>; hasil SP ambil lewat <code>OUTPUT</code>/return value <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlcommand.executenonquery">[10]</a></sup>. <code>SqlQuery&lt;T&gt;</code>: scalar/DTO.</li>
   <li>SP pun rentan injection bila menggabungkan string ke <code>EXEC (@sql)</code> → <code>sp_executesql</code> dengan parameter. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection">[9]</a></sup></li>
   <li>Node: Dapper ≈ <code>pg</code>/<code>mssql</code>; <code>FromSql</code> ≈ Prisma <code>$queryRaw</code>; <code>FromSqlRaw</code> ≈ <code>$queryRawUnsafe</code>.</li>
 </ul>
@@ -112,7 +112,8 @@ int total = p.Get&lt;int&gt;("@TotalCount");</code></pre>
   <a href="https://learn.microsoft.com/en-us/sql/relational-databases/stored-procedures/stored-procedures-database-engine">[6] Stored procedures</a> ·
   <a href="https://learn.microsoft.com/en-us/ef/core/querying/sql-queries">[7] EF Core: SQL Queries</a> ·
   <a href="https://github.com/DapperLib/Dapper">[8] Dapper README</a> ·
-  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection">[9] SQL injection</a></p>
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection">[9] SQL injection</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlcommand.executenonquery">[10] SqlCommand.ExecuteNonQuery</a></p>
 </main>
 </body>
 </html>

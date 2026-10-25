@@ -1,5 +1,6 @@
 -- Setup / reset database lab ProductCatalogLab (lesson 0019-0024).
--- Aman dijalankan ulang: database dibuat bila belum ada, tabel dibuat ulang, data di-seed ulang.
+-- Aman dijalankan ulang: database dibuat bila belum ada, sisa objek lab dihapus, tabel dibuat ulang,
+-- data di-seed ulang.
 -- Jalankan di container sql2022 (lihat ROADMAP Hari 4), misalnya:
 --   sqlcmd -S localhost,1433 -U sa -P 'Dev_Passw0rd!' -C -i lab/00-setup-product-catalog-lab.sql
 -- Terpisah dari database ProductCatalog milik EF Core di mini project.
@@ -13,6 +14,21 @@ IF DB_ID(N'ProductCatalogLab') IS NULL
 GO
 
 USE ProductCatalogLab;
+GO
+
+-- Sisa objek lab 0019-0023 (view, SP, function, termasuk yang dibuat di latihan) supaya reset
+-- benar-benar kembali ke kondisi awal. Index ikut terhapus bersama tabelnya.
+DROP VIEW IF EXISTS dbo.vProductWithCategory;                  -- lab 0019
+DROP PROCEDURE IF EXISTS dbo.usp_GetProductsByCategory;        -- lab 0020
+DROP PROCEDURE IF EXISTS dbo.usp_UpdatePrice;                  -- lab 0020
+DROP PROCEDURE IF EXISTS dbo.usp_AdjustStock;                  -- latihan 0020
+DROP FUNCTION IF EXISTS dbo.fn_PriceWithTax;                   -- lab 0020
+DROP FUNCTION IF EXISTS dbo.fn_ProductsByCategory;             -- lab 0020
+DROP FUNCTION IF EXISTS dbo.fn_ResetStock;                     -- lab 0020 (sengaja gagal dibuat, jaga-jaga)
+DROP FUNCTION IF EXISTS dbo.fn_LowStockProducts;               -- latihan 0020
+DROP PROCEDURE IF EXISTS dbo.usp_TransferStock;                -- contoh 0021
+DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory;           -- lab 0023
+DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory_Recompile; -- lab 0023
 GO
 
 -- Product dulu karena punya FK ke Category.
@@ -78,7 +94,7 @@ SELECT
         WHEN n <= 99980 THEN 2 + (n - 90001) % 4
         ELSE 6
     END,
-    DATEADD(MINUTE, -(n * 13) % 1051200, CAST('2026-01-01' AS datetime2(0)))  -- tersebar ±2 tahun
+    DATEADD(MINUTE, -(n * 13) % 1051200, CAST('2026-01-01' AS datetime2(0)))  -- 0..730 hari (2 tahun) SEBELUM 2026-01-01
 FROM nums
 ORDER BY n;
 GO

@@ -2,7 +2,8 @@
 -- Jalankan setelah lab/00-setup-product-catalog-lab.sql (dan sesudah lab 0022 selesai, yang menghapus index-nya sendiri).
 -- Boleh dijalankan ulang. Jalankan PER BAGIAN (blok sampai GO), dengan actual execution plan menyala
 -- (tombol "Explain"/"Actual plan" di Azure Data Studio / VS Code mssql, Ctrl+M di SSMS).
--- Untuk setiap query, bandingkan: operator di plan, Estimated vs Actual Number of Rows, dan logical reads (tab Messages).
+-- Untuk setiap query, bandingkan: operator di plan, Estimated vs Actual Number of Rows, dan logical reads serta
+-- CPU/elapsed time (tab Messages).
 -- Angka di komentar adalah perkiraan; yang penting arah perubahannya.
 
 USE ProductCatalogLab;
@@ -10,11 +11,12 @@ SET NOCOUNT ON;
 GO
 
 -- 0. Kondisi awal ---------------------------------------------------------------------------
--- Bersihkan sisa skrip ini kalau pernah berhenti di tengah jalan.
+-- Bersihkan sisa skrip ini, atau sisa lab 0022, kalau pernah berhenti di tengah jalan.
 DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory;
 DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory_Recompile;
 DROP INDEX IF EXISTS IX_Product_CategoryId ON dbo.Product;
 DROP INDEX IF EXISTS IX_Product_CategoryId_Covering ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CategoryId_Price ON dbo.Product;   -- dibuat lab 0022 bagian composite index
 DROP INDEX IF EXISTS IX_Product_CreatedAt ON dbo.Product;
 -- Bagian 3 mematikan PSP optimization; kembalikan ke default (ON) kalau skrip pernah terhenti sebelum bagian 5.
 ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = ON;
@@ -42,7 +44,7 @@ GO
 
 -- 1b. Actual plan: query dijalankan, plan ikut membawa ActualRows. Klik XML-nya untuk membuka plan grafis.
 --     Literal 6: optimizer memakai histogram, perkiraan ±20 baris = aktual 20 -> Index Seek + Key Lookup.
-SET STATISTICS IO ON;
+SET STATISTICS IO, TIME ON;
 SET STATISTICS XML ON;
 SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 6;
 SET STATISTICS XML OFF;
@@ -170,13 +172,13 @@ OFFSET 90000 ROWS FETCH NEXT 20 ROWS ONLY;     -- scan + sort, atau 90.000 looku
 GO
 
 -- Nilai kunci baris terakhir halaman sebelumnya. Di aplikasi nilainya datang dari halaman yang baru ditampilkan;
--- di sini diambil dengan OFFSET supaya hasilnya bisa dibandingkan, jadi STATISTICS IO dimatikan sebentar.
-SET STATISTICS IO OFF;
+-- di sini diambil dengan OFFSET supaya hasilnya bisa dibandingkan, jadi STATISTICS IO/TIME dimatikan sebentar.
+SET STATISTICS IO, TIME OFF;
 DECLARE @lastCreatedAt datetime2(0), @lastId int;
 SELECT @lastCreatedAt = CreatedAt, @lastId = Id FROM dbo.Product
 ORDER BY CreatedAt DESC, Id DESC
 OFFSET 89999 ROWS FETCH NEXT 1 ROWS ONLY;
-SET STATISTICS IO ON;
+SET STATISTICS IO, TIME ON;
 
 -- Keyset dua kunci. T-SQL tidak punya (CreatedAt, Id) < (@a, @b), jadi ditulis dengan OR.
 -- Syarat pertama (CreatedAt <= ...) memberi rentang seek; sisanya membuang baris seri yang sudah tampil.
@@ -187,7 +189,7 @@ WHERE CreatedAt <= @lastCreatedAt
 ORDER BY CreatedAt DESC, Id DESC;
 GO
 
-SET STATISTICS IO OFF;
+SET STATISTICS IO, TIME OFF;
 GO
 
 -- 5. Kembalikan lab ke kondisi setup --------------------------------------------------------

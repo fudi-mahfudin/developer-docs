@@ -170,10 +170,12 @@
   Sejak SQL Server 2019 sebagian scalar UDF di-inline otomatis (dengan syarat). Use for: catatan performa scalar function vs inline TVF (lesson 0020).
 - [Microsoft Learn: SQL Queries (EF Core)](https://learn.microsoft.com/en-us/ef/core/querying/sql-queries)
   `FromSql` (EF Core 7+) vs `FromSqlRaw`, parameter dan SQL injection, SP tidak bisa di-compose, `SqlQuery<T>`, `ExecuteSql`. Use for: memanggil SP dari EF Core (lesson 0020), raw SQL di lesson 0023.
+- [Microsoft Learn: SqlCommand.ExecuteNonQuery](https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlcommand.executenonquery) dan [SET NOCOUNT](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-nocount-transact-sql)
+  Nilai kembalian = rows affected; -1 bila `SET NOCOUNT ON` membuat tidak ada statement yang terhitung; parameter OUTPUT dan return value tetap terisi. Use for: kenapa `ExecuteSql` atas SP mengembalikan -1 (lesson 0020).
 - [Microsoft Learn: SQL injection](https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection)
   Definisi, parameter memperlakukan input sebagai literal, SP pun rentan bila memakai input tanpa parameter. Use for: pertanyaan keamanan query (lesson 0020).
 - [Dapper README (DapperLib/Dapper)](https://github.com/DapperLib/Dapper)
-  `Query<T>`, `Execute`, parameter objek anonim dan `DynamicParameters`, SP dengan `CommandType.StoredProcedure`, parameter Output/ReturnValue, `DbString` (varchar vs nvarchar). Use for: memanggil SP dari Dapper (lesson 0020).
+  `Query<T>`, `Execute`, parameter objek anonim dan `DynamicParameters`, SP dengan `CommandType.StoredProcedure`, parameter Output/ReturnValue, `DbString` (varchar vs nvarchar, konversi implisit). Use for: memanggil SP dari Dapper (lesson 0020), catatan SARGable/implicit conversion (lesson 0023).
 - [Microsoft Learn: Transaction locking and row versioning guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide)
   ACID, autocommit, default rollback per statement, anomali konkurensi, tabel lima isolation level, RCSI vs SNAPSHOT, mode dan kompatibilitas lock, escalation, pedoman transaction pendek, pola UPDLOCK. Banyak paragraf menjelaskan "with optimized locking" (SQL Server 2025/Azure); untuk SQL Server 2022 baca versi "without optimized locking". Use for: semua pertanyaan transaction dan isolation level (lesson 0021).
 - [Microsoft Learn: Deadlocks guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide)
@@ -205,9 +207,7 @@
 - [Microsoft Learn: ORDER BY clause, OFFSET/FETCH](https://learn.microsoft.com/en-us/sql/t-sql/queries/select-order-by-clause-transact-sql) dan [EF Core Pagination](https://learn.microsoft.com/en-us/ef/core/querying/pagination)
   Sintaks OFFSET/FETCH, urutan harus unik, biaya baris yang dilewati, keyset/seek pagination (satu dan dua kunci), tidak ada random access, index yang cocok. Use for: pagination (lesson 0023).
 - [Microsoft Learn: EF Core Simple logging](https://learn.microsoft.com/en-us/ef/core/logging-events-diagnostics/simple-logging), [Performance Diagnosis](https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis), [ToQueryString](https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.toquerystring), dan [EnableSensitiveDataLogging](https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontextoptionsbuilder.enablesensitivedatalogging)
-  `LogTo`, level Information, durasi per perintah, jangan dibiarkan di production, `TagWith`, alur log → SQL → plan, `ToQueryString` untuk debugging, nilai parameter tersembunyi secara default. Use for: melihat SQL dari EF Core (lesson 0023).
-- [Dapper README](https://github.com/DapperLib/Dapper)
-  Parameter, `DbString` dan pentingnya unicode vs ANSI di SQL Server (konversi implisit). Use for: catatan SARGable/implicit conversion (lesson 0023), memanggil SP dari Dapper (lesson 0020).
+  `LogTo`, level Information, durasi per perintah, jangan dibiarkan di production, `TagWith`, alur log → SQL → plan, `ToQueryString` untuk debugging, nilai parameter hanya tampil dengan `EnableSensitiveDataLogging`. Use for: melihat SQL dari EF Core (lesson 0023).
 
 ## Wisdom (Communities)
 

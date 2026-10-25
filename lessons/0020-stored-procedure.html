@@ -179,7 +179,7 @@ var products = await context.Products
     .AsNoTracking()
     .ToListAsync();          // jangan tambah .Where/.OrderBy setelah EXEC
 
-// SP tanpa result set: mengembalikan jumlah baris yang berubah.
+// SP tanpa result set: int = rows affected, atau -1 bila SP memakai SET NOCOUNT ON.
 int rows = await context.Database.ExecuteSqlAsync(
     $"EXECUTE dbo.usp_UpdatePrice @ProductId={id}, @NewPrice={newPrice}");
 
@@ -197,6 +197,9 @@ var ok  = context.Products.FromSqlRaw("SELECT * FROM dbo.Product WHERE Name = {0
     <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/sql-queries">[8]</a></sup></li>
   <li>"ExecuteSql ... returns the number of rows modified. ExecuteSql protects against SQL injection by using safe parameterization, just like FromSql". Untuk hasil non-entity (scalar, DTO) ada <code>Database.SqlQuery&lt;T&gt;</code>.
     <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/sql-queries">[8]</a></sup></li>
+  <li><strong>Jebakan <code>SET NOCOUNT ON</code>:</strong> angka itu berasal dari <code>ExecuteNonQuery</code> ADO.NET. "When SET NOCOUNT ON is set on the connection ... the rows affected by individual statements stop contributing to the count of rows affected ... If no statements are detected that contribute to the count, the return value is -1."
+    Semua SP di lesson ini memakai <code>SET NOCOUNT ON</code>, jadi <code>ExecuteSqlAsync</code> mengembalikan <code>-1</code>. Hasil SP yang penting (mis. <code>@NewStock</code>) diambil lewat parameter <code>OUTPUT</code> atau return value, bukan dari angka ini.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlcommand.executenonquery">[13]</a></sup></li>
 </ul>
 
 <h3>Dapper: <code>CommandType.StoredProcedure</code></h3>
@@ -545,7 +548,7 @@ GO</code></pre>
       "SQL injection terjadi kalau input user ikut menjadi teks SQL yang di-parse engine. Kuncinya, input dikirim sebagai parameter, sehingga diperlakukan sebagai nilai literal, bukan kode.
       Di EF Core 8 saya pakai <code>context.Products.FromSql($"EXEC dbo.usp_GetProductsByCategory @CategoryId={categoryId}")</code> untuk SP yang mengembalikan entity.
       Walau terlihat seperti interpolasi, <code>FromSql</code> menerima <code>FormattableString</code> dan setiap nilai dibungkus menjadi <code>DbParameter</code>.
-      Setelah EXEC saya tidak menambah <code>Where</code>, karena SQL Server tidak bisa meng-compose di atas SP. Untuk SP tanpa result set saya pakai <code>Database.ExecuteSqlAsync</code>, yang mengembalikan jumlah baris.
+      Setelah EXEC saya tidak menambah <code>Where</code>, karena SQL Server tidak bisa meng-compose di atas SP. Untuk SP tanpa result set saya pakai <code>Database.ExecuteSqlAsync</code>; angka kembaliannya rows affected, atau -1 karena SP memakai <code>SET NOCOUNT ON</code>, jadi hasil SP saya ambil lewat parameter <code>OUTPUT</code>.
       Bahayanya <code>FromSqlRaw($"... '{name}'")</code>: string sudah jadi sebelum EF melihatnya, jadi input masuk ke teks SQL. Kalau terpaksa raw, pakai placeholder <code>{0}</code> atau <code>SqlParameter</code>.
       Di Dapper saya pakai <code>commandType: CommandType.StoredProcedure</code> dengan objek anonim atau <code>DynamicParameters</code>, termasuk <code>ParameterDirection.Output</code> untuk parameter OUTPUT.
       SP sendiri juga bisa rentan kalau di dalamnya menggabungkan string untuk dynamic SQL; pakai <code>sp_executesql</code> dengan parameter."
@@ -609,7 +612,8 @@ GO</code></pre>
   <a href="https://learn.microsoft.com/en-us/sql/relational-databases/security/sql-injection">[9] SQL injection</a> ·
   <a href="https://github.com/DapperLib/Dapper">[10] Dapper README</a> ·
   <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/with-common-table-expression-transact-sql">[11] WITH common_table_expression</a> ·
-  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/intelligent-query-processing-details#scalar-udf-inlining">[12] Scalar UDF inlining</a>
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/intelligent-query-processing-details#scalar-udf-inlining">[12] Scalar UDF inlining</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlclient.sqlcommand.executenonquery">[13] SqlCommand.ExecuteNonQuery</a>
 </p>
 
 <nav class="lesson-nav">

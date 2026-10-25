@@ -126,7 +126,7 @@ QuestionBank.register([
       d: "Sensitive data logging mempercepat query karena plan di-cache",
     },
     answer: "c",
-    explain: "\"By default, EF Core will not include the values of any data in exception messages.\" <code>EnableSensitiveDataLogging()</code> menampilkan nilai parameter, hanya \"if you have the appropriate security measures in place\" (development). Simple logging \"requires minimal configuration and no additional NuGet packages\", dan \"Leaving command execution logging enabled in your production environment is usually a bad idea.\"",
+    explain: "<code>EnableSensitiveDataLogging()</code> \"Enables application data to be included in exception messages, logging, etc. This can include ... parameter values for commands being sent to the database\"; tanpanya nilai parameter tidak ditampilkan. Nyalakan hanya \"if you have the appropriate security measures in place\" (development). Simple logging \"requires minimal configuration and no additional NuGet packages\", dan \"Leaving command execution logging enabled in your production environment is usually a bad idea.\"",
   },
   {
     id: "0023-oral-1", lesson: "0023", topic: "opt-plan", type: "oral",
