@@ -394,3 +394,37 @@ _Avoid_: Normalization form (cukup sebut 1NF/2NF/3NF)
 Tabel virtual yang isinya didefinisikan oleh query; datanya tetap di tabel asal kecuali indexed view. Dipakai untuk menyederhanakan query dan membatasi akses. ORDER BY di definisinya tidak menjamin urutan (lesson 0019).
 Padanan Node: mirip fungsi query yang dipakai ulang, tapi definisinya tinggal di database.
 _Avoid_: Virtual table (pakai "view"), materialized view (itu indexed view di SQL Server)
+
+**Clustered Index**:
+Index yang menentukan urutan penyimpanan baris data itu sendiri: leaf level-nya adalah data pages tabel, jadi hanya ada satu per tabel. PRIMARY KEY secara default menjadi clustered index; key idealnya sempit, unik, dan selalu naik (`int IDENTITY`). Tabel tanpa clustered index disebut heap (lesson 0022).
+Padanan Node: di MySQL InnoDB primary key berperan sama; PostgreSQL tidak punya clustered index yang dijaga terus (`CLUSTER` hanya mengurutkan sekali).
+_Avoid_: Primary index, "index utama"
+
+**Non-clustered Index**:
+Struktur B+ tree terpisah dari data yang berisi key index plus row locator (clustered key, atau RID untuk heap), dan opsional kolom `INCLUDE`. Boleh banyak per tabel. Kolom yang tidak ada di dalamnya diambil lewat Key Lookup (lesson 0022).
+Padanan Node: index biasa dari `@@index([...])` di Prisma atau `CREATE INDEX` di PostgreSQL.
+_Avoid_: Secondary index (istilah MySQL), index sekunder
+
+**Composite Index**:
+Index dengan lebih dari satu kolom key, diurutkan per kolom pertama lalu kolom berikutnya. Hanya bisa di-seek bila kolom terdepan ikut difilter (leftmost prefix); aturan praktis: kolom equality dulu, lalu range/ORDER BY, kolom yang hanya diambil di `INCLUDE` (lesson 0022).
+Padanan Node: `@@index([categoryId, price])` di Prisma; aturan urutan kolomnya sama di PostgreSQL.
+_Avoid_: Compound index, multi-column index (boleh dipahami, tapi pakai "composite index")
+
+**Covering Index**:
+Non-clustered index yang memuat semua kolom yang dibutuhkan query (kolom predikat di key, kolom yang hanya diambil di `INCLUDE`), sehingga query dijawab dari index saja tanpa Key Lookup (lesson 0022).
+Padanan Node: `CREATE INDEX ... INCLUDE (...)` di PostgreSQL 11+ (index-only scan).
+_Avoid_: Index lengkap, full index
+
+**Key Lookup**:
+Operator execution plan yang mengambil kolom yang tidak ada di non-clustered index dari clustered index, sekali per baris, selalu bersama Nested Loops. Untuk banyak baris optimizer lebih memilih Clustered Index Scan; obatnya covering index (lesson 0022).
+Padanan Node: mirip heap fetch setelah index scan di `EXPLAIN` PostgreSQL.
+_Avoid_: Bookmark lookup (nama umum, masih dipakai dokumentasi), RID Lookup (itu versi heap)
+
+**Selektivitas**:
+Seberapa sedikit baris yang cocok dengan sebuah nilai atau predikat. Kolom dengan sedikit nilai berbeda (mis. 90% Product di satu Category) berselektivitas rendah, dan index padanya sering tidak membantu karena scan tetap lebih murah (lesson 0022).
+_Avoid_: Kardinalitas (terkait, tapi itu jumlah nilai atau baris, bukan rasio)
+
+**Logical Reads**:
+Jumlah page 8 KiB yang dibaca dari buffer cache untuk satu query, ditampilkan oleh `SET STATISTICS IO ON`. Dipakai untuk membandingkan query sebelum dan sesudah index karena stabil, tidak seperti waktu eksekusi (lesson 0022).
+Padanan Node: `shared hit` / `read` pada `EXPLAIN (ANALYZE, BUFFERS)` di PostgreSQL.
+_Avoid_: Disk reads (itu physical reads)

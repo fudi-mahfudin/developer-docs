@@ -1,0 +1,157 @@
+// Soal lesson 0022 · Index: clustered vs non-clustered, key lookup, covering (INCLUDE), composite, biaya index. Format: assets/README.md.
+QuestionBank.labelTopics({
+  "idx-clustered": "Clustered vs non-clustered index",
+  "idx-key-lookup": "Key lookup dan tipping point",
+  "idx-covering": "Covering index dan INCLUDE",
+  "idx-composite": "Composite index dan urutan kolom",
+  "idx-cost": "Kapan index merugikan",
+});
+
+QuestionBank.register([
+  {
+    id: "0022-01", lesson: "0022", topic: "idx-clustered", type: "mc",
+    prompt: "Kenapa satu tabel hanya boleh punya <em>satu</em> clustered index?",
+    options: {
+      a: "Baris data hanya bisa disimpan dalam satu urutan",
+      b: "Primary key hanya boleh berisi satu kolom saja",
+      c: "SQL Server membatasi jumlah index per tabel kecil",
+      d: "Clustered index memakai terlalu banyak memori di server",
+    },
+    answer: "a",
+    explain: "\"Clustered indexes sort and store the data rows in the table or view based on their key values. ... You can have only one clustered index per table, because the data rows themselves can be stored in only one order.\" Leaf level clustered index adalah data pages tabel itu sendiri. Primary key boleh komposit, dan non-clustered index boleh banyak.",
+  },
+  {
+    id: "0022-02", lesson: "0022", topic: "idx-clustered", type: "mc",
+    prompt: "<code>dbo.Product</code> punya clustered index pada <code>Id</code>. Anda membuat <code>CREATE INDEX IX_Product_CategoryId ON dbo.Product (CategoryId)</code>. Apa isi leaf level index baru ini?",
+    options: {
+      a: "Semua kolom Product, diurutkan menurut kolom CategoryId",
+      b: "Hanya CategoryId, tanpa penunjuk ke baris data",
+      c: "CategoryId plus Id sebagai penunjuk ke baris",
+      d: "CategoryId plus nomor halaman fisik di disk",
+    },
+    answer: "c",
+    explain: "Non-clustered index terpisah dari data: setiap entri berisi key dan \"a pointer to the data row\". \"For a clustered table, the row locator is the clustered index key\", jadi <code>Id</code> otomatis ikut (nomor halaman fisik / RID hanya untuk heap). Itu sebabnya clustered key sebaiknya sempit: ia ikut di setiap non-clustered index.",
+  },
+  {
+    id: "0022-03", lesson: "0022", topic: "idx-key-lookup", type: "mc",
+    prompt: "Dengan <code>IX_Product_CategoryId (CategoryId)</code>, plan untuk <code>SELECT Name, Price FROM dbo.Product WHERE CategoryId = 6</code> (20 baris) berisi Index Seek, Nested Loops, dan satu operator lagi. Apa itu dan kenapa muncul?",
+    options: {
+      a: "Table Spool, karena hasil seek disimpan sementara dulu",
+      b: "Key Lookup, karena Name dan Price tidak ada",
+      c: "Sort, karena hasil index harus diurutkan ulang lagi",
+      d: "Hash Match, karena dua index digabung oleh optimizer",
+    },
+    answer: "b",
+    explain: "Index hanya berisi CategoryId (+ Id). Untuk setiap baris yang ditemukan, Name dan Price diambil dari clustered index: \"The Key Lookup operator is a bookmark lookup on a table with a clustered index ... Key Lookup is always accompanied by a Nested Loops operator.\"",
+  },
+  {
+    id: "0022-04", lesson: "0022", topic: "idx-key-lookup", type: "mc",
+    prompt: "Index yang sama, tapi query untuk <code>CategoryId = 2</code> (±2.500 dari 100.000 baris). Plan-nya Clustered Index Scan, index baru diabaikan. Kenapa?",
+    options: {
+      a: "Index baru belum aktif sampai statistik di-rebuild manual",
+      b: "Optimizer salah, harus dipaksa dengan hint WITH INDEX",
+      c: "Nilai 2 tidak ada di histogram statistik index",
+      d: "Ribuan key lookup lebih mahal daripada satu scan",
+    },
+    answer: "d",
+    explain: "Setiap baris butuh satu key lookup (beberapa page read). Untuk ribuan baris, total read melampaui jumlah page seluruh tabel, jadi scan lebih murah: \"a table scan could be the most efficient method if ... the result set of the query is a high percentage of rows from the table.\" Solusinya covering index, bukan hint.",
+  },
+  {
+    id: "0022-05", lesson: "0022", topic: "idx-covering", type: "mc",
+    prompt: "Query: <code>SELECT Name, Price FROM dbo.Product WHERE CategoryId = @c</code>. Index mana yang <strong>covering</strong> dan paling ramping?",
+    options: {
+      a: "<code>(CategoryId) INCLUDE (Name, Price)</code>",
+      b: "<code>(Name, Price) INCLUDE (CategoryId)</code>",
+      c: "<code>(CategoryId, Name, Price, Stock)</code>",
+      d: "<code>(Price) INCLUDE (CategoryId, Name)</code>",
+    },
+    answer: "a",
+    explain: "Kolom predikat (CategoryId) di key supaya bisa seek; kolom yang hanya diambil (Name, Price) di INCLUDE: \"If a column must be retrieved by a query, but isn't used in the query predicates, aggregations, and sorts, add it as an included column\". Opsi b dan d tidak bisa seek pada CategoryId; opsi c covering tapi gemuk: \"Avoid creating a covering index with too many columns\".",
+  },
+  {
+    id: "0022-06", lesson: "0022", topic: "idx-covering", type: "mc",
+    prompt: "Apa bedanya kolom di <code>INCLUDE</code> dengan kolom key index?",
+    options: {
+      a: "Kolom INCLUDE ikut menentukan urutan dan bisa di-seek",
+      b: "Kolom INCLUDE disimpan di tabel terpisah dari index",
+      c: "Kolom INCLUDE otomatis menjadi bagian dari clustered index",
+      d: "Kolom INCLUDE hanya disimpan di leaf, tidak diurutkan",
+    },
+    answer: "d",
+    explain: "Included columns adalah \"nonkey columns ... stored in the leaf level\" dan ditulis di klausa INCLUDE. Mereka tidak ikut urutan (jadi tidak bisa di-seek atau dipakai untuk ORDER BY), tidak dihitung ke batas 900 byte key, dan boleh bertipe yang tidak boleh jadi key (mis. nvarchar(max)). Tujuannya: query bisa dijawab dari index saja, tanpa key lookup.",
+  },
+  {
+    id: "0022-07", lesson: "0022", topic: "idx-composite", type: "mc",
+    prompt: "Ada index <code>IX_Product_CategoryId_Price (CategoryId, Price DESC)</code>. Query mana yang <strong>tidak</strong> bisa memakai Index Seek pada index ini?",
+    options: {
+      a: "<code>WHERE CategoryId = 2 AND Price &gt; 100</code>",
+      b: "<code>WHERE CategoryId = 2 ORDER BY Price DESC</code>",
+      c: "<code>WHERE Price &gt; 4990</code> tanpa filter pada CategoryId",
+      d: "<code>WHERE CategoryId IN (2, 3)</code> tanpa filter lain",
+    },
+    answer: "c",
+    explain: "Index diurutkan dulu per CategoryId, baru per Price di dalamnya, seperti buku telepon diurutkan nama keluarga lalu nama depan. Contoh resmi: index (LastName, FirstName) berguna untuk <code>WHERE LastName = 'Smith'</code>, tapi \"the query optimizer wouldn't use the index for a query that searched only on WHERE FirstName = 'Jane'\". Price tanpa CategoryId paling banter menjadi scan.",
+  },
+  {
+    id: "0022-08", lesson: "0022", topic: "idx-composite", type: "mc",
+    prompt: "Query yang sering dipanggil: <code>WHERE CategoryId = @c AND CreatedAt &gt;= @from</code>. Urutan key composite index mana yang tepat?",
+    options: {
+      a: "<code>(CreatedAt, CategoryId)</code>, karena CreatedAt kolom paling selektif",
+      b: "<code>(CategoryId, CreatedAt)</code>, karena kolom equality di depan",
+      c: "Dua index terpisah, satu untuk masing-masing kolom",
+      d: "Urutannya tidak penting, optimizer akan menukarnya sendiri",
+    },
+    answer: "b",
+    explain: "Dengan CategoryId di depan, engine seek ke CategoryId = @c lalu membaca rentang CreatedAt yang sudah urut di dalamnya. Kalau CreatedAt di depan, baris Category lain di rentang tanggal yang sama ikut terbaca. Panduan Microsoft: kolom predikat (equality, inequality, BETWEEN, join) di depan, sisanya diurutkan \"from the most distinct to the least distinct\". Dalam praktik: equality dulu, baru range.",
+  },
+  {
+    id: "0022-09", lesson: "0022", topic: "idx-cost", type: "mc",
+    prompt: "Tabel Product sering di-INSERT dan di-UPDATE, dan sudah punya 9 non-clustered index \"supaya optimizer punya pilihan\". Apa dampak utamanya?",
+    options: {
+      a: "Query SELECT menjadi lambat karena optimizer bingung memilih",
+      b: "Tidak berdampak karena index hanya dibaca saat SELECT",
+      c: "Clustered index otomatis dihapus untuk memberi ruang index",
+      d: "Setiap INSERT/UPDATE harus ikut memperbarui banyak index sekaligus",
+    },
+    answer: "d",
+    explain: "\"A large number of indexes on a table affect the performance of INSERT, UPDATE, DELETE, and MERGE statements because data in indexes might have to change as data in the table changes.\" Microsoft menyebut ini kesalahan umum: \"create many indexes speculatively to 'give the optimizer choices'\". Pantau <code>sys.dm_db_index_usage_stats</code> dan hapus index yang tidak dipakai.",
+  },
+  {
+    id: "0022-10", lesson: "0022", topic: "idx-cost", type: "mc",
+    prompt: "Di lab, 90% Product ada di Category 1. Rekan mengusulkan index <code>(CategoryId)</code> untuk query <code>SELECT * FROM dbo.Product WHERE CategoryId = 1</code>. Tanggapan Anda?",
+    options: {
+      a: "Kurang berguna, karena nilai itu cocok hampir semua baris",
+      b: "Sangat berguna, karena setiap kolom FK wajib punya index",
+      c: "Berguna, asalkan index itu dibuat sebagai clustered index tambahan",
+      d: "Berguna, karena SELECT bintang selalu bisa memakai Index Seek",
+    },
+    answer: "a",
+    explain: "Selektivitas rendah: \"Creating an index on a column with many rows but few distinct values might not improve query performance ... a physical telephone directory sorted alphabetically on family name doesn't expedite locating a person if all people in the city are named Smith or Jones.\" Mengambil 90% baris lebih murah dengan scan. Index pada FK tetap berguna untuk Category yang kecil dan untuk JOIN, tapi bukan untuk query ini.",
+  },
+  {
+    id: "0022-oral-1", lesson: "0022", topic: "idx-clustered", type: "oral",
+    prompt: "Apa beda clustered dan non-clustered index? Jelaskan dengan analogi, dalam 60 detik.",
+    sample: "\"Clustered index adalah tabelnya sendiri: baris data disimpan urut menurut key-nya, seperti buku telepon yang isinya sudah urut nama. Karena data hanya bisa diurutkan satu cara, satu tabel cuma punya satu clustered index, dan secara default itu dibuat dari primary key, misalnya Id IDENTITY yang sempit dan selalu naik. Non-clustered index adalah struktur terpisah, seperti indeks di belakang buku: berisi key yang diurutkan plus penunjuk ke baris, yaitu clustered key. Boleh ada banyak. Kalau query butuh kolom yang tidak ada di index, engine harus melompat ke clustered index untuk setiap baris, itu key lookup. Keduanya B+ tree, dan setiap index menambah biaya tulis.\"",
+    checklist: [
+      "clustered = data tabel itu sendiri, disimpan urut menurut key (leaf = data pages)",
+      "hanya satu clustered index per tabel karena data hanya bisa diurutkan satu cara",
+      "PRIMARY KEY default menjadi clustered; key ideal sempit, unik, selalu naik (IDENTITY)",
+      "non-clustered = struktur terpisah berisi key + penunjuk (clustered key), boleh banyak",
+      "kolom di luar index diambil lewat key lookup ke clustered index",
+      "analogi buku: isi yang urut vs indeks di belakang buku yang menunjuk halaman",
+    ],
+  },
+  {
+    id: "0022-oral-2", lesson: "0022", topic: "idx-covering", type: "oral",
+    prompt: "Endpoint daftar Product per Category lambat. Query-nya <code>SELECT Name, Price FROM dbo.Product WHERE CategoryId = @c ORDER BY Price DESC</code>. Index apa yang Anda buat, bagaimana membuktikannya, dan apa risikonya? (90 detik)",
+    sample: "\"Pertama saya ukur dulu dengan <code>SET STATISTICS IO ON</code> dan execution plan: tanpa index, plan-nya Clustered Index Scan dan logical reads-nya sebanyak seluruh tabel. Saya buat <code>CREATE INDEX IX_Product_CategoryId_Price ON dbo.Product (CategoryId, Price DESC) INCLUDE (Name)</code>. CategoryId di depan karena itu predikat equality, Price kedua supaya hasilnya sudah urut dan tidak perlu Sort, dan Name di INCLUDE karena hanya diambil, tidak difilter. Index ini covering, jadi tidak ada key lookup. Lalu saya bandingkan lagi: plan menjadi Index Seek tanpa Key Lookup dan logical reads turun jauh. Risikonya, setiap INSERT dan UPDATE pada kolom itu sekarang juga memperbarui index ini, dan index makan storage, jadi saya tidak menambah index spekulatif dan memantau pemakaiannya.\"",
+    checklist: [
+      "mengukur dulu: <code>SET STATISTICS IO</code> (logical reads) dan execution plan, sebelum dan sesudah",
+      "CategoryId di depan sebagai kolom equality (leftmost prefix)",
+      "Price sebagai kolom key kedua supaya ORDER BY tidak butuh Sort",
+      "Name di INCLUDE karena hanya diambil: covering, tanpa key lookup",
+      "bukti: Clustered Index Scan berubah menjadi Index Seek, logical reads turun",
+      "risiko: biaya tulis dan storage, jangan menambah index spekulatif, pantau pemakaian",
+    ],
+  },
+]);

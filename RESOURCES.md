@@ -160,6 +160,12 @@
   1NF/2NF/3NF dengan bahasa sederhana; ditulis untuk Access tapi konsepnya umum. Use for: selipan normalisasi (lesson 0019).
 - [Microsoft Learn: Views](https://learn.microsoft.com/en-us/sql/relational-databases/views/views) dan [CREATE VIEW](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-view-transact-sql)
   View sebagai tabel virtual, indexed view, ORDER BY di view tidak menjamin urutan, SCHEMABINDING. Use for: selipan view (lesson 0019).
+- [Microsoft Learn: Index architecture and design guide](https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide) dan [Clustered and nonclustered indexes described](https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described)
+  Analogi buku, B+ tree, clustered vs non-clustered, heap, properti clustered key ideal, urutan kolom composite (leftmost prefix), covering index dan INCLUDE, biaya tulis, overindexing, selektivitas rendah, tabel kecil. Use for: semua pertanyaan index (lesson 0022).
+- [Microsoft Learn: CREATE INDEX (Transact-SQL)](https://learn.microsoft.com/en-us/sql/t-sql/statements/create-index-transact-sql) dan [Showplan logical and physical operators reference](https://learn.microsoft.com/en-us/sql/relational-databases/showplan-logical-and-physical-operators-reference)
+  Sintaks CLUSTERED/NONCLUSTERED, INCLUDE, DROP INDEX; operator Index Seek, Clustered Index Scan, Key Lookup, RID Lookup. Use for: membuat index dan membaca plan (lesson 0022, dasar lesson 0023).
+- [Microsoft Learn: SET STATISTICS IO](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-io-transact-sql), [SET STATISTICS TIME](https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-time-transact-sql), dan [Pages and extents architecture guide](https://learn.microsoft.com/en-us/sql/relational-databases/pages-and-extents-architecture-guide)
+  Logical reads vs physical reads, scan count, waktu parse/compile/execute, ukuran page 8 KiB. Use for: mengukur sebelum/sesudah index (lesson 0022).
 
 ## Wisdom (Communities)
 
