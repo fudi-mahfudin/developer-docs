@@ -75,7 +75,7 @@ await tx.CommitAsync();                     // exception → rollback saat dispo
 </table>
 <ul>
   <li>Intent lock (IS/IX) di PAGE/OBJECT; granularitas KEY/RID → PAGE → OBJECT; escalation ke tabel bila satu statement ≥ 5.000 lock.</li>
-  <li>Blocking menunggu tanpa batas kecuali <code>SET LOCK_TIMEOUT</code> (error 1222). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[12]</a></sup></li>
+  <li>Blocking menunggu tanpa batas kecuali <code>SET LOCK_TIMEOUT</code> (default -1 = tunggu selamanya; error 1222 "Lock request time out period exceeded."). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[12]</a> <a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[13]</a></sup></li>
   <li>Transaction pendek, tanpa input user / panggilan HTTP di tengahnya, sentuh data sesedikit mungkin.</li>
 </ul>
 <pre><code>SELECT session_id, blocking_session_id, wait_type, wait_time, wait_resource
@@ -111,7 +111,8 @@ FROM sys.dm_tran_locks WHERE resource_database_id = DB_ID();       -- GRANTED / 
   <a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-locks-transact-sql">[9] sys.dm_tran_locks</a> ·
   <a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[10] EF Core: Connection resiliency</a> ·
   <a href="https://learn.microsoft.com/en-us/ef/core/saving/concurrency">[11] EF Core: Concurrency conflicts</a> ·
-  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[12] SET LOCK_TIMEOUT</a></p>
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[12] SET LOCK_TIMEOUT</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[13] MSSQLSERVER_1222</a></p>
 </main>
 </body>
 </html>

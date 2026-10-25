@@ -115,8 +115,12 @@ catch (Exception)
 }</code></pre>
 <ul>
   <li>Bila <code>EnableRetryOnFailure</code> aktif, transaction manual tidak bisa langsung dipakai: "Manually controlling transactions in this way is incompatible with implicitly invoked retrying execution strategies." <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/transactions">[5]</a></sup>
-    Bungkus seluruh unit kerja dengan <code>context.Database.CreateExecutionStrategy().ExecuteAsync(...)</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[12]</a></sup></li>
+    Tanpa itu, EF Core melempar <code>InvalidOperationException</code>: "The configured execution strategy 'SqlServerRetryingExecutionStrategy' does not support user-initiated transactions."
+    Solusinya: "manually invoke the execution strategy with a delegate representing everything that needs to be executed. If a transient failure occurs, the execution strategy will invoke the delegate again."
+    Jadi bungkus seluruh unit kerja (begin, <code>SaveChangesAsync</code>, commit) dengan <code>context.Database.CreateExecutionStrategy().ExecuteAsync(...)</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[12]</a></sup></li>
   <li><strong>Lost update tanpa lock panjang:</strong> EF Core mendukung <em>optimistic concurrency</em>: kolom <code>[Timestamp] byte[] Version</code> (rowversion) ikut di WHERE saat UPDATE; kalau baris sudah diubah orang lain, <code>SaveChanges</code> melempar <code>DbUpdateConcurrencyException</code>.
+    Kata dokumentasinya: "optimistic concurrency takes no locks, but arranges for the data modification to fail on save if the data has changed since it was queried."
+    SQL yang dikirim: <code>UPDATE [People] SET [FirstName] = @p0 WHERE [PersonId] = @p1 AND [Version] = @p2;</code>, dan bila ada update bersamaan "the UPDATE fails to find any matching rows and reports that zero were affected", sehingga <code>SaveChanges()</code> "throws a DbUpdateConcurrencyException". <code>[Timestamp]</code> memetakan properti ke kolom <code>rowversion</code> SQL Server yang "automatically changes when the row is updated".
     <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/saving/concurrency">[13]</a></sup>
     Microsoft menyebut dua pendekatan: pessimistic ("A system of locks prevents transactions from modifying data in a way that affects other transactions") dan optimistic ("transactions don't lock data when they read it"). <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
 </ul>
@@ -199,7 +203,8 @@ catch (Exception)
 <ul>
   <li><strong>Granularitas:</strong> KEY/RID (baris), PAGE, OBJECT (tabel). "Locking at a smaller granularity, such as rows, increases concurrency but has a higher overhead". Lock escalation ke tabel terjadi bila "A single Transact-SQL statement acquires at least 5,000 locks on a single nonpartitioned table or index." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-transaction-locking-and-row-versioning-guide">[1]</a></sup></li>
   <li><strong>Blocking itu normal:</strong> "When a transaction requests a lock on a resource locked by another transaction, the requesting transaction waits until the lock is released. By default, transactions in the Database Engine don't time out, unless LOCK_TIMEOUT is set." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-deadlocks-guide">[8]</a></sup>
-    <code>SET LOCK_TIMEOUT 3000</code> membuat sesi menyerah setelah 3 detik dengan error 1222. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[14]</a></sup>
+    <code>SET LOCK_TIMEOUT</code> menentukan "the number of milliseconds a statement waits for a lock to be released"; "A value of -1 (default) indicates no time-out period (that is, wait forever)." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[14]</a></sup>
+    Jadi <code>SET LOCK_TIMEOUT 3000</code> membuat statement menyerah setelah 3 detik dengan error 1222 "Lock request time out period exceeded." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[15]</a></sup>
     Di aplikasi .NET, yang biasanya terlihat adalah command timeout dari sisi client.</li>
   <li><strong>Melihat blocking:</strong> <code>sys.dm_exec_requests</code> kolom <code>blocking_session_id</code> ("If this column is NULL or 0, the request isn't blocked"), <code>wait_type</code>, <code>wait_time</code>; <code>sys.dm_tran_locks</code> menampilkan setiap lock beserta <code>request_mode</code> dan <code>request_status</code> (GRANTED/WAIT). Di SQL Server 2022 keduanya butuh izin <code>VIEW SERVER PERFORMANCE STATE</code> (<code>sa</code> di lab sudah punya).
     <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/system-dynamic-management-objects/sys-dm-exec-requests-transact-sql">[10]</a></sup>
@@ -837,7 +842,8 @@ ORDER BY r.wait_time DESC;</code></pre>
   <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/optimized-locking">[11] Optimized locking</a> ·
   <a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency">[12] EF Core: Connection resiliency</a> ·
   <a href="https://learn.microsoft.com/en-us/ef/core/saving/concurrency">[13] EF Core: Handling concurrency conflicts</a> ·
-  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[14] SET LOCK_TIMEOUT</a>
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-lock-timeout-transact-sql">[14] SET LOCK_TIMEOUT</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/mssqlserver-1222-database-engine-error">[15] MSSQLSERVER_1222</a>
 </p>
 
 <nav class="lesson-nav">
