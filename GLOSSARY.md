@@ -356,3 +356,7 @@ _Avoid_: DAL, data layer (itu istilah N-Layer)
 Pola yang mengumpulkan semua insert/update/delete satu aksi lalu menyimpannya dalam satu transaksi; di EF Core diwujudkan oleh `DbContext` dan dijalankan saat `SaveChanges`.
 Padanan Node: `prisma.$transaction([...])`, atau unit of work di MikroORM.
 _Avoid_: Transaction (lebih sempit), batch save
+
+## Database (SQL Server)
+
+<!-- Diisi oleh ticket lesson 0019–0024 (spec .scratch/materi-database). -->

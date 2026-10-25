@@ -83,4 +83,27 @@ function assertOralFormat(orals) {
   });
 }
 
-module.exports = { ROOT, loadLesson, runAsBrowserScripts, lessonQuestions, words, assertEqualOptionWords, assertAnswerPositionsVary, assertOralFormat };
+// Hands-on script blocks (assets/hands-on.js): <pre class="script" data-file="lab/x.sql"><code>…</code></pre>.
+// Returns [{ file, text }] for one HTML page (path relative to ROOT, or absolute), with
+// tags removed and HTML entities decoded, i.e. the text the copy button puts on the clipboard.
+function scriptBlocks(htmlFile) {
+  const html = fs.readFileSync(path.resolve(ROOT, htmlFile), "utf8");
+  const re = /<pre\b(?=[^>]*\bclass="[^"]*\bscript\b)[^>]*\bdata-file="([^"]+)"[^>]*>([\s\S]*?)<\/pre>/g;
+  const decode = s => s.replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+  return [...html.matchAll(re)].map(m => ({ file: m[1], text: decode(m[2]) }));
+}
+
+// The .sql file is the source of truth: every script block in the page must show its file
+// (data-file, relative to ROOT) exactly, ignoring only a trailing newline. `min` = expected blocks.
+function assertScriptsMatchFiles(htmlFile, { min = 1 } = {}) {
+  const blocks = scriptBlocks(htmlFile);
+  assert.ok(blocks.length >= min, `${htmlFile}: butuh >= ${min} blok script, ada ${blocks.length}`);
+  blocks.forEach(b => {
+    const sql = fs.readFileSync(path.join(ROOT, b.file), "utf8");
+    assert.equal(b.text.replace(/\n$/, ""), sql.replace(/\n$/, ""), `${htmlFile}: blok script berbeda dari ${b.file}`);
+  });
+}
+
+module.exports = { ROOT, loadLesson, runAsBrowserScripts, lessonQuestions, words, assertEqualOptionWords, assertAnswerPositionsVary, assertOralFormat, scriptBlocks, assertScriptsMatchFiles };

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contoh: blok skrip + latihan tulis query</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+<header class="lesson-head">
+  <div class="kicker">Contoh komponen · bukan lesson</div>
+  <h1>Hands-on: blok skrip &amp; jawaban tersembunyi</h1>
+  <p class="subtitle">Halaman ini menunjukkan cara memakai assets/hands-on.js.</p>
+</header>
+
+<h2>Blok skrip dengan tombol copy</h2>
+<p>Isi blok sama persis dengan <code>assets/examples/hands-on-example.sql</code> (dicek oleh <code>tests/hands-on.test.js</code>).</p>
+<pre class="script" data-file="assets/examples/hands-on-example.sql"><code>-- Contoh file skrip. File asli: lab/NNNN-*.sql (satu atau lebih per lesson). Lihat assets/README.md.
+USE ProductCatalogLab;
+SET STATISTICS IO, TIME ON;
+
+SELECT TOP (10) Id, Name, Price
+FROM dbo.Product
+WHERE Price &gt; 100 AND Name &lt;&gt; N'Contoh &amp; Co'
+ORDER BY Price DESC;
+</code></pre>
+
+<h2>Latihan tulis query</h2>
+<div class="sql-exercise">
+  <p class="prompt">Tulis query untuk menghitung jumlah Product per Category, urut dari yang terbanyak.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>SELECT c.Name, COUNT(*) AS ProductCount
+FROM dbo.Product p
+JOIN dbo.Category c ON c.Id = p.CategoryId
+GROUP BY c.Name
+ORDER BY ProductCount DESC;</code></pre>
+    <p>Jawaban tidak dinilai otomatis. Jalankan query Anda di lab, lalu bandingkan hasilnya.</p>
+  </details>
+</div>
+</main>
+
+<script src="../hands-on.js"></script>
+</body>
+</html>
