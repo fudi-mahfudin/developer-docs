@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FHIR 0002 · Anatomi resource JSON: Patient, Encounter, Observation</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson FHIR 0002 · Resource dan datatype · ±70 menit (konsep + kuis per bagian + lisan) · 09.00–10.15</div>
+  <h1>Anatomi resource JSON: Patient, Encounter, Observation</h1>
+  <p class="subtitle">Membaca JSON FHIR R4 seperti membaca tipe TypeScript: id vs Identifier, Reference, CodeableConcept/Coding, terminologi, <code>value[x]</code>, <code>meta</code>, <code>contained</code>, <code>extension</code></p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Jelaskan JSON Observation ini. Apa itu CodeableConcept, dan kenapa ada beberapa Coding?"</em>
+  tanpa catatan: menunjuk setiap bagian penting (status, <code>code</code>, <code>subject</code>, <code>valueQuantity</code>),
+  membedakan Coding dan CodeableConcept, menjelaskan bahwa beberapa Coding adalah translasi konsep yang sama ke LOINC, SNOMED CT, atau kode lokal,
+  serta menjelaskan beda <code>id</code> dan <code>identifier</code> dan cara resource saling merujuk.
+</div>
+
+<p class="note">
+  Semua JSON di lesson ini diadaptasi (dipendekkan) dari contoh resmi spesifikasi FHIR R4 (4.0.1); tautannya ada di setiap blok.
+  Tanpa lab: cukup baca, jawab kuis, lalu latihan lisan. Kuis di sini adalah feedback cepat; bukti penguasaan hanya dari review campuran 0006.
+</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. Kerangka setiap resource, dan aturan JSON-nya (±8 menit)</h2>
+<p>
+  Hampir semua resource diturunkan dari <strong>DomainResource</strong>, yang diturunkan dari <strong>Resource</strong>. Jadi setiap Patient, Encounter, atau Observation
+  punya bagian bersama yang sama, lalu elemen khasnya sendiri. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup>
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/domainresource.html">[11]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Property</th><th>Dari</th><th>Isi</th></tr></thead>
+  <tbody>
+    <tr><td><code>resourceType</code></td><td>JSON</td><td>nama tipe resource; di JSON jenis resource "is carried as the property resourceType" <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[7]</a></sup></td></tr>
+    <tr><td><code>id</code></td><td>Resource</td><td>logical id (bagian 2)</td></tr>
+    <tr><td><code>meta</code></td><td>Resource</td><td><code>versionId</code>, <code>lastUpdated</code>, <code>profile</code>, … (bagian 7)</td></tr>
+    <tr><td><code>text</code></td><td>DomainResource</td><td>narrative XHTML untuk dibaca manusia</td></tr>
+    <tr><td><code>contained</code></td><td>DomainResource</td><td>resource lain yang disisipkan (bagian 7)</td></tr>
+    <tr><td><code>extension</code>, <code>modifierExtension</code></td><td>DomainResource</td><td>data tambahan di luar definisi inti (bagian 7)</td></tr>
+  </tbody>
+</table>
+<p>Aturan JSON yang paling sering menjebak developer JavaScript <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[7]</a></sup>:</p>
+<ul>
+  <li><strong>Tidak ada <code>null</code> dan tidak ada nilai kosong.</strong> "JSON objects and arrays are never empty, and properties never have null values ... Omit a property if it is empty." Di TypeScript, semua elemen opsional adalah <code>?:</code>, bukan <code>| null</code>.</li>
+  <li><strong>Elemen yang bisa berulang selalu array</strong>, walau isinya satu: "arrays are used when the item might repeat, even if it does not repeat in a specific instance". Nama array tetap tunggal (<code>name</code>, <code>identifier</code>, <code>coding</code>).</li>
+  <li>Urutan property tidak bermakna, tapi "order within an array SHALL be maintained". Parser juga tidak boleh menganggap <code>resourceType</code> selalu di depan.</li>
+  <li>Nama property case-sensitive.</li>
+</ul>
+<p>
+  Yang menentukan "selalu array" atau "objek tunggal" adalah <strong>cardinality</strong> di definisi resource: "the lower and upper bounds on how many times this element is allowed to appear".
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[6]</a></sup> Cara membacanya sebagai tipe TypeScript:
+</p>
+<table>
+  <thead><tr><th>Cardinality</th><th>Arti</th><th>Padanan TS</th><th>Contoh R4</th></tr></thead>
+  <tbody>
+    <tr><td><code>0..1</code></td><td>opsional, paling banyak satu</td><td><code>gender?: string</code></td><td><code>Patient.gender</code></td></tr>
+    <tr><td><code>1..1</code></td><td>wajib, tepat satu</td><td><code>status: string</code></td><td><code>Observation.status</code>, <code>Observation.code</code></td></tr>
+    <tr><td><code>0..*</code></td><td>opsional, boleh banyak</td><td><code>name?: HumanName[]</code></td><td><code>Patient.name</code>, <code>Patient.identifier</code></td></tr>
+    <tr><td><code>1..*</code></td><td>wajib, minimal satu</td><td><code>type: Coding[]</code> (non-empty)</td><td><code>Signature.type</code></td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Kardinalitas contoh: <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[8]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup>.
+  Di tabel definisi juga ada flag: <code>?!</code> = modifier element (mengubah makna elemen lain, mis. <code>Patient.active</code>, <code>Observation.status</code>) dan <code>Σ</code> = bagian dari summary. <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[6]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — JSON dan cardinality</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-json" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Patient: <code>id</code> vs <code>identifier</code> (±10 menit)</h2>
+<p>Patient adalah "Demographics and other administrative information about an individual or animal receiving care". <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[8]</a></sup> Potongan contoh resmi:
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/patient-example.html">[18]</a></sup></p>
+<pre><code>{
+  "resourceType": "Patient",
+  "id": "example",                          // logical id: dari server, bagian URL
+  "identifier": [{                          // business identifier: 0..*, selalu array
+    "use": "usual",
+    "type": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/v2-0203", "code": "MR" }] },
+    "system": "urn:oid:1.2.36.146.595.217.0.1",   // namespace: "siapa yang menjamin unik"
+    "value": "12345",                             // nomor rekam medis (MR)
+    "assigner": { "display": "Acme Healthcare" }
+  }],
+  "active": true,
+  "name": [
+    { "use": "official", "family": "Chalmers", "given": ["Peter", "James"] },
+    { "use": "usual", "given": ["Jim"] }
+  ],
+  "gender": "male",
+  "birthDate": "1974-12-25",
+  "deceasedBoolean": false,                 // choice type deceased[x] (bagian 6)
+  "managingOrganization": { "reference": "Organization/1" }
+}</code></pre>
+<table>
+  <thead><tr><th></th><th><code>id</code> (logical id)</th><th><code>identifier</code> (business identifier)</th></tr></thead>
+  <tbody>
+    <tr><td>Siapa yang menetapkan</td><td>server yang menyimpan resource</td><td>organisasi/sistem dunia nyata (RS, negara, lab)</td></tr>
+    <tr><td>Bentuk</td><td>satu string, maks. 64 karakter <code>[A-Za-z0-9\-\.]</code></td><td>objek <code>system</code> + <code>value</code> (+ <code>use</code>, <code>type</code>, <code>period</code>, <code>assigner</code>), boleh banyak</td></tr>
+    <tr><td>Cakupan unik</td><td>per tipe resource, di server itu</td><td>di dalam <code>system</code>-nya</td></tr>
+    <tr><td>Berubah?</td><td>"Once assigned by the server, the id is never changed"; tapi bisa berbeda di server lain</td><td>tetap sama di semua salinan resource</td></tr>
+    <tr><td>Dipakai untuk</td><td>URL: <code>[base]/Patient/example</code>, Reference</td><td>mencocokkan entitas antar sistem; search <code>?identifier=system|value</code></td></tr>
+    <tr><td>Padanan</td><td>primary key (surrogate) di database Anda</td><td>natural key: nomor RM, NIK</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan dan aturan tabel: <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></p>
+<ul>
+  <li>Spesifikasi memberi contoh pasien yang sama di dua server, <code>Patient/23</code> dan <code>Patient/5860200e-…</code>, dengan identifier sama:
+    "Given that the identifier is the same, the patient resources are understood to mean that they describe the same patient." <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup></li>
+  <li><code>Identifier.value</code> "SHALL be unique within the defined system". <code>system</code> adalah URI namespace; kalau tidak ada system, "no useful matching may be performed using the value". <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></li>
+  <li>Logical id bersifat "opaque": jangan mem-parsing strukturnya. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 2 — id atau identifier?</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-identifier" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Reference, lewat Encounter (±10 menit)</h2>
+<p>
+  Encounter adalah "An interaction between a patient and healthcare provider(s) for the purpose of providing healthcare service(s) or assessing the health status of a patient":
+  kunjungan rawat jalan, IGD, rawat inap, kunjungan virtual. <sup class="cite"><a href="https://hl7.org/fhir/R4/encounter.html">[9]</a></sup>
+  Potongan contoh resmi (kunjungan kardiologi): <sup class="cite"><a href="https://hl7.org/fhir/R4/encounter-example-f001-heart.html">[19]</a></sup>
+</p>
+<pre><code>{
+  "resourceType": "Encounter",
+  "id": "f001",
+  "identifier": [{ "use": "official", "system": "http://www.amc.nl/zorgportal/identifiers/visits", "value": "v1451" }],
+  "status": "finished",                                   // 1..1, planned | arrived | in-progress | finished | ...
+  "class": { "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+             "code": "AMB", "display": "ambulatory" },    // R4: Coding, bukan CodeableConcept
+  "type": [{ "coding": [{ "system": "http://snomed.info/sct", "code": "270427003",
+                          "display": "Patient-initiated encounter" }] }],
+  "subject": { "reference": "Patient/f001", "display": "P. van de Heuvel" },
+  "participant": [{ "individual": { "reference": "Practitioner/f002", "display": "P. Voigt" } }],
+  "length": { "value": 140, "unit": "min", "system": "http://unitsofmeasure.org", "code": "min" },
+  "reasonCode": [{ "coding": [{ "system": "http://snomed.info/sct", "code": "34068001",
+                                "display": "Heart valve replacement" }] }],
+  "serviceProvider": { "reference": "Organization/f001", "display": "Burgers University Medical Center" }
+}</code></pre>
+<p>Tipe <strong>Reference</strong> berisi "at least one of a reference (literal reference), an identifier (logical reference), and a display (text description of target)". <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[3]</a></sup></p>
+<table>
+  <thead><tr><th>Bentuk</th><th>Contoh</th><th>Kapan</th></tr></thead>
+  <tbody>
+    <tr><td>Literal, relatif</td><td><code>"reference": "Patient/f001"</code></td><td>paling umum; relatif terhadap service base URL (atau <code>fullUrl</code> di Bundle)</td></tr>
+    <tr><td>Literal, absolut</td><td><code>"reference": "http://example.org/fhir/Patient/f001"</code></td><td>resource di server lain</td></tr>
+    <tr><td>Versi tertentu</td><td><code>"Observation/1x2/_history/2"</code></td><td>audit/provenance: menunjuk versi persis, bukan yang terbaru</td></tr>
+    <tr><td>Internal (contained)</td><td><code>"reference": "#p1"</code></td><td>menunjuk resource di <code>contained</code> (bagian 7)</td></tr>
+    <tr><td>Logical</td><td><code>"identifier": { "system": "http://hl7.org/fhir/sid/us-ssn", "value": "000111111" }</code></td><td>hanya tahu business identifier, tidak tahu URL-nya</td></tr>
+    <tr><td>+ <code>display</code></td><td><code>"display": "P. van de Heuvel"</code></td><td>teks pendek untuk UI, bukan kunci</td></tr>
+  </tbody>
+</table>
+<p class="note">Semua contoh tabel dari halaman References. <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[3]</a></sup></p>
+<ul>
+  <li>Logical reference punya harga: "none of the useful mechanisms described for working with references (e.g. chaining, includes) are possible". Kalau keduanya ada, "the literal reference is preferred". <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[3]</a></sup></li>
+  <li>Definisi elemen membatasi target: <code>Observation.subject</code> adalah <code>Reference(Patient | Group | Device | Location)</code>, <code>Encounter.subject</code> adalah <code>Reference(Patient | Group)</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/encounter.html">[9]</a></sup></li>
+  <li>Padanan JS: <code>reference</code> ≈ foreign key (<code>patientId</code>) yang ditulis sebagai path REST; <code>display</code> ≈ kolom nama yang di-denormalisasi supaya UI tidak perlu fetch kedua. Mengambil Patient sekaligus dengan Observation-nya (<code>_include</code>) dibahas di lesson 0003.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 3 — Reference</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-reference" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Observation: CodeableConcept vs Coding (±12 menit)</h2>
+<p>Ini JSON yang kemungkinan besar ditunjukkan interviewer. Contoh resmi berat badan, utuh kecuali narrative: <sup class="cite"><a href="https://hl7.org/fhir/R4/observation-example.html">[16]</a></sup></p>
+<pre><code>{
+  "resourceType": "Observation",
+  "id": "example",
+  "status": "final",                                       // 1..1, modifier (?!)
+  "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                              "code": "vital-signs", "display": "Vital Signs" }] }],
+  "code": {                                                // 1..1 CodeableConcept: APA yang diukur
+    "coding": [
+      { "system": "http://loinc.org",       "code": "29463-7",  "display": "Body Weight" },
+      { "system": "http://loinc.org",       "code": "3141-9",   "display": "Body weight Measured" },
+      { "system": "http://snomed.info/sct", "code": "27113001", "display": "Body weight" },
+      { "system": "http://acme.org/devices/clinical-codes", "code": "body-weight", "display": "Body Weight" }
+    ]
+  },
+  "subject": { "reference": "Patient/example" },           // SIAPA
+  "encounter": { "reference": "Encounter/example" },       // DALAM kunjungan mana
+  "effectiveDateTime": "2016-03-28",                       // KAPAN (choice type effective[x])
+  "valueQuantity": {                                       // HASIL (choice type value[x])
+    "value": 185, "unit": "lbs", "system": "http://unitsofmeasure.org", "code": "[lb_av]"
+  }
+}</code></pre>
+<p>Spesifikasi punya dua tipe untuk nilai berkode: <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></p>
+<ul>
+  <li><strong>Coding</strong>: "a simple direct reference to a code defined by a code system": <code>system</code> (URI code system), <code>version</code>, <code>code</code>, <code>display</code>, <code>userSelected</code>.</li>
+  <li><strong>CodeableConcept</strong>: "a text description and/or a list of Codings": <code>coding</code> (0..*) + <code>text</code> (0..1).</li>
+</ul>
+<pre><code>type Coding = { system?: string; version?: string; code?: string; display?: string; userSelected?: boolean };
+type CodeableConcept = { coding?: Coding[]; text?: string };
+
+// Cari berdasarkan system, jangan coding[0]: urutan coding tidak bermakna.
+const loinc = (cc: CodeableConcept) => cc.coding?.find(c => c.system === "http://loinc.org")?.code;
+// Untuk UI: text dulu, lalu display coding mana pun, lalu code.
+const label = (cc: CodeableConcept) => cc.text ?? cc.coding?.find(c => c.display)?.display ?? cc.coding?.[0]?.code;</code></pre>
+<p>Kenapa empat Coding? <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></p>
+<ul>
+  <li>"The concept may be coded multiple times in different code systems ... Each coding (also referred to as a 'translation') is a representation of the concept". "There is no meaning associated with the ordering of coding within a CodeableConcept."</li>
+  <li>"A typical use of CodeableConcept is to send the local code that the concept was coded with, and also one or more translations to publicly defined code systems such as LOINC or SNOMED CT. Sending local codes is useful and important for the purposes of debugging and integrity auditing."</li>
+  <li>Kenapa tidak cukup Coding? Pengalaman HL7: "in the general case, systems need to able to exchange multiple translation codes, and/or an original text." Coding dipakai langsung hanya bila daftar kodenya disepakati semua pihak.</li>
+  <li><code>text</code> adalah teks seperti yang dimasukkan/dipilih pengguna; kalau tidak ada coding yang <code>userSelected</code>, "the text (if present) is the preferred source of meaning". CodeableConcept boleh berisi <code>text</code> saja bila tidak ada kode yang cocok.</li>
+  <li>Kode hanya bermakna bersama system: "coded values are always treated as a pair composed of 'system' and 'code'". <sup class="cite"><a href="https://hl7.org/fhir/R4/terminologies.html">[4]</a></sup> Kode <code>H</code> di sistem interpretasi berbeda artinya dengan <code>H</code> di sistem lain.</li>
+</ul>
+<p class="note">
+  Jebakan versi: di R4, <code>Encounter.class</code> bertipe <strong>Coding</strong> 1..1, jadi JSON-nya objek <code>{ system, code, display }</code> tanpa <code>coding: [...]</code> (lihat bagian 3). <sup class="cite"><a href="https://hl7.org/fhir/R4/encounter.html">[9]</a></sup>
+  Di R5 elemen itu menjadi CodeableConcept 0..*. <sup class="cite"><a href="https://hl7.org/fhir/R5/encounter.html">[20]</a></sup> Bentuk JSON ditentukan oleh tipe di definisi, jadi baca definisinya, jangan menebak.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 4 — Coding atau CodeableConcept?</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-codeable" data-stack></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<h2>5. Terminologi: LOINC, SNOMED CT, ICD-10 (±8 menit)</h2>
+<table>
+  <thead><tr><th>Code system</th><th><code>system</code> di FHIR</th><th>Untuk apa</th><th>Contoh kode</th></tr></thead>
+  <tbody>
+    <tr><td>LOINC (Regenstrief Institute)</td><td><code>http://loinc.org</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/loinc.html">[12]</a></sup></td>
+      <td>nama observasi/tes: "The Observation.code is preferably a LOINC concept code." <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup></td>
+      <td><code>15074-8</code> Glucose [Moles/volume] in Blood</td></tr>
+    <tr><td>SNOMED CT (SNOMED International)</td><td><code>http://snomed.info/sct</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/snomedct.html">[13]</a></sup></td>
+      <td>terminologi klinis luas: temuan, prosedur, alasan kunjungan, nilai berkode; "For non-numeric values, the Observation.value is preferably a SNOMED CT concept code." <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup></td>
+      <td><code>260385009</code> Negative; <code>34068001</code> Heart valve replacement</td></tr>
+    <tr><td>ICD-10 (WHO)</td><td><code>http://hl7.org/fhir/sid/icd-10</code>; varian nasional mis. <code>…/icd-10-cm</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/icd.html">[14]</a></sup></td>
+      <td>klasifikasi penyakit: dasar statistik morbiditas/mortalitas, dan datanya "support payment systems" <sup class="cite"><a href="https://www.who.int/standards/classifications/classification-of-diseases">[15]</a></sup></td>
+      <td><code>J21.8</code> (ditulis dengan titik)</td></tr>
+    <tr><td>UCUM</td><td><code>http://unitsofmeasure.org</code></td>
+      <td>satuan di Quantity: "If the unit can be coded in UCUM and a code is provided, it SHOULD be a UCUM code." <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></td>
+      <td><code>mmol/L</code>, <code>[lb_av]</code>, <code>min</code></td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Resource mengikat elemen berkode ke ValueSet dengan <strong>binding strength</strong>: <em>required</em> (SHALL dari value set itu), <em>extensible</em> (wajib dari value set kalau ada kode yang cocok), <em>preferred</em> (dianjurkan), <em>example</em> (hanya contoh). <sup class="cite"><a href="https://hl7.org/fhir/R4/terminologies.html">[4]</a></sup>
+    Contoh: <code>Observation.status</code> required; <code>Observation.code</code> hanya example binding ke LOINC; <code>Condition.code</code> example binding ke kode SNOMED CT. <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup> Profile nasional (mis. SATUSEHAT, lesson 0006) biasanya memperketatnya.</li>
+  <li>Kode ICD ditulis dengan titik ("ICD codes SHALL be represented with the period included"), dan ICD-9 serta ICD-10 adalah code system terpisah. <sup class="cite"><a href="https://hl7.org/fhir/R4/icd.html">[14]</a></sup></li>
+  <li>Satu kalimat untuk interview: <em>LOINC menamai apa yang diukur, SNOMED CT menamai konsep klinisnya, ICD-10 mengelompokkan diagnosis untuk pelaporan dan klaim.</em></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 5 — Terminologi</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-terminologi" data-stack></div>
+</section>
+
+<!-- ============ 6 ============ -->
+<h2>6. Choice type <code>value[x]</code> (±7 menit)</h2>
+<p>
+  Di definisi, <code>Observation.value[x]</code> bertipe <code>Quantity | CodeableConcept | string | boolean | integer | Range | Ratio | SampledData | time | dateTime | Period</code>
+  dan <code>effective[x]</code> bertipe <code>dateTime | Period | Timing | instant</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup>
+  Di JSON, "[x] is replaced with the title-cased name of the type that is actually used", dan "Elements that have a choice of data type cannot repeat - they must have a maximum cardinality of 1."
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[6]</a></sup>
+</p>
+<pre><code>// Contoh resmi glukosa (f001): effective[x] = Period, value[x] = Quantity
+"effectivePeriod": { "start": "2013-04-02T09:30:10+01:00" },
+"valueQuantity": { "value": 6.3, "unit": "mmol/l", "system": "http://unitsofmeasure.org", "code": "mmol/L" }
+
+// Hasil berkode: value[x] = CodeableConcept (contoh dari halaman datatypes)
+"valueCodeableConcept": { "coding": [{ "system": "http://snomed.info/sct", "code": "260385009", "display": "Negative" }],
+                          "text": "Negative for Chlamydia Trachomatis rRNA" }
+
+// Patient: deceased[x] = boolean atau dateTime
+"deceasedBoolean": false</code></pre>
+<p class="note">Sumber contoh: <sup class="cite"><a href="https://hl7.org/fhir/R4/observation-example-f001-glucose.html">[17]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/patient-example.html">[18]</a></sup></p>
+<pre><code>// Padanan TS: union yang diskriminatornya NAMA property, bukan field "type".
+type ObservationValue =
+  | { valueQuantity: Quantity }
+  | { valueCodeableConcept: CodeableConcept }
+  | { valueString: string };          // ... dan seterusnya; paling banyak satu yang ada
+
+function showValue(o: Observation): string {
+  if (o.valueQuantity) return `${o.valueQuantity.value} ${o.valueQuantity.unit ?? o.valueQuantity.code ?? ""}`;
+  if (o.valueCodeableConcept) return label(o.valueCodeableConcept);
+  if (o.valueString !== undefined) return o.valueString;
+  return o.dataAbsentReason ? label(o.dataAbsentReason) : "-";   // value bisa absen
+}</code></pre>
+<p>
+  Kalau nilai tidak ada, Observation memakai <code>dataAbsentReason</code>, dan aturannya "dataAbsentReason SHALL only be present if Observation.value[x] is not present".
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup>
+  Catatan angka: <code>JSON.parse</code> mengubah <code>2.00</code> menjadi <code>2</code>, padahal presisi <code>decimal</code> FHIR penting secara klinis; dibahas di lesson 0004. <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[7]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 6 — <code>value[x]</code></h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-choice" data-stack></div>
+</section>
+
+<!-- ============ 7 ============ -->
+<h2>7. <code>meta</code>, <code>contained</code>, <code>extension</code> (±12 menit)</h2>
+
+<h3><code>meta</code>: metadata teknis, diisi server</h3>
+<pre><code>"meta": {
+  "versionId": "3",                                   // berubah setiap konten berubah
+  "lastUpdated": "2024-05-01T08:15:00+07:00",         // waktu server saat versi ini dibuat
+  "profile": ["http://example.org/fhir/StructureDefinition/my-patient"]   // klaim conformance
+}</code></pre>
+<ul>
+  <li><code>versionId</code> "Changes each time the content of the resource changes", dan pada write "the server SHALL update this item to the current value, or remove it". Jangan mengasumsikan urutan numerik: "clients cannot assume that a versionId that comes after another one either numerically or alphabetically represents a later version". Ini dasar ETag/<code>If-Match</code> di lesson 0003. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup></li>
+  <li><code>lastUpdated</code>: pada write, server "SHALL update this item to the current time on the server". <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup></li>
+  <li><code>profile</code>: "Profiles this resource claims to conform to", "An assertion that the content conforms to a resource profile (a StructureDefinition)". Itu klaim: server "MAY elect to remove invalid claims". <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup></li>
+  <li>Juga ada <code>meta.source</code>, <code>meta.security</code> (label keamanan), <code>meta.tag</code>. Nilai <code>meta</code> di contoh di atas ilustrasi, bukan dari contoh resmi.</li>
+</ul>
+
+<h3><code>contained</code>: resource tanpa identitas sendiri</h3>
+<pre><code>{
+  "resourceType": "Condition",
+  "contained": [{ "resourceType": "Practitioner", "id": "p1",
+                  "name": [{ "family": "Person", "given": ["Patricia"] }] }],
+  "asserter": { "reference": "#p1" }
+}</code></pre>
+<p>Contoh resmi: interface engine membuat Condition dari pesan HL7 v2 dan hanya tahu nama dokter, yang tidak cukup untuk membuat Practitioner yang teridentifikasi. <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[3]</a></sup></p>
+<ul>
+  <li>"This SHOULD NOT be done when the content can be identified properly, as once the identification is lost, it is extremely difficult ... to restore it again."</li>
+  <li>Contained tidak bisa berisi contained lagi, tidak boleh punya <code>meta.versionId</code>/<code>lastUpdated</code>, dan harus dirujuk dari resource induknya (atau merujuk induknya). "References to contained resources are never resolved outside the container resource."</li>
+  <li>Padanan JS: objek yang di-embed di dokumen MongoDB tanpa <code>_id</code> sendiri, dibanding dokumen terpisah yang dirujuk.</li>
+</ul>
+<p class="note">Kutipan: <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[3]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/domainresource.html">[11]</a></sup></p>
+
+<h3><code>extension</code>: data di luar definisi inti</h3>
+<p>
+  Spesifikasi sengaja hanya memuat kebutuhan yang disepakati umum; kebutuhan lain "will be implemented as extensions". "Every element in a resource can have extension child elements",
+  dan "Applications should not reject resources merely because they contain extensions". <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[5]</a></sup>
+</p>
+<pre><code>// Patient contoh resmi: jam lahir ditempel ke nilai primitif birthDate lewat _birthDate
+"birthDate": "1974-12-25",
+"_birthDate": {
+  "extension": [{
+    "url": "http://hl7.org/fhir/StructureDefinition/patient-birthTime",   // WAJIB: canonical URL definisinya
+    "valueDateTime": "1974-12-25T14:35:45-05:00"                         // value[x] lagi
+  }]
+}</code></pre>
+<p class="note">Sumber: <sup class="cite"><a href="https://hl7.org/fhir/R4/patient-example.html">[18]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[7]</a></sup></p>
+<ul>
+  <li><code>url</code> wajib dan "SHALL be the canonical URL of a StructureDefinition that defines the extension". Extension "SHALL have either a value (i.e. a value[x] element) or sub-extensions, but not both". <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[5]</a></sup></li>
+  <li>Extension pada elemen primitif (string, tanggal, angka) ditaruh di property bernama sama berawalan garis bawah: <code>_birthDate</code>, karena nilai primitif JSON tidak bisa punya property. <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[7]</a></sup></li>
+  <li><strong>modifierExtension</strong>: "If it is not safe for an application processing the content of the resource to ignore the extension it SHALL be represented using a Modifier Extension". Aplikasi yang memproses elemen dengan modifierExtension wajib memilih salah satu: memahaminya, menolak resource, memakainya hanya untuk tampilan narrative, meminta manusia mengecek, atau membawa peringatan bahwa data belum dipahami penuh. <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[5]</a></sup></li>
+  <li>Hubungannya dengan lesson 0001: extension didefinisikan dan dipaketkan dalam profile/Implementation Guide, dan resource mengklaim profile lewat <code>meta.profile</code>.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 7 — meta, contained, extension</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-meta,res-contained,res-extension" data-stack></div>
+</section>
+
+<!-- ============ 8 ============ -->
+<h2>8. Baca utuh (±5 menit)</h2>
+<p>Tutup bagian di atas. Baca Observation resmi ini dan jelaskan setiap baris dengan suara keras: siapa, apa, kapan, hasil, dan apa artinya. <sup class="cite"><a href="https://hl7.org/fhir/R4/observation-example-f001-glucose.html">[17]</a></sup></p>
+<pre><code>{
+  "resourceType": "Observation",
+  "id": "f001",
+  "identifier": [{ "use": "official", "system": "http://www.bmc.nl/zorgportal/identifiers/observations", "value": "6323" }],
+  "status": "final",
+  "code": { "coding": [{ "system": "http://loinc.org", "code": "15074-8", "display": "Glucose [Moles/volume] in Blood" }] },
+  "subject": { "reference": "Patient/f001", "display": "P. van de Heuvel" },
+  "effectivePeriod": { "start": "2013-04-02T09:30:10+01:00" },
+  "issued": "2013-04-03T15:30:10+01:00",
+  "performer": [{ "reference": "Practitioner/f005", "display": "A. Langeveld" }],
+  "valueQuantity": { "value": 6.3, "unit": "mmol/l", "system": "http://unitsofmeasure.org", "code": "mmol/L" },
+  "interpretation": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+                                    "code": "H", "display": "High" }] }],
+  "referenceRange": [{ "low":  { "value": 3.1, "unit": "mmol/l", "system": "http://unitsofmeasure.org", "code": "mmol/L" },
+                       "high": { "value": 6.2, "unit": "mmol/l", "system": "http://unitsofmeasure.org", "code": "mmol/L" } }]
+}</code></pre>
+<details>
+  <summary>Bandingkan bacaan Anda</summary>
+  <p>
+    Observation dengan logical id <code>f001</code> dan business identifier <code>6323</code> dari sistem rumah sakit. Status <code>final</code>.
+    Yang diukur: glukosa darah, LOINC <code>15074-8</code> (CodeableConcept dengan satu Coding). Pasiennya <code>Patient/f001</code> (literal reference relatif + display).
+    Waktu klinisnya <code>effectivePeriod</code> (choice type <code>effective[x]</code>), dirilis (<code>issued</code>) sehari kemudian, oleh <code>Practitioner/f005</code>.
+    Hasil <code>valueQuantity</code> 6.3 mmol/L (UCUM), di atas rentang rujukan 3.1–6.2, jadi <code>interpretation</code> = <code>H</code> (High).
+    <code>issued</code> adalah "Date/Time this version was made available", berbeda dari <code>effective[x]</code> "Clinically relevant time/time-period for observation". <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup>
+  </p>
+</details>
+
+<section class="exercise">
+  <h2>Latihan 8 — Membaca resource</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="res-baca" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 9 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>Interviewer menunjukkan JSON Observation berat badan dari bagian 4. "Jelaskan JSON ini. Apa itu CodeableConcept, dan kenapa ada beberapa Coding?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Ini Observation, satu pengukuran: <code>status</code> final, <code>subject</code> merujuk <code>Patient/example</code> dengan reference relatif, dan hasilnya di <code>valueQuantity</code>: 185 dengan unit UCUM.
+      <code>value[x]</code> adalah choice type, jadi nama property-nya ikut tipe. Apa yang diukur ada di <code>code</code>, bertipe CodeableConcept: daftar Coding plus <code>text</code> opsional.
+      Setiap Coding adalah pasangan <code>system</code> + <code>code</code> (+ <code>display</code>), dan code hanya bermakna bersama system-nya.
+      Ada empat Coding karena konsep yang sama dikodekan di beberapa sistem: dua LOINC, satu SNOMED CT, dan satu kode lokal. Itu translasi, urutannya tidak bermakna.
+      Kode lokal berguna untuk debugging, kode standar untuk interoperabilitas. Di kode saya, saya cari Coding dengan system yang saya butuhkan, misalnya <code>http://loinc.org</code>, bukan mengambil <code>coding[0]</code>."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>resource Observation: status, subject (Reference ke Patient), dan nilai di valueQuantity?</li>
+      <li>CodeableConcept = daftar Coding plus text; Coding = system + code (+ display)?</li>
+      <li>beberapa Coding = konsep sama di beberapa code system (translasi), urutan tidak bermakna?</li>
+      <li>LOINC untuk Observation.code dan SNOMED CT / kode lokal sebagai translasi?</li>
+      <li>code selalu dibaca bersama system; di kode klien cari berdasarkan system, bukan coding[0]?</li>
+      <li>value[x] adalah choice type: nama property ikut tipe (valueQuantity, unit UCUM)?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Apa beda <code>id</code> dan <code>identifier</code> di resource FHIR? Bagaimana Observation menunjuk ke pasiennya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "<code>id</code> adalah logical id: ditetapkan server yang menyimpan resource, unik per tipe resource di server itu, tidak pernah berubah, dan membentuk URL-nya, misalnya <code>Patient/123</code>.
+      Kalau resource disalin ke server lain, id-nya bisa berbeda. <code>identifier</code> adalah business identifier, seperti nomor rekam medis atau NIK: pasangan <code>system</code> (URI namespace) + <code>value</code>, dan bisa banyak.
+      Dua resource dengan identifier sama dianggap entitas yang sama. Observation menunjuk pasien lewat Reference di <code>subject</code>: biasanya literal reference relatif <code>Patient/123</code>, opsional dengan <code>display</code> untuk UI.
+      Kalau URL-nya tidak diketahui, bisa logical reference lewat <code>subject.identifier</code>, tapi chaining dan <code>_include</code> tidak jalan.
+      Padanannya: id itu primary key database, identifier itu natural key, reference itu foreign key."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>id = logical id dari server, unik per tipe di server itu, tidak berubah?</li>
+      <li>id membentuk URL resource ([base]/Patient/123) dan bisa berbeda antar server?</li>
+      <li>identifier = business identifier (system + value), mis. nomor rekam medis/NIK, boleh banyak?</li>
+      <li>identifier sama = entitas dunia nyata yang sama, dipakai untuk mencocokkan antar sistem?</li>
+      <li>Reference relatif Patient/123 di subject, display hanya teks untuk ditampilkan?</li>
+      <li>logical reference lewat Reference.identifier bila URL tidak diketahui (tanpa chaining/_include)?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Rumah sakit kami butuh data yang tidak ada di resource FHIR standar. Apa yang Anda lakukan? Jelaskan juga <code>meta.profile</code> dan <code>contained</code>." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "FHIR sengaja menaruh kebutuhan di luar inti ke extension: setiap elemen boleh punya <code>extension</code>, yang wajib punya <code>url</code> ke StructureDefinition yang mendefinisikannya, plus satu <code>value[x]</code> atau sub-extension.
+      Aplikasi tidak boleh menolak resource hanya karena ada extension. Kalau data itu mengubah makna resource sehingga tidak aman diabaikan, wajib pakai <code>modifierExtension</code>.
+      Extension biasanya didefinisikan dalam profile, dan resource bisa mengklaim mematuhi profile lewat <code>meta.profile</code>; <code>meta</code> juga berisi <code>versionId</code> dan <code>lastUpdated</code> yang diisi server.
+      <code>contained</code> beda lagi: resource kecil yang disisipkan di dalam resource lain karena tidak bisa diidentifikasi sendiri, dirujuk dengan <code>#id</code>; jangan dipakai kalau datanya bisa punya identitas sendiri."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>kebutuhan di luar inti memakai extension, bukan property JSON baru?</li>
+      <li>extension wajib punya url (StructureDefinition) dan value[x] atau sub-extension?</li>
+      <li>modifierExtension untuk data yang mengubah makna dan tidak aman diabaikan?</li>
+      <li>meta.profile = klaim resource mematuhi profile (StructureDefinition)?</li>
+      <li>meta.versionId dan meta.lastUpdated diisi server dan berubah setiap konten berubah?</li>
+      <li>contained = resource tanpa identitas sendiri di dalam resource lain, dirujuk dengan #id?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review 0006 akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://hl7.org/fhir/R4/datatypes.html#CodeableConcept">HL7 FHIR R4: Data Types, bagian Coding dan CodeableConcept</a>,
+  lalu <a href="https://hl7.org/fhir/R4/references.html">Resource References</a> (bagian Literal, Logical, dan Contained).
+  Kalau masih ada waktu, buka <a href="https://hl7.org/fhir/R4/observation.html">halaman Observation</a> dan baca tabel Structure-nya dengan kolom Card. dan Type.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/anatomi-resource.html">Reference: Anatomi resource + datatype</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Resource dan datatype")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan Observation memakai <code>component</code> alih-alih beberapa Observation?", "bagaimana mengetik resource FHIR di TypeScript tanpa menulis semuanya sendiri?", atau "apa beda ValueSet dan CodeSystem?"</p>
+
+<p class="note sources">
+  Sumber (semua diakses 26 Oktober 2026):
+  <a href="https://hl7.org/fhir/R4/resource.html">[1] Resource</a> ·
+  <a href="https://hl7.org/fhir/R4/datatypes.html">[2] Data Types</a> ·
+  <a href="https://hl7.org/fhir/R4/references.html">[3] Resource References</a> ·
+  <a href="https://hl7.org/fhir/R4/terminologies.html">[4] Using Codes in Resources</a> ·
+  <a href="https://hl7.org/fhir/R4/extensibility.html">[5] Extensibility</a> ·
+  <a href="https://hl7.org/fhir/R4/formats.html">[6] Resource Formats</a> ·
+  <a href="https://hl7.org/fhir/R4/json.html">[7] JSON Representation</a> ·
+  <a href="https://hl7.org/fhir/R4/patient.html">[8] Patient</a> ·
+  <a href="https://hl7.org/fhir/R4/encounter.html">[9] Encounter</a> ·
+  <a href="https://hl7.org/fhir/R4/observation.html">[10] Observation</a> ·
+  <a href="https://hl7.org/fhir/R4/domainresource.html">[11] DomainResource</a> ·
+  <a href="https://hl7.org/fhir/R4/loinc.html">[12] Using LOINC with FHIR</a> ·
+  <a href="https://hl7.org/fhir/R4/snomedct.html">[13] Using SNOMED CT with FHIR</a> ·
+  <a href="https://hl7.org/fhir/R4/icd.html">[14] Using ICD-[X] with FHIR</a> ·
+  <a href="https://www.who.int/standards/classifications/classification-of-diseases">[15] WHO: International Classification of Diseases</a> ·
+  <a href="https://hl7.org/fhir/R4/observation-example.html">[16] Contoh Observation (berat badan)</a> ·
+  <a href="https://hl7.org/fhir/R4/observation-example-f001-glucose.html">[17] Contoh Observation f001 (glukosa)</a> ·
+  <a href="https://hl7.org/fhir/R4/patient-example.html">[18] Contoh Patient</a> ·
+  <a href="https://hl7.org/fhir/R4/encounter-example-f001-heart.html">[19] Contoh Encounter f001</a> ·
+  <a href="https://hl7.org/fhir/R5/encounter.html">[20] Encounter (R5)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0001-fondasi-fhir.html">← 0001 · Fondasi FHIR</a>
+  <a href="0003-fhir-rest-api.html">0003 · FHIR REST API →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
