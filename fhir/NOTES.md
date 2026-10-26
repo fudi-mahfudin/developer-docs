@@ -8,3 +8,4 @@
 - Agent yang membuat lesson wajib mengikuti skill `/teach` (baca `~/.claude/skills/teach/SKILL.md` langsung kalau skill tidak bisa dipanggil) dan mengambil fakta dari sumber primer (hl7.org/fhir/R4, SMART App Launch IG, Bulk Data Access IG, dokumentasi SATUSEHAT), bukan dari ingatan model. Detail SATUSEHAT yang tidak bisa diverifikasi publik ditandai "belum terverifikasi".
 - Hanya hasil review campuran 0006 yang dicatat sebagai bukti penguasaan. Kuis di lesson 0001–0005 adalah feedback cepat.
 - Cerita STAR tidak dibuat baru: 4 cerita di `../star/draf-star.md` di-reframe ke konteks health-tech di lesson 0006.
+- Lesson 0005 (SMART on FHIR) memakai SMART App Launch IG v2.2.0 (STU 2.2); OAuth/JWT dasar dan localStorage vs cookie tidak diulang, cukup ditautkan ke `../lessons/0017-fullstack-auth-cors-error.html`. Topik bank soal berprefiks `smart-`.
