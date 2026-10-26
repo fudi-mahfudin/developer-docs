@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Anatomi resource FHIR R4 + datatype</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · FHIR R4 · Resource dan datatype</div>
+<h1>Anatomi resource JSON + datatype</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0002-anatomi-resource-json.html">Lesson FHIR 0002</a>. Versi: FHIR R4 (4.0.1).</p>
+
+<h2>Kerangka setiap resource <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/domainresource.html">[11]</a></sup></h2>
+<pre><code>{
+  "resourceType": "Observation",     // tipe (JSON)
+  "id": "f001",                      // logical id (Resource)
+  "meta": { "versionId": "3", "lastUpdated": "…", "profile": ["…"] },   // (Resource), diisi server
+  "text": { "status": "generated", "div": "&lt;div …&gt;" },               // narrative (DomainResource)
+  "contained": [ … ],                // resource tanpa identitas sendiri, dirujuk "#id"
+  "extension": [ { "url": "…", "valueX": … } ],
+  "modifierExtension": [ … ],        // tidak boleh diabaikan
+  …elemen khas resource…
+}</code></pre>
+
+<h2>Aturan JSON <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[7]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[6]</a></sup></h2>
+<table>
+  <thead><tr><th>Aturan</th><th>Akibat di TS</th></tr></thead>
+  <tbody>
+    <tr><td>Tidak ada <code>null</code>, objek/array/string tidak pernah kosong: property dihilangkan</td><td>pakai <code>?:</code>, cek <code>=== undefined</code></td></tr>
+    <tr><td>Kardinalitas maks &gt; 1 → selalu array, walau isi satu; nama tetap tunggal</td><td><code>name?: HumanName[]</code></td></tr>
+    <tr><td>Urutan property bebas; urutan isi array dipertahankan</td><td>jangan anggap <code>resourceType</code> di depan</td></tr>
+    <tr><td>Extension/id pada primitif → property <code>_nama</code></td><td><code>birthDate</code> + <code>_birthDate.extension</code></td></tr>
+    <tr><td><code>decimal</code>: <code>JSON.parse</code> membuang presisi (2.00 → 2)</td><td>lesson 0004</td></tr>
+  </tbody>
+</table>
+<p><strong>Cardinality</strong>: <code>0..1</code> opsional · <code>1..1</code> wajib · <code>0..*</code> array opsional · <code>1..*</code> array minimal satu. <strong>Flag</strong>: <code>?!</code> modifier (mengubah makna, mis. <code>status</code>, <code>active</code>), <code>Σ</code> summary.</p>
+
+<h2><code>id</code> vs <code>identifier</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></h2>
+<table>
+  <thead><tr><th></th><th><code>id</code></th><th><code>identifier</code></th></tr></thead>
+  <tbody>
+    <tr><td>Nama resmi</td><td>logical id</td><td>business identifier (tipe Identifier)</td></tr>
+    <tr><td>Penetap</td><td>server penyimpan</td><td>sistem dunia nyata (RS, negara, lab)</td></tr>
+    <tr><td>Bentuk</td><td>string ≤ 64, <code>[A-Za-z0-9-.]</code>, opaque</td><td><code>{ use, type, system, value, period, assigner }</code>, 0..*</td></tr>
+    <tr><td>Unik di</td><td>tipe resource × server</td><td>dalam <code>system</code></td></tr>
+    <tr><td>Antar server</td><td>bisa berbeda</td><td>sama → entitas yang sama</td></tr>
+    <tr><td>Padanan</td><td>surrogate primary key</td><td>natural key (No. RM, NIK)</td></tr>
+  </tbody>
+</table>
+
+<h2>Reference <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[3]</a></sup></h2>
+<pre><code>{ "reference": "Patient/f001", "display": "P. van de Heuvel" }          // literal relatif + teks UI
+{ "reference": "http://example.org/fhir/Patient/f001" }                 // literal absolut
+{ "reference": "Observation/1x2/_history/2" }                           // versi tertentu
+{ "reference": "#p1" }                                                  // ke contained
+{ "identifier": { "system": "http://hl7.org/fhir/sid/us-ssn", "value": "000111111" } }  // logical</code></pre>
+<ul>
+  <li>Minimal satu dari <code>reference</code>, <code>identifier</code>, <code>display</code>. Literal lebih diutamakan bila keduanya ada.</li>
+  <li>Logical reference: tanpa chaining / <code>_include</code>. Target dibatasi definisi, mis. <code>Observation.subject: Reference(Patient | Group | Device | Location)</code>.</li>
+</ul>
+
+<h2>Coding vs CodeableConcept <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/terminologies.html">[4]</a></sup></h2>
+<pre><code>type Coding = { system?: string; version?: string; code?: string; display?: string; userSelected?: boolean };
+type CodeableConcept = { coding?: Coding[]; text?: string };
+
+"code": { "coding": [
+  { "system": "http://loinc.org",       "code": "29463-7",  "display": "Body Weight" },
+  { "system": "http://snomed.info/sct", "code": "27113001", "display": "Body weight" },
+  { "system": "http://acme.org/devices/clinical-codes", "code": "body-weight" } ] }</code></pre>
+<ul>
+  <li>Kode = pasangan <strong>system + code</strong>; tanpa system tidak bisa diproses aman.</li>
+  <li>Beberapa Coding = <strong>translasi</strong> konsep yang sama (lokal + LOINC/SNOMED CT); urutan tidak bermakna → cari berdasarkan <code>system</code>, bukan <code>coding[0]</code>.</li>
+  <li><code>text</code> = makna seperti dimasukkan pengguna; boleh text saja bila tidak ada kode.</li>
+  <li>Coding langsung jarang; contoh R4: <code>Encounter.class</code> (Coding 1..1; R5: CodeableConcept 0..* <sup class="cite"><a href="https://hl7.org/fhir/R5/encounter.html">[20]</a></sup>).</li>
+  <li>Binding strength: required · extensible · preferred · example.</li>
+</ul>
+
+<h2>Terminologi</h2>
+<table>
+  <thead><tr><th>Sistem</th><th><code>system</code></th><th>Untuk</th></tr></thead>
+  <tbody>
+    <tr><td>LOINC <sup class="cite"><a href="https://hl7.org/fhir/R4/loinc.html">[12]</a></sup></td><td><code>http://loinc.org</code></td><td>apa yang diukur: <code>Observation.code</code> (mis. <code>15074-8</code> glukosa)</td></tr>
+    <tr><td>SNOMED CT <sup class="cite"><a href="https://hl7.org/fhir/R4/snomedct.html">[13]</a></sup></td><td><code>http://snomed.info/sct</code></td><td>konsep klinis: temuan, prosedur, alasan, nilai berkode</td></tr>
+    <tr><td>ICD-10 <sup class="cite"><a href="https://hl7.org/fhir/R4/icd.html">[14]</a></sup> <sup class="cite"><a href="https://www.who.int/standards/classifications/classification-of-diseases">[15]</a></sup></td><td><code>http://hl7.org/fhir/sid/icd-10</code></td><td>klasifikasi diagnosis: statistik, pelaporan, klaim; kode bertitik (<code>J21.8</code>)</td></tr>
+    <tr><td>UCUM <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></td><td><code>http://unitsofmeasure.org</code></td><td>satuan Quantity (<code>mmol/L</code>, <code>[lb_av]</code>)</td></tr>
+  </tbody>
+</table>
+
+<h2>Choice type <code>[x]</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[6]</a></sup></h2>
+<ul>
+  <li><code>value[x]</code> → <code>valueQuantity</code> | <code>valueCodeableConcept</code> | <code>valueString</code> | <code>valueBoolean</code> | …; satu saja, maks. kardinalitas 1.</li>
+  <li>Lain: <code>effective[x]</code> (dateTime | Period | Timing | instant), <code>Patient.deceased[x]</code> (boolean | dateTime), <code>Extension.value[x]</code>.</li>
+  <li>Nilai absen → <code>dataAbsentReason</code> (hanya bila value[x] tidak ada). <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup></li>
+</ul>
+
+<h2>Tiga resource inti</h2>
+<table>
+  <thead><tr><th>Resource</th><th>Elemen yang dibaca dulu</th></tr></thead>
+  <tbody>
+    <tr><td>Patient <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[8]</a></sup></td><td><code>identifier</code> 0..*, <code>active</code> ?!, <code>name</code> 0..* (HumanName), <code>gender</code>, <code>birthDate</code>, <code>deceased[x]</code>, <code>address</code>, <code>managingOrganization</code></td></tr>
+    <tr><td>Encounter <sup class="cite"><a href="https://hl7.org/fhir/R4/encounter.html">[9]</a></sup></td><td><code>status</code> 1..1, <code>class</code> Coding 1..1 (AMB, IMP, EMER…), <code>type</code>, <code>subject</code>, <code>participant</code>, <code>period</code>, <code>reasonCode</code>, <code>diagnosis</code>, <code>serviceProvider</code></td></tr>
+    <tr><td>Observation <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[10]</a></sup></td><td><code>status</code> 1..1 ?!, <code>category</code>, <code>code</code> 1..1, <code>subject</code>, <code>encounter</code>, <code>effective[x]</code>, <code>issued</code>, <code>performer</code>, <code>value[x]</code>, <code>interpretation</code>, <code>referenceRange</code>, <code>component</code></td></tr>
+  </tbody>
+</table>
+
+<h2><code>meta</code> · <code>contained</code> · <code>extension</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[3]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[5]</a></sup></h2>
+<ul>
+  <li><code>meta.versionId</code>: berubah setiap konten berubah, diisi server, urutan tidak dijamin numerik (dasar ETag, lesson 0003). <code>meta.lastUpdated</code>: waktu server. <code>meta.profile</code>: klaim mematuhi StructureDefinition.</li>
+  <li><code>contained</code>: hanya untuk data yang tidak bisa diidentifikasi (mis. nama dokter dari HL7 v2); dirujuk <code>"#p1"</code>; tidak bersarang; tanpa <code>versionId</code>/<code>lastUpdated</code>; tak bisa di-resolve dari luar induk.</li>
+  <li><code>extension</code>: <code>url</code> wajib (canonical URL StructureDefinition) + <code>value[x]</code> <em>atau</em> sub-extension. Jangan tolak resource hanya karena extension.</li>
+  <li><code>modifierExtension</code>: bila tidak aman diabaikan; yang tak dikenal → pahami, tolak, tampilkan narrative saja, minta cek manusia, atau beri peringatan.</li>
+</ul>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  Observation = satu pengukuran: <code>status</code>, <code>code</code> (apa), <code>subject</code> (siapa, Reference relatif <code>Patient/…</code>), <code>effective[x]</code> (kapan), <code>value[x]</code> (hasil, mis. <code>valueQuantity</code> dengan UCUM).
+  <code>code</code> adalah CodeableConcept: daftar Coding (system + code + display) plus <code>text</code>. Beberapa Coding = konsep sama di beberapa code system (lokal, LOINC, SNOMED CT), urutan tak bermakna, jadi cari berdasarkan system.
+  <code>id</code> = logical id dari server (URL); <code>identifier</code> = business identifier (system + value) untuk mencocokkan antar sistem.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://hl7.org/fhir/R4/resource.html">[1] Resource</a> ·
+  <a href="https://hl7.org/fhir/R4/datatypes.html">[2] Data Types</a> ·
+  <a href="https://hl7.org/fhir/R4/references.html">[3] References</a> ·
+  <a href="https://hl7.org/fhir/R4/terminologies.html">[4] Using Codes</a> ·
+  <a href="https://hl7.org/fhir/R4/extensibility.html">[5] Extensibility</a> ·
+  <a href="https://hl7.org/fhir/R4/formats.html">[6] Formats</a> ·
+  <a href="https://hl7.org/fhir/R4/json.html">[7] JSON</a> ·
+  <a href="https://hl7.org/fhir/R4/patient.html">[8] Patient</a> ·
+  <a href="https://hl7.org/fhir/R4/encounter.html">[9] Encounter</a> ·
+  <a href="https://hl7.org/fhir/R4/observation.html">[10] Observation</a> ·
+  <a href="https://hl7.org/fhir/R4/domainresource.html">[11] DomainResource</a> ·
+  <a href="https://hl7.org/fhir/R4/loinc.html">[12] LOINC</a> ·
+  <a href="https://hl7.org/fhir/R4/snomedct.html">[13] SNOMED CT</a> ·
+  <a href="https://hl7.org/fhir/R4/icd.html">[14] ICD</a> ·
+  <a href="https://www.who.int/standards/classifications/classification-of-diseases">[15] WHO ICD</a> ·
+  <a href="https://hl7.org/fhir/R5/encounter.html">[20] Encounter R5</a></p>
+</main>
+</body>
+</html>
