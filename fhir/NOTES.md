@@ -9,3 +9,4 @@
 - Hanya hasil review campuran 0006 yang dicatat sebagai bukti penguasaan. Kuis di lesson 0001–0005 adalah feedback cepat.
 - Cerita STAR tidak dibuat baru: 4 cerita di `../star/draf-star.md` di-reframe ke konteks health-tech di lesson 0006.
 - Lesson 0005 (SMART on FHIR) memakai SMART App Launch IG v2.2.0 (STU 2.2); OAuth/JWT dasar dan localStorage vs cookie tidak diulang, cukup ditautkan ke `../lessons/0017-fullstack-auth-cors-error.html`. Topik bank soal berprefiks `smart-`.
+- Lesson 0001 (Fondasi FHIR) selesai: topik bank soal `dasar-v2-vs-fhir`, `dasar-rest-json`, `dasar-resource`, `dasar-versi`, `dasar-profil`. Klaim "R4 paling dominan di produksi" sengaja dibingkai sebagai pengamatan industri (tidak ada kalimat spesifikasi); posisi SATUSEHAT terhadap R4 diserahkan ke 0006.
