@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · FHIR REST API, search, Bundle</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · FHIR R4 · REST API</div>
+<h1>REST, search, dan Bundle</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0003-fhir-rest-api.html">Lesson 0003</a>. JSON: <code>application/fhir+json</code>.</p>
+
+<h2>Interaksi <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></h2>
+<table>
+  <thead><tr><th>Interaction</th><th>Request</th><th>Sukses</th><th>Gagal umum</th></tr></thead>
+  <tbody>
+    <tr><td>read</td><td><code>GET [base]/[type]/[id]</code></td><td>200</td><td>404 tidak dikenal · 410 dihapus</td></tr>
+    <tr><td>vread</td><td><code>GET [base]/[type]/[id]/_history/[vid]</code></td><td>200</td><td>404</td></tr>
+    <tr><td>create</td><td><code>POST [base]/[type]</code></td><td>201 + <code>Location: …/[id]/_history/[vid]</code></td><td>400 · 422</td></tr>
+    <tr><td>update</td><td><code>PUT [base]/[type]/[id]</code></td><td>200 (atau 201 bila update-as-create)</td><td>400 · 409/412 · 422</td></tr>
+    <tr><td>patch</td><td><code>PATCH [base]/[type]/[id]</code></td><td>200</td><td>JSON Patch / FHIRPath Patch</td></tr>
+    <tr><td>delete</td><td><code>DELETE [base]/[type]/[id]</code></td><td>200 / 204</td><td>—</td></tr>
+    <tr><td>search</td><td><code>GET [base]/[type]?…</code> · <code>POST [base]/[type]/_search</code></td><td>200 + Bundle <code>searchset</code></td><td>400</td></tr>
+    <tr><td>history</td><td><code>GET [base]/[type]/[id]/_history</code></td><td>200 + Bundle <code>history</code></td><td>—</td></tr>
+    <tr><td>capabilities</td><td><code>GET [base]/metadata</code></td><td>CapabilityStatement</td><td>—</td></tr>
+    <tr><td>batch/transaction</td><td><code>POST [base]</code></td><td>200 + <code>batch-response</code>/<code>transaction-response</code></td><td>transaction: 4xx/5xx + OperationOutcome</td></tr>
+  </tbody>
+</table>
+<p>Server menentukan <code>id</code> saat create (id di body diabaikan). Error → body <code>OperationOutcome</code>. <code>Prefer: return=minimal | representation</code>.</p>
+
+<h2>Search <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup></h2>
+<table>
+  <thead><tr><th>Tipe</th><th>Sintaks</th><th>Modifier / catatan</th></tr></thead>
+  <tbody>
+    <tr><td>string</td><td><code>family=sant</code></td><td>default awalan, case/accent-insensitive · <code>:exact</code> · <code>:contains</code></td></tr>
+    <tr><td>token</td><td><code>code=http://loinc.org|29463-7</code></td><td><code>[system]|[code]</code> · <code>:not</code> · <code>:text</code></td></tr>
+    <tr><td>reference</td><td><code>patient=123</code> · <code>subject=Patient/123</code></td><td>dasar chaining dan <code>_include</code></td></tr>
+    <tr><td>date</td><td><code>date=ge2024-01-01</code></td><td>prefix <code>eq</code>(default) <code>ne gt lt ge le sa eb ap</code></td></tr>
+    <tr><td>semua</td><td><code>gender:missing=true</code></td><td>true = tidak punya nilai · false = punya nilai</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>AND</strong> = parameter diulang: <code>date=ge2010-01-01&amp;date=le2011-12-31</code>. <strong>OR</strong> = koma: <code>code=a|1,a|2</code>.</li>
+  <li>Parameter tak dikenal biasanya <strong>diabaikan</strong>; <code>Prefer: handling=strict</code> minta error. Cek link <code>self</code> untuk parameter yang benar-benar dipakai.</li>
+  <li>Lainnya: <code>_count</code> (ukuran halaman) · <code>_sort</code> · <code>_summary=count</code> (hanya jumlah) · <code>_total</code>.</li>
+</ul>
+
+<h2>Chaining vs include <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup></h2>
+<table>
+  <thead><tr><th></th><th>Contoh</th><th>Efek</th></tr></thead>
+  <tbody>
+    <tr><td>Chaining (filter)</td><td><code>DiagnosticReport?subject:Patient.name=peter</code></td><td>hanya DiagnosticReport yang subject-nya Patient bernama peter</td></tr>
+    <tr><td><code>_include</code> (tambah, maju)</td><td><code>Observation?patient=123&amp;_include=Observation:patient</code></td><td>+ Patient yang dirujuk hasil</td></tr>
+    <tr><td><code>_revinclude</code> (tambah, balik)</td><td><code>Patient?_id=123&amp;_revinclude=Observation:patient</code></td><td>+ Observation yang merujuk hasil</td></tr>
+  </tbody>
+</table>
+<p>Format: <code>[tipe sumber]:[search param](:[tipe target])</code>; berantai hanya dengan <code>:iterate</code>. Chaining terbalik: <code>_has</code> (dukungan terbatas).</p>
+
+<h2>Bundle <sup class="cite"><a href="https://hl7.org/fhir/R4/bundle.html">[3]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/codesystem-bundle-type.html">[4]</a></sup></h2>
+<table>
+  <thead><tr><th><code>type</code></th><th>Untuk</th><th>Yang perlu diingat</th></tr></thead>
+  <tbody>
+    <tr><td><code>searchset</code></td><td>hasil search</td><td><code>total</code> = jumlah match semua halaman · <code>entry.search.mode</code> = <code>match | include | outcome</code> · <code>link</code> self/next (opaque, ikuti saja)</td></tr>
+    <tr><td><code>transaction</code></td><td>tulis atomik</td><td>semua sukses atau semua gagal · referensi antar-entry lewat <code>fullUrl: urn:uuid:…</code> · urutan proses: DELETE → POST → PUT/PATCH → GET/HEAD</td></tr>
+    <tr><td><code>batch</code></td><td>aksi independen</td><td>respons per entry, sebagian boleh gagal · tanpa ketergantungan antar-entry</td></tr>
+    <tr><td><code>history</code></td><td>hasil <code>_history</code></td><td>daftar versi</td></tr>
+    <tr><td><code>collection</code>, <code>document</code>, <code>message</code></td><td>paket / dokumen / pesan</td><td>bukan interaksi REST di lesson ini</td></tr>
+  </tbody>
+</table>
+<p>Entry transaction/batch: <code>resource</code> + <code>request: { method, url, ifNoneExist?, ifMatch? }</code>; respons: <code>entry.response</code>.</p>
+
+<h2>Conditional + versioning <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></h2>
+<table>
+  <thead><tr><th>Request</th><th>0 cocok</th><th>1 cocok</th><th>&gt; 1 cocok</th></tr></thead>
+  <tbody>
+    <tr><td>Conditional create: <code>POST</code> + <code>If-None-Exist: identifier=sys|val</code></td><td>create (201)</td><td>abaikan, 200</td><td>412</td></tr>
+    <tr><td>Conditional update: <code>PUT [base]/Patient?identifier=sys|val</code></td><td>create</td><td>update resource itu</td><td>412</td></tr>
+  </tbody>
+</table>
+<pre><code>GET  /Patient/123             → ETag: W/"3"        (= meta.versionId)
+PUT  /Patient/123  If-Match: W/"3"
+     → 200 bila versi masih 3 · 412 Precondition Failed bila sudah berubah (lost update dicegah)</code></pre>
+
+<h2>Error + discovery <sup class="cite"><a href="https://hl7.org/fhir/R4/operationoutcome.html">[5]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/capabilitystatement.html">[6]</a></sup></h2>
+<ul>
+  <li><code>OperationOutcome.issue[]</code>: <code>severity</code> (fatal/error/warning/information) · <code>code</code> (IssueType: invalid, required, not-found, conflict, business-rule…) · <code>diagnostics</code> · <code>expression</code> (lokasi elemen).</li>
+  <li>400 = tidak bisa di-parse / validasi dasar · 422 = melanggar profil atau aturan bisnis · 409/412 = konflik versi atau kriteria conditional tidak selektif.</li>
+  <li><code>GET [base]/metadata</code> → CapabilityStatement: <code>fhirVersion</code>, <code>format</code>, <code>rest.security</code>, per resource <code>interaction</code> + <code>searchParam</code> (+ <code>updateCreate</code>).</li>
+</ul>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  "Observation milik pasien beserta Patient-nya": <code>Observation?patient=123&amp;code=http://loinc.org|29463-7&amp;_include=Observation:patient</code>, hasil Bundle searchset,
+  bedakan lewat <code>search.mode</code>, paging dengan link <code>next</code>.
+  Transaction vs batch: atomik vs independen, <code>urn:uuid</code> hanya di transaction.
+  Lost update: ETag = versionId, kirim <code>If-Match</code>, tangani 412. Error selalu <code>OperationOutcome</code>; kemampuan server di <code>/metadata</code>.
+</p>
+
+<p class="note">Sumber (FHIR R4 4.0.1):
+  <a href="https://hl7.org/fhir/R4/http.html">[1] RESTful API</a> ·
+  <a href="https://hl7.org/fhir/R4/search.html">[2] Search</a> ·
+  <a href="https://hl7.org/fhir/R4/bundle.html">[3] Bundle</a> ·
+  <a href="https://hl7.org/fhir/R4/codesystem-bundle-type.html">[4] BundleType</a> ·
+  <a href="https://hl7.org/fhir/R4/operationoutcome.html">[5] OperationOutcome</a> ·
+  <a href="https://hl7.org/fhir/R4/capabilitystatement.html">[6] CapabilityStatement</a></p>
+</main>
+</body>
+</html>

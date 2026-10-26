@@ -8,14 +8,22 @@ const { createBank } = require("../assets/bank.js");
 
 const ROOT = path.join(__dirname, "..");
 
+// Question files of a track: the .NET track keeps them in assets/questions/, other tracks in
+// <track>/assets/questions/ (e.g. forTrack("fhir") for fhir/assets/questions/NNNN.js).
+const questionFile = (n, track = "") => path.join(ROOT, track, "assets", "questions", `${n}.js`);
+
 // Load assets/questions/NNNN.js files into one fresh bank, as the browser does with <script> tags.
 // loadLesson("0004") for one lesson, loadLesson(...DAY1) for a review.
 function loadLesson(...nums) {
+  return loadTrackLesson("", nums);
+}
+
+function loadTrackLesson(track, nums) {
   const bank = createBank();
   globalThis.QuestionBank = bank;
   try {
     nums.forEach(n => {
-      const full = path.join(ROOT, "assets", "questions", `${n}.js`);
+      const full = questionFile(n, track);
       delete require.cache[require.resolve(full)];
       require(full);
     });
@@ -27,20 +35,20 @@ function loadLesson(...nums) {
 
 // Run bank.js and the question files as plain browser scripts in one shared global scope
 // (catches top-level name clashes that require() would hide). Returns the page's QuestionBank.
-function runAsBrowserScripts(nums) {
+function runAsBrowserScripts(nums, track = "") {
   const ctx = vm.createContext({});
   ctx.window = ctx;
   vm.runInContext(fs.readFileSync(path.join(ROOT, "assets", "bank.js"), "utf8"), ctx);
   nums.forEach(n => {
-    const file = path.join(ROOT, "assets", "questions", `${n}.js`);
+    const file = questionFile(n, track);
     assert.doesNotThrow(() => vm.runInContext(fs.readFileSync(file, "utf8"), ctx, { filename: file }), `questions/${n}.js`);
   });
   return ctx.QuestionBank;
 }
 
 // Questions of one lesson, split by type.
-function lessonQuestions(num) {
-  const bank = loadLesson(num);
+function lessonQuestions(num, track = "") {
+  const bank = loadTrackLesson(track, [num]);
   const qs = bank.select({ lessons: [num] });
   return { bank, qs, mc: qs.filter(q => q.type === "mc"), oral: qs.filter(q => q.type === "oral") };
 }
@@ -106,4 +114,13 @@ function assertScriptsMatchFiles(htmlFile, { min = 1 } = {}) {
   });
 }
 
-module.exports = { ROOT, loadLesson, runAsBrowserScripts, lessonQuestions, words, assertEqualOptionWords, assertAnswerPositionsVary, assertOralFormat, scriptBlocks, assertScriptsMatchFiles };
+// The same loaders bound to one track's question files.
+function forTrack(track) {
+  return {
+    loadLesson: (...nums) => loadTrackLesson(track, nums),
+    runAsBrowserScripts: nums => runAsBrowserScripts(nums, track),
+    lessonQuestions: num => lessonQuestions(num, track),
+  };
+}
+
+module.exports = { ROOT, forTrack, loadLesson, runAsBrowserScripts, lessonQuestions, words, assertEqualOptionWords, assertAnswerPositionsVary, assertOralFormat, scriptBlocks, assertScriptsMatchFiles };
