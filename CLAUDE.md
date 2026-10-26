@@ -10,4 +10,4 @@ Lima label bawaan (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-h
 
 ### Domain docs
 
-Single-context: `GLOSSARY.md` dan `docs/adr/` di root. See `docs/agents/domain.md`.
+Multi-context: `GLOSSARY-MAP.md` di root menunjuk `GLOSSARY.md` (track .NET + Angular) dan `fhir/GLOSSARY.md` (track FHIR). `docs/adr/` di root. See `docs/agents/domain.md`.

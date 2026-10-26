@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indeks lesson · Persiapan interview FHIR untuk developer JavaScript</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  ol.lessons { list-style: none; padding: 0; margin: .4rem 0 0; }
+  ol.lessons li { display: flex; gap: .8rem; align-items: baseline; padding: .45rem 0; border-bottom: 1px solid var(--rule); }
+  ol.lessons .num { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .8rem; color: var(--muted); min-width: 2.6rem; }
+  ol.lessons .title { flex: 1; }
+  ol.lessons li::after { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+  ol.lessons li.tersedia::after { content: "tersedia"; color: var(--ok); }
+  ol.lessons li.segera::after { content: "segera"; color: var(--muted); }
+  ol.lessons li.segera .title { color: var(--muted); }
+  ol.lessons li.seam .title::after { content: " · seam penguasaan"; font-size: .8rem; color: var(--accent); font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Indeks · 6 lesson · 1 hari</div>
+  <h1>Persiapan interview FHIR untuk developer JavaScript</h1>
+  <p class="subtitle">Fullstack Node.js + React di perusahaan health-tech. Konsep untuk interview, tanpa implementasi. Rencana: <a href="ROADMAP.md">ROADMAP</a> · Tujuan: <a href="MISSION.md">MISSION</a></p>
+</header>
+
+<p class="note">
+  Hanya hasil review campuran 0006 yang dicatat sebagai bukti penguasaan. Kuis di lesson 0001–0005 adalah feedback cepat.
+  Track ini terpisah dari <a href="../index.html">track .NET 8 + Angular 16</a>.
+</p>
+
+<!--
+  Cara mengubah status: ganti SATU baris <li> lesson Anda saja.
+    segera   : <li class="segera"><span class="num">NNNN</span><span class="title">Judul</span></li>
+    tersedia : <li class="tersedia"><span class="num">NNNN</span><a class="title" href="lessons/NNNN-slug.html">Judul</a></li>
+  Pertahankan class "seam" untuk 0006. Biarkan baris kosong di antara <li> supaya branch paralel tidak bentrok saat merge.
+-->
+
+<h2>Hari FHIR · 6–8 jam</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0001</span><span class="title">Fondasi FHIR: HL7 v2 → FHIR, Resource, R4 vs R5, maturity, Profile/Extension/IG</span></li>
+
+<li class="segera"><span class="num">0002</span><span class="title">Anatomi resource JSON: Patient, Encounter, Observation, Identifier, Reference, CodeableConcept, terminologi</span></li>
+
+<li class="segera"><span class="num">0003</span><span class="title">FHIR REST API: CRUD, search, Bundle <code>transaction</code> vs <code>batch</code>, versioning, <code>OperationOutcome</code></span></li>
+
+<li class="segera"><span class="num">0004</span><span class="title">JSON massal: Bulk Data <code>$export</code>, NDJSON, streaming di Node</span></li>
+
+<li class="segera"><span class="num">0005</span><span class="title">Keamanan, SMART on FHIR, dan frontend React</span></li>
+
+<li class="segera seam"><span class="num">0006</span><span class="title">SATUSEHAT + review campuran + STAR health-tech</span></li>
+
+</ol>
+
+<p>Istilah: <a href="GLOSSARY.md">GLOSSARY.md</a> · Sumber: <a href="RESOURCES.md">RESOURCES.md</a></p>
+
+</main>
+</body>
+</html>
