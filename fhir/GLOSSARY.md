@@ -259,3 +259,71 @@ Informasi kesehatan yang bisa dikaitkan ke individu; termasuk query string searc
 _Avoid_: data medis (terlalu umum)
 
 ## Indonesia (SATUSEHAT)
+
+Istilah dari lesson 0006. Fakta SATUSEHAT dari dokumentasi resmi Kemenkes, diakses 2026-10-26; dokumentasinya sering direvisi.
+
+**SATUSEHAT**:
+Ekosistem pertukaran data kesehatan nasional (HIE, *Health Information Exchange*) dari Kemenkes yang menghubungkan fasyankes, regulator, penjamin, dan penyedia layanan digital, dengan HL7 FHIR (R4, path `fhir-r4`) lewat HTTPS REST API. Fasyankes tetap memakai SIMRS/RME sendiri dan mengirim data ke SATUSEHAT.
+_Avoid_: SIMRS nasional, "server FHIR Kemenkes" saja
+
+**SATUSEHAT Platform (SSP)**:
+Portal untuk partner interoperabilitas: registrasi, melihat Organization ID / Client ID / Client Secret per environment, dan monitoring transaksi FHIR.
+_Avoid_: dashboard SATUSEHAT
+
+**Sandbox / Production (SATUSEHAT)**:
+Dua environment. Sandbox (Staging, `api-satusehat-stg.dto.kemkes.go.id`) untuk uji coba dengan data pasien dummy, bisa dipakai sebelum terverifikasi; Production (`api-satusehat.kemkes.go.id`) setelah fasyankes terdaftar.
+_Avoid_: dev, test server
+
+**Access token SATUSEHAT**:
+Token Bearer dari `POST {oauth-base}/accesstoken?grant_type=client_credentials` dengan `client_id` + `client_secret` (form-urlencoded). Server-to-server, jadi hanya dipanggil dari backend; cache sampai mendekati `expires_in` karena ada rate limit setelah gagal autentikasi. Beda dengan SMART Backend Services: secret, bukan JWT assertion.
+_Avoid_: login SATUSEHAT, API key
+
+**Fasyankes**:
+Fasilitas pelayanan kesehatan (rumah sakit, puskesmas, klinik, dll.), pengirim utama data ke SATUSEHAT; didaftarkan sebagai Organization dengan struktur Location di bawahnya.
+_Avoid_: faskes (boleh, tapi dokumentasi memakai "fasyankes")
+
+**NIK**:
+Nomor Induk Kependudukan; di FHIR dipakai sebagai business identifier Patient dengan `system` `https://fhir.kemkes.go.id/id/nik`. Bukan logical id.
+_Avoid_: ID pasien
+
+**Nomor IHS (`{patient-ihs-number}`, `{practitioner-ihs-number}`)**:
+ID yang diberikan SATUSEHAT untuk Patient (dari Master Patient Index, dibuat setelah verifikasi data NIK ke DUKCAPIL) atau tenaga kesehatan. Dipakai sebagai logical id di reference, mis. `"Patient/{patient-ihs-number}"`, dan boleh disimpan di sistem internal.
+Padanan JS: id dari server eksternal yang disimpan di kolom mapping.
+_Avoid_: nomor rekam medis, NIK
+
+**Master Patient Index (MPI)**:
+Master data pasien nasional Kemenkes (demografi, identitas resmi). Alur pasien ber-NIK: cari berdasarkan nomor IHS atau NIK; bila tidak ada, POST Patient yang diverifikasi ke DUKCAPIL. Pasien tanpa NIK dan bayi punya alur sendiri.
+_Avoid_: database pasien SATUSEHAT
+
+**Master Sarana Index (MSI)**:
+Master data sarana (fasyankes); asal `{organization-ihs-number}` yang dipakai, mis., di `system` identifier Encounter `http://sys-ids.kemkes.go.id/encounter/{organization-ihs-number}`.
+_Avoid_: daftar rumah sakit
+
+**KFA (Kamus Farmasi dan Alat Kesehatan)**:
+Terminologi nasional Kemenkes untuk obat dan alat kesehatan; dipakai di `Medication.code` dengan `system` `http://sys-ids.kemkes.go.id/kfa`.
+_Avoid_: kode obat lokal, katalog apotek
+
+**Panduan Interoperabilitas (modul pelayanan / use case)**:
+Panduan SATUSEHAT per alur layanan (rawat jalan, IGD, rawat inap, kefarmasian) dan per use case (ANC, imunisasi, tuberkulosis, dll.) yang menentukan resource, elemen wajib, dan terminologi yang dikirim.
+_Avoid_: IG (IG-nya adalah SATUSEHAT FHIR R4 Implementation Guide di Simplifier)
+
+**Validasi (resource)**:
+Pemeriksaan resource terhadap structure, cardinality, value domain, binding kode, invariant, profile, dan (di luar spesifikasi) business rule. Di SATUSEHAT, request yang gagal dijawab 4xx berisi OperationOutcome (`issue.code` mis. `duplicate`, `format`, `value`).
+_Avoid_: schema check (hanya sebagian kecil validasi)
+
+**`$validate`**:
+Operation FHIR `[base]/[Resource]/$validate` (opsional `profile`, `mode`) yang mengembalikan OperationOutcome; 200 OK baik resource valid maupun tidak, tidak menyimpan apa pun. Ketersediaannya di SATUSEHAT belum terverifikasi.
+_Avoid_: dry-run create
+
+**Mapping data legacy**:
+Mengubah data sistem lama ke FHIR di dua lapis: struktur (tabel/kolom → resource/elemen) dan kode (kode lokal → terminologi standar: ICD-10 diagnosis, ICD-9 CM prosedur, LOINC lab, SNOMED CT istilah klinis, KFA obat), plus normalisasi format (mis. waktu ke UTC +00).
+_Avoid_: konversi, migrasi (migrasi memindahkan sistem, mapping menerjemahkan data)
+
+**ConceptMap**:
+Resource FHIR yang menyatakan mapping kode dari code system/value set sumber ke target: satu arah, terikat konteks bisnis, dan setiap target punya `equivalence`. Dipakai lewat `$translate` di terminology server. Untuk transformasi struktur instance dipakai StructureMap.
+Padanan JS: tabel lookup `Map<kodeLokal, Coding>` yang diberi metadata dan bisa dipertukarkan.
+_Avoid_: mapping table (tanpa arah/konteks), StructureMap
+
+**Equivalence (ConceptMap)**:
+Tingkat kecocokan satu mapping di R4: `equivalent`, `equal`, `wider`, `subsumes`, `narrower`, `specializes`, `inexact`, `relatedto`, `unmatched`, `disjoint`. Untuk `narrower` dan `inexact`, alasannya SHALL ditulis di `comment`.
+_Avoid_: confidence score

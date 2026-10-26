@@ -71,9 +71,47 @@
 - [FHIR R4 CapabilityStatement](https://hl7.org/fhir/R4/capabilitystatement.html)
   Isi dokumen kemampuan server yang dikembalikan `GET [base]/metadata`. Use for: discovery sebelum integrasi.
 
+- [FHIR R4 Home](https://hl7.org/fhir/R4/index.html), [Summary](https://hl7.org/fhir/R4/summary.html), dan [Overview](https://hl7.org/fhir/R4/overview.html)
+  Halaman depan R4 (versi 4.0.1, koreksi teknis Okt 2019), ringkasan "next generation standards framework", dan overview umum. Use for: lesson 0001 (definisi FHIR, Resource).
+- [FHIR R4 ImplementationGuide](https://hl7.org/fhir/R4/implementationguide.html), [extension patient-birthPlace](https://hl7.org/fhir/R4/extension-patient-birthplace.html), dan [US Core Patient](https://hl7.org/fhir/us/core/StructureDefinition-us-core-patient.html)
+  Resource ImplementationGuide (Trial Use, FMM 1), contoh extension resmi (tempat lahir, tipe Address), dan contoh profile yang mempersempit `Patient.name` menjadi 1..*. Use for: lesson 0001 (Profile/Extension/IG).
+- [FHIR R4 Observation example (JSON)](https://hl7.org/fhir/R4/observation-example.json.html) dan [Vital Signs profile](https://hl7.org/fhir/R4/observation-vitalsigns.html)
+  Contoh resmi Observation berat badan (LOINC 29463-7) dan profil vital signs (mis. LOINC 8310-5 body temperature). Use for: contoh query di lesson 0003 dan contoh decimal di lesson 0004.
+- [FHIR R5 Encounter](https://hl7.org/fhir/R5/encounter.html)
+  Use for: satu-satunya perbandingan R4 vs R5 di lesson 0002 (`Encounter.class` menjadi CodeableConcept 0..*).
+- [Node.js API: Buffer (`buffer.constants.MAX_STRING_LENGTH`)](https://nodejs.org/api/buffer.html)
+  Batas panjang string tunggal di Node ("may depend on the JS engine"). Use for: lesson 0004, kenapa `JSON.parse` satu file besar gagal.
+- [FHIR R4: Validating Resources](https://hl7.org/fhir/R4/validation.html) dan [Operation `$validate`](https://hl7.org/fhir/R4/resource-operation-validate.html)
+  Aspek validasi (structure, cardinality, value domains, bindings, invariants, profiles, business rules), trade-off validasi di production, Postel's law; `$validate` mengembalikan OperationOutcome dan 200 OK baik valid maupun tidak. Use for: lesson 0006 (validasi terhadap profile). Halaman [Profiling](https://hl7.org/fhir/R4/profiling.html) (sudah di atas) juga menyebut ConceptMap untuk "Map between local and standard terminologies".
+- [FHIR R4: ConceptMap](https://hl7.org/fhir/R4/conceptmap.html), [`$translate`](https://hl7.org/fhir/R4/conceptmap-operation-translate.html), [ConceptMapEquivalence](https://hl7.org/fhir/R4/valueset-concept-map-equivalence.html), dan [contoh ConceptMap JSON](https://hl7.org/fhir/R4/conceptmap-example.json.html)
+  Mapping satu arah dan terikat konteks, equivalence per target, beda dengan StructureMap, operasi `$translate`, struktur `group`/`element`/`target`. Use for: lesson 0006 (mapping kode lokal ke terminologi standar).
+- [SATUSEHAT Platform docs (Kemenkes)](https://satusehat.kemkes.go.id/platform/docs/id/playbook/)
+  Dokumentasi resmi, situs statis yang bisa dibaca tanpa login (portal SSP untuk kode akses butuh login). Sering direvisi; lesson 0006 mengaksesnya 2026-10-26. Halaman yang dikutip:
+  [Pendahuluan](https://satusehat.kemkes.go.id/platform/docs/id/playbook/introduction/) (HIE, tujuan),
+  [Endpoint Information](https://satusehat.kemkes.go.id/platform/docs/id/postman-workshop/endpoint-information/) (base URL sandbox/production, `fhir-r4/v1`),
+  [Akses Token](https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/) (`client_credentials`, `client_id`/`client_secret`, rate limit),
+  [Kode Akses API (Sandbox)](https://satusehat.kemkes.go.id/platform/docs/id/api-code/access-sandbox/),
+  [FHIR di SATUSEHAT](https://satusehat.kemkes.go.id/platform/docs/id/fhir/),
+  [Prerequisites](https://satusehat.kemkes.go.id/platform/docs/id/fhir/prerequisites/) (Organization → Location → Practitioner → Patient),
+  resource [Patient](https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/), [Encounter](https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/), [Condition](https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/condition/), [Observation](https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/), [Medication](https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/medication/) (identifier system, UTC +00, ICD-10, LOINC, KFA),
+  [MPI: Pasien dengan NIK](https://satusehat.kemkes.go.id/platform/docs/id/master-data/master-patient-index/pasien-nik/) (nomor IHS, verifikasi DUKCAPIL),
+  [Terminologi](https://satusehat.kemkes.go.id/platform/docs/id/terminology/) dan [Standar Terminologi](https://satusehat.kemkes.go.id/platform/docs/id/terminology/standar-terminologi/) (riwayat revisi bulanan),
+  [Validasi Interoperabilitas](https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/validasi/) (OperationOutcome 4xx),
+  [Panduan Interoperabilitas](https://satusehat.kemkes.go.id/platform/docs/id/interoperability/) dan [modul IGD](https://satusehat.kemkes.go.id/platform/docs/id/interoperability/igd/) (Medication + MedicationDispense dikirim dalam bundle).
+  Use for: semua klaim SATUSEHAT. Yang tidak ditemukan di halaman publik (ketersediaan `$validate`, pemeriksaan `meta.profile`, tipe Bundle, pembatasan resource per tipe kode akses) ditandai "belum terverifikasi" di lesson.
+- [SATUSEHAT FHIR R4 Implementation Guide (Simplifier)](https://simplifier.net/guide/SATUSEHAT-FHIR-R4-Implementation-Guide/Home/FHIRProfiles/Patient.page.md?version=current)
+  IG resmi yang ditautkan dari dokumentasi SATUSEHAT: profile (canonical `https://fhir.kemkes.go.id/r4/StructureDefinition/…`) dan extension Indonesia (AdministrativeCode, dll.). Use for: bukti SATUSEHAT berbasis R4, contoh IG nasional.
+- [MIT CAPD: The STAR method for behavioral interviews](https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/)
+  Porsi S/T/A/R, "saya" bukan "kami", Result terukur. Use for: lesson 0006 bagian 4 (sama dengan sumber lesson 0018 track root).
+
 ## Wisdom (Communities)
 
 - [chat.fhir.org (Zulip)](https://chat.fhir.org/)
   Forum resmi komunitas FHIR, dijawab langsung oleh penulis spesifikasi. Use for: pertanyaan implementasi dan interpretasi spesifikasi.
+- [FAQ SATUSEHAT Platform (Kemenkes)](https://faq.kemkes.go.id/category/satusehat-platform)
+  Kanal FAQ resmi yang ditautkan dari dokumentasi SATUSEHAT; dokumentasi juga punya bagian kanal pengaduan (`/complaint-channel/`). Use for: pertanyaan implementasi SATUSEHAT yang tidak terjawab dokumentasi.
 
 ## Gaps
+
+- Detail SATUSEHAT yang tidak ada di halaman publik (diakses 2026-10-26): apakah partner bisa memanggil `$validate`, apakah `meta.profile` divalidasi penuh, tipe Bundle dan perilaku atomiknya, dan dokumen "Hak Akses Resource sesuai Tipe Kode Akses API" (unduhan). Cek di Postman Collection resmi atau tanyakan lewat FAQ.
+- Tidak ditemukan sumber primer publik untuk regulasi yang mewajibkan integrasi SATUSEHAT; jangan menyebut nomor peraturan di interview kecuali sudah dibaca sendiri.

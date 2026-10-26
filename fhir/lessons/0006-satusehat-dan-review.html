@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0006 · SATUSEHAT, review campuran, dan STAR health-tech</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0006 · FHIR · ±100 menit (30 materi baru + 40 review + 30 tanya-jawab &amp; STAR) · 16.00–17.40 · seam penguasaan</div>
+  <h1>SATUSEHAT, review campuran, dan STAR health-tech</h1>
+  <p class="subtitle">Satu materi baru yang khas Indonesia (SATUSEHAT, validasi, mapping data legacy), lalu ujian jujur atas lesson 0001–0005, latihan tanya-jawab campuran, dan cerita STAR yang dibingkai ulang untuk health-tech</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Pernah dengar SATUSEHAT? Bagaimana memetakan data rumah sakit lama ke FHIR?"</em> dalam 90 detik
+  (client credentials, nomor IHS, profile, ICD-10/LOINC/KFA, ConceptMap, OperationOutcome),
+  lalu keluar dengan daftar jujur topik 0001–0005 yang <em>benar-benar menempel</em> dan yang perlu diulang malam ini.
+</div>
+
+<p class="note">
+  Urutan: <a href="#bagian-1">1 · SATUSEHAT, validasi, mapping</a> (materi baru + kuis) →
+  <a href="#bagian-2">2 · Review acak 0001–0005</a> (seam) →
+  <a href="#bagian-3">3 · Bank tanya-jawab interview</a> →
+  <a href="#bagian-4">4 · Reframe STAR ke health-tech</a>.
+  Fakta SATUSEHAT diambil dari dokumentasi resmi Kemenkes, <strong>diakses 2026-10-26</strong>. Dokumentasi ini berubah cepat
+  (halaman Standar Terminologi saja mencatat revisi v11.2 per 30 September 2026), jadi sebut "per dokumentasi terakhir yang saya baca" bila ditanya detail. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/standar-terminologi/">[12]</a></sup>
+  Klaim yang tidak bisa saya verifikasi dari halaman publik ditandai <strong>belum terverifikasi (diakses 2026-10-26)</strong>.
+</p>
+
+<h2 id="bagian-1">Bagian 1 · SATUSEHAT, validasi, dan mapping data legacy (±30 menit)</h2>
+
+<h3>1a. Apa itu SATUSEHAT, dan bagaimana sistem Anda masuk (±8 menit)</h3>
+<p>
+  SATUSEHAT adalah "ekosistem pertukaran data kesehatan (HIE: <em>Health Information Exchange</em>)" yang menghubungkan sistem fasyankes, regulator, penjamin, dan penyedia layanan digital.
+  Latar belakangnya: lebih dari 400 aplikasi kesehatan pemerintah yang belum terintegrasi dan tidak adanya standar format interoperabilitas.
+  Tujuannya antara lain spesifikasi terstandar memakai HL7 FHIR dan HTTPS REST API, supaya developer bisa memakai bahasa apa pun, serta nomor SATUSEHAT sebagai <em>single identifier</em> pasien. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/playbook/introduction/">[1]</a></sup>
+</p>
+<p>
+  Versi FHIR: halaman FHIR di dokumentasi hanya menyebut "HL7 FHIR" tanpa nomor versi <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/">[15]</a></sup>,
+  tetapi base URL-nya memakai path <code>fhir-r4</code> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/postman-workshop/endpoint-information/">[2]</a></sup>
+  dan profile resminya diterbitkan sebagai <em>SATUSEHAT FHIR R4 Implementation Guide</em> di Simplifier, dengan canonical seperti <code>https://fhir.kemkes.go.id/r4/StructureDefinition/Patient</code>. <sup class="cite"><a href="https://simplifier.net/guide/SATUSEHAT-FHIR-R4-Implementation-Guide/Home/FHIRProfiles/Patient.page.md?version=current">[16]</a></sup>
+  Jadi semua yang Anda pelajari di 0001–0005 tentang R4 berlaku di sini; inilah contoh nyata "IG nasional di atas R4" dari <a href="0001-fondasi-fhir.html">lesson 0001</a>.
+</p>
+<table>
+  <thead><tr><th></th><th>Sandbox (Staging)</th><th>Production</th></tr></thead>
+  <tbody>
+    <tr><td>OAuth base URL</td><td><code>https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1</code></td><td><code>https://api-satusehat.kemkes.go.id/oauth2/v1</code></td></tr>
+    <tr><td>FHIR base URL</td><td><code>https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1</code></td><td><code>https://api-satusehat.kemkes.go.id/fhir-r4/v1</code></td></tr>
+    <tr><td>Siapa bisa memakai</td><td>Fasyankes dan partner, termasuk yang belum terverifikasi; ada data pasien dummy khusus Sandbox</td><td>Setelah registrasi (Terdaftar) di SATUSEHAT Platform</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/postman-workshop/endpoint-information/">[2]</a></sup> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-code/access-sandbox/">[4]</a></sup> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[6]</a></sup>
+  Organization ID, Client ID, dan Client Secret dilihat setelah login ke portal SATUSEHAT Platform. Pembatasan resource per "Tipe Kode Akses API" (jenis institusi) ada di dokumen unduhan yang tidak saya baca: <strong>belum terverifikasi (diakses 2026-10-26)</strong>. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-code/access-sandbox/">[4]</a></sup></p>
+
+<p><strong>Autentikasi: OAuth2 client credentials dengan secret.</strong> Ini server-to-server, tanpa user dan tanpa redirect: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[3]</a></sup></p>
+<pre><code>// Hanya untuk dibaca: service Node (bukan React!) mengambil token SATUSEHAT
+const OAUTH = "https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1";   // sandbox
+
+const res = await fetch(`${OAUTH}/accesstoken?grant_type=client_credentials`, {   // grant_type di query string
+  method: "POST",
+  headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  body: new URLSearchParams({ client_id: process.env.SS_CLIENT_ID!, client_secret: process.env.SS_CLIENT_SECRET! }),
+});
+const { access_token, expires_in } = await res.json();   // contoh di docs: "token_type": "BearerToken", "expires_in": "3599"
+// setiap request FHIR berikutnya: Authorization: Bearer ${access_token}</code></pre>
+<ul>
+  <li><code>client_id</code> dan <code>client_secret</code> diperlakukan seperti username dan password aplikasi; keduanya didapat dari Kemenkes. Respons gagal berupa OperationOutcome. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[3]</a></sup></li>
+  <li>Ada rate limit: "1 request per minute after a failed attempt", dan dokumentasi juga memperingatkan generate token baru yang terlalu sering. Konsekuensi desain: <strong>cache token</strong> di service Node sampai mendekati <code>expires_in</code>, jangan minta token per request. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[3]</a></sup></li>
+  <li>Bandingkan dengan <a href="0005-smart-on-fhir.html">SMART Backend Services</a> (lesson 0005): sama-sama <code>client_credentials</code> tanpa user, tetapi SMART memakai JWT assertion bertanda tangan private key, sedangkan SATUSEHAT memakai <code>client_secret</code>. Karena secret, token <strong>tidak boleh</strong> diminta dari browser: React app memanggil backend Node Anda, backend yang memanggil SATUSEHAT.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Platform dan token</h2>
+  <p>Jawab tanpa scroll ke atas. Kuis bagian 1 adalah feedback cepat; topik <code>ss-</code> tidak ikut review acak di bagian 2.</p>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ss-platform,ss-auth" data-stack></div>
+</section>
+
+<h3>1b. Prasyarat, NIK, dan nomor IHS (±7 menit)</h3>
+<p>Sebelum mengirim data pendaftaran pasien dan diagnosis, dokumentasi menetapkan langkah persiapan: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/prerequisites/">[5]</a></sup></p>
+<div class="flow">
+  <span class="box">Autentikasi</span><span class="arrow">→</span>
+  <span class="box">Organization (struktur organisasi)</span><span class="arrow">→</span>
+  <span class="box">Location (struktur lokasi)</span><span class="arrow">→</span>
+  <span class="box">nomor IHS Practitioner</span><span class="arrow">→</span>
+  <span class="box">nomor IHS Patient</span><span class="arrow">→</span>
+  <span class="box">Encounter, Condition, Observation, …</span>
+</div>
+<ul>
+  <li><strong>Nomor IHS pasien</strong> (<code>{patient-ihs-number}</code>) didapat dari <strong>Master Patient Index (MPI)</strong> Kemenkes, yang menyimpan data demografi berskala nasional. Nomor ini boleh disimpan di sistem internal, dan memudahkan pelaporan karena data diri pasien tidak perlu dikirim ulang setiap kali. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[6]</a></sup>
+    Resource klinis lalu merujuk pasien sebagai <code>"Patient/{patient-ihs-number}"</code>. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/">[10]</a></sup></li>
+  <li><strong>Alur pasien ber-NIK:</strong> cari dulu berdasarkan nomor IHS atau NIK. Kalau tidak ketemu, <code>POST</code> Patient dengan NIK sebagai identifier, nama, tanggal lahir, jenis kelamin, alamat, dsb.; data diverifikasi ke DUKCAPIL, dan bila cocok SATUSEHAT membuat nomor IHS baru. Kalau ada elemen yang tidak cocok, API mengembalikan error. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/master-data/master-patient-index/pasien-nik/">[7]</a></sup></li>
+  <li>Ini adalah <code>id</code> vs <code>identifier</code> dari <a href="0002-anatomi-resource-json.html">lesson 0002</a> dalam versi Indonesia: <strong>NIK</strong> adalah business identifier, <strong>nomor IHS</strong> menjadi logical id di server SATUSEHAT, dan nomor rekam medis lokal adalah identifier lain lagi.</li>
+</ul>
+<pre><code>// Patient.identifier (contoh dari dokumentasi Patient SATUSEHAT, nilai disamarkan)
+[
+  { "use": "official", "system": "https://fhir.kemkes.go.id/id/nik",    "value": "################" },
+  { "use": "official", "system": "https://fhir.kemkes.go.id/id/paspor", "value": "#########" },
+  { "use": "official", "system": "https://fhir.kemkes.go.id/id/kk",     "value": "###############" }
+]
+
+// Encounter.identifier: nomor kunjungan LOKAL, namespace per organisasi
+[ { "system": "http://sys-ids.kemkes.go.id/encounter/{organization-ihs-number}", "use": "official", "value": "REG-2026-0042" } ]</code></pre>
+<p>
+  Sumber kedua potongan: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[6]</a></sup> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[8]</a></sup>
+  <code>{organization-ihs-number}</code> adalah ID organisasi induk dari Master Sarana Index; <code>value</code> adalah ID atau nomor kunjungan lokal di sistem masing-masing organisasi. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[8]</a></sup>
+  Polanya persis "system menjamin keunikan" dari lesson 0002: dua rumah sakit boleh punya nomor <code>REG-2026-0042</code>, tapi <code>system</code>-nya berbeda.
+  Alamat pasien juga memakai extension Indonesia, <code>https://fhir.kemkes.go.id/r4/StructureDefinition/administrativeCode</code>, untuk kode provinsi sampai desa, RT, dan RW. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[6]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Prasyarat dan identifier</h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ss-prasyarat,ss-identifier" data-stack></div>
+</section>
+
+<h3>1c. Validasi terhadap profile (±7 menit)</h3>
+<p>
+  Spesifikasi dasar FHIR adalah "platform specification" yang biasanya perlu diadaptasi per konteks: elemen mana yang dipakai, fitur API mana, dan <strong>terminologi mana untuk elemen tertentu</strong>.
+  Adaptasi itu diterbitkan sebagai Implementation Guide berisi Profile (StructureDefinition), ValueSet, dan ConceptMap. <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[17]</a></sup>
+  Memvalidasi sebuah resource berarti memeriksa: <sup class="cite"><a href="https://hl7.org/fhir/R4/validation.html">[18]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Aspek</th><th>Contoh pertanyaan</th></tr></thead>
+  <tbody>
+    <tr><td>Structure</td><td>Ada property yang tidak dikenal spesifikasi?</td></tr>
+    <tr><td>Cardinality</td><td><code>name</code> wajib (1..*) tapi kosong?</td></tr>
+    <tr><td>Value domains</td><td><code>birthDate</code> berformat tanggal FHIR? kode enum sah?</td></tr>
+    <tr><td>Bindings</td><td>Kode di Coding/CodeableConcept ada di value set yang diikat?</td></tr>
+    <tr><td>Invariants</td><td>Aturan co-occurrence (mis. constraint <code>dom-2</code>) terpenuhi?</td></tr>
+    <tr><td>Profiles</td><td>Aturan profile dari <code>meta.profile</code>, CapabilityStatement, IG, atau konteks terpenuhi?</td></tr>
+    <tr><td>Business rules</td><td>Duplikat? reference bisa di-resolve? user berhak? (dibuat <em>di luar</em> spesifikasi)</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong><code>$validate</code>.</strong> <code>POST [base]/[Resource]/$validate</code> (opsional <code>?profile=…</code>, <code>mode=create|update|delete</code>) mengembalikan OperationOutcome; "This operation returns a 200 OK whether or not the resource is valid", sedangkan 4xx/5xx berarti validasinya sendiri gagal dijalankan. Operasi ini tidak menyimpan resource. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource-operation-validate.html">[19]</a></sup>
+    Apakah SATUSEHAT menyediakan endpoint <code>$validate</code> untuk partner: <strong>belum terverifikasi (diakses 2026-10-26)</strong>; yang terdokumentasi adalah validasi saat data dikirim (di bawah).</li>
+  <li><strong>Validasi di SATUSEHAT.</strong> Saat resource interoperabilitas dikirim, sistem memvalidasi kode terminologi (ICD-10, ICD-9 CM, LOINC, SNOMED CT, dan code system lain). API Gateway memeriksa request lewat FHIR Processor dulu; kalau ada kesalahan, respons 4xx berupa OperationOutcome dengan <code>issue.severity</code>, <code>issue.code</code> (<code>duplicate</code>, <code>format</code>, <code>value</code>), <code>details.text</code>, dan <code>expression</code> (resource dan field). <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/validasi/">[13]</a></sup>
+    Apakah server SATUSEHAT juga memeriksa klaim <code>meta.profile</code> secara penuh: <strong>belum terverifikasi (diakses 2026-10-26)</strong>.</li>
+  <li><strong>Aturan format yang sering membuat ditolak:</strong> waktu dikirim dalam UTC +00 (17.35 WIB → <code>2023-08-23T10:35:00+00:00</code>) dan tanggal tidak boleh sebelum 3 Juni 2014; elemen wajib atau tidak mengikuti panduan per use case. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[8]</a></sup></li>
+  <li><strong>Validasi di production itu trade-off.</strong> Spesifikasi menyarankan validasi saat development, tapi memperingatkan di production: validasi penuh dengan terminologi mahal, bisa menyebabkan "the loss of critical health care data" karena satu field buruk, dan bisa menolak data historis yang tidak bisa diperbaiki. Anjurannya Postel's law: konservatif saat mengirim, liberal saat menerima. <sup class="cite"><a href="https://hl7.org/fhir/R4/validation.html">[18]</a></sup>
+    Terjemahan untuk desain Node: validasi sebelum kirim, dan record yang ditolak <em>disimpan</em> bersama OperationOutcome-nya untuk diperbaiki, bukan dibuang.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 3 — Validasi</h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ss-validasi" data-stack></div>
+</section>
+
+<h3>1d. Mapping data legacy → FHIR, dan ConceptMap (±8 menit)</h3>
+<p>Mapping punya dua lapis: <strong>struktur</strong> (tabel/kolom → resource/elemen) dan <strong>kode</strong> (kode lokal → terminologi standar). Terminologi standar SATUSEHAT: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/">[11]</a></sup></p>
+<table>
+  <thead><tr><th>Data</th><th>Standar di SATUSEHAT</th><th>Contoh dari dokumentasi</th></tr></thead>
+  <tbody>
+    <tr><td>Diagnosis (<code>Condition.code</code>)</td><td>ICD-10 versi 2010</td><td><code>http://hl7.org/fhir/sid/icd-10</code> · <code>C47.0</code> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/condition/">[9]</a></sup></td></tr>
+    <tr><td>Prosedur dan tindakan medis</td><td>ICD-9 CM versi 2010</td><td>(lihat lampiran terminologi)</td></tr>
+    <tr><td>Penamaan uji laboratorium (<code>Observation.code</code>)</td><td>LOINC</td><td><code>http://loinc.org</code> · <code>8867-4</code> Heart rate <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/">[10]</a></sup></td></tr>
+    <tr><td>Istilah klinis</td><td>SNOMED CT</td><td><code>http://snomed.info/sct</code></td></tr>
+    <tr><td>Obat (<code>Medication.code</code>)</td><td>KFA (Kamus Farmasi dan Alat Kesehatan)</td><td><code>http://sys-ids.kemkes.go.id/kfa</code> · <code>93001019</code> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/medication/">[14]</a></sup></td></tr>
+  </tbody>
+</table>
+<pre><code>// Hanya untuk dibaca: satu baris tabel lama → Condition (struktur + kode)
+type DiagnosaRow = { no_reg: string; kode_dx: string; ket: string; tgl: string };  // tgl: "2026-10-26 17:35" WIB, tanpa zona
+
+function toCondition(row: DiagnosaRow, ctx: { patientIhs: string; encounterId: string }, map: Map&lt;string, Coding&gt;): Condition {
+  const icd = map.get(row.kode_dx);                        // hasil ConceptMap lokal → ICD-10, bisa undefined
+  if (!icd) throw new UnmappedCode(row.kode_dx);           // masuk antrean review coder, jangan dikirim asal
+  return {
+    resourceType: "Condition",
+    code: { coding: [icd,                                  // kode standar
+                     { system: "https://simrs.rs-contoh.id/fhir/CodeSystem/dx-lokal", code: row.kode_dx }], // kode asal (system ilustrasi)
+            text: row.ket },
+    subject:   { reference: `Patient/${ctx.patientIhs}` },
+    encounter: { reference: `Encounter/${ctx.encounterId}` },
+    recordedDate: wibToUtc(row.tgl),                       // "2026-10-26T10:35:00+00:00"
+  };
+}</code></pre>
+<p>
+  Dokumentasi Condition SATUSEHAT menandai <code>code</code>, <code>subject</code>, dan <code>encounter</code> sebagai wajib; elemen lain wajib atau tidak mengikuti panduan per use case, jadi potongan di atas sengaja tidak lengkap. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/condition/">[9]</a></sup>
+  Membawa kode lokal sebagai Coding tambahan sah karena CodeableConcept boleh berisi beberapa Coding untuk konsep yang sama (lesson 0002); apakah SATUSEHAT menerima Coding tambahan dengan <code>system</code> lokal di setiap elemen: <strong>belum terverifikasi (diakses 2026-10-26)</strong>.
+</p>
+<p><strong>ConceptMap</strong> adalah resource FHIR untuk menyatakan mapping kode itu secara formal. Profiling R4 menyebut tujuannya: "Map between local and standard terminologies or content models". <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[17]</a></sup> Yang perlu Anda ucapkan di interview: <sup class="cite"><a href="https://hl7.org/fhir/R4/conceptmap.html">[20]</a></sup></p>
+<ul>
+  <li><strong>Satu arah:</strong> "Mappings are one way - from the source to the target system"; kebalikannya tidak bisa diasumsikan benar.</li>
+  <li><strong>Terikat konteks:</strong> mapping hanya berlaku untuk use case bisnis tertentu; contoh resminya SNOMED CT → ICD-10 untuk analisis data berbeda dengan untuk billing.</li>
+  <li><strong>Equivalence per target:</strong> <code>equivalent</code>, <code>equal</code>, <code>wider</code>, <code>narrower</code>, <code>inexact</code>, <code>unmatched</code>, <code>disjoint</code>, dll.; untuk <code>narrower</code> dan <code>inexact</code> alasannya SHALL dijelaskan di <code>comment</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/valueset-concept-map-equivalence.html">[22]</a></sup></li>
+  <li><strong>Bukan transformasi struktur:</strong> ConceptMap memetakan konsep; transformasi instance (tabel → resource) adalah wilayah StructureMap. ConceptMap tidak dirujuk langsung dari resource lain.</li>
+  <li><strong>Dipakai lewat <code>$translate</code>:</strong> terminology server menerjemahkan <code>system</code> + <code>code</code> berdasarkan ConceptMap; client harus memeriksa <code>equivalence</code> setiap hasil. <sup class="cite"><a href="https://hl7.org/fhir/R4/conceptmap-operation-translate.html">[21]</a></sup></li>
+</ul>
+<pre><code>// Bentuk ConceptMap R4 (struktur mengikuti contoh resmi; kode lokal ilustrasi, target dari dokumentasi SATUSEHAT)
+{
+  "resourceType": "ConceptMap",
+  "status": "active",
+  "group": [{
+    "source": "https://simrs.rs-contoh.id/fhir/CodeSystem/lab-lokal",
+    "target": "http://loinc.org",
+    "element": [
+      { "code": "NADI", "display": "Nadi per menit",
+        "target": [{ "code": "8867-4", "display": "Heart rate", "equivalence": "equivalent" }] },
+      { "code": "CEK-UMUM", "display": "Paket cek umum",
+        "target": [{ "equivalence": "unmatched", "comment": "Paket, bukan satu tes: pecah per pemeriksaan" }] }
+    ]
+  }]
+}</code></pre>
+<p class="note">
+  Struktur <code>group.source/target</code> → <code>element.code</code> → <code>target.code/equivalence/comment</code> mengikuti contoh resmi R4. <sup class="cite"><a href="https://hl7.org/fhir/R4/conceptmap-example.json.html">[23]</a></sup>
+  Padanan JS: tabel lookup <code>Map&lt;kodeLokal, Coding&gt;</code> yang diberi metadata (arah, konteks, tingkat kecocokan) dan bisa dipertukarkan antar sistem. Di proyek nyata, tabel ini disusun dan direview oleh coder klinis, bukan developer sendirian.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 4 — Terminologi dan mapping</h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="ss-terminologi,ss-mapping" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 5 — Jawab lisan (bagian 1)</h2>
+  <p>Pasang timer di ponsel, jawab dengan suara keras, baru buka jawaban contoh. Centang hanya poin yang benar-benar Anda sebut.</p>
+
+  <blockquote>"Pernah dengar SATUSEHAT? Bagaimana sistem kami terhubung ke sana?" (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "SATUSEHAT adalah platform pertukaran data kesehatan nasional dari Kemenkes, sebuah Health Information Exchange yang memakai HL7 FHIR lewat HTTPS REST; IG-nya di Simplifier bernama SATUSEHAT FHIR R4 Implementation Guide dan base URL-nya memakai path <code>fhir-r4/v1</code>.
+      Ada Sandbox untuk uji coba dengan pasien dummy, dan Production setelah fasyankes terdaftar. Autentikasinya OAuth2 client credentials: backend kami POST ke <code>/oauth2/v1/accesstoken</code> dengan <code>client_id</code> dan <code>client_secret</code>, lalu memakai <code>Authorization: Bearer</code>; token di-cache karena gagal autentikasi kena rate limit.
+      Sebelum data klinis: Organization dan Location didaftarkan, nomor IHS Practitioner dan Patient diambil; Patient dicari lewat NIK. Setelah itu Encounter, Condition dengan ICD-10, Observation dengan LOINC, sesuai panduan use case. Error datang sebagai OperationOutcome yang kami simpan untuk diperbaiki."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>SATUSEHAT = HIE nasional Kemenkes berbasis HL7 FHIR (R4) + HTTPS REST?</li>
+      <li>Sandbox (pasien dummy) vs Production (setelah terdaftar)?</li>
+      <li>OAuth2 <code>client_credentials</code>: <code>client_id</code> + <code>client_secret</code> → Bearer token, dari backend?</li>
+      <li>prasyarat: Organization, Location, nomor IHS Practitioner dan Patient (MPI, NIK)?</li>
+      <li>resource klinis (Encounter, Condition, Observation) dengan terminologi standar?</li>
+      <li>error 4xx berupa OperationOutcome yang disimpan dan ditindaklanjuti?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Rumah sakit kami punya SIMRS lama dengan tabel <code>pasien</code>, <code>kunjungan</code>, <code>diagnosa</code>, dan kode lokal. Bagaimana Anda memetakannya ke FHIR untuk dikirim ke SATUSEHAT?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saya mulai dari profile target, bukan dari tabel: IG SATUSEHAT dan panduan use case menentukan elemen wajib dan terminologinya.
+      Lalu peta tabel ke resource: <code>pasien</code> → Patient (cari nomor IHS lewat NIK, simpan di tabel kita), <code>kunjungan</code> → Encounter dengan identifier <code>http://sys-ids.kemkes.go.id/encounter/{id-organisasi}</code> + nomor kunjungan lokal, <code>diagnosa</code> → Condition yang merujuk Encounter dan Patient.
+      Kode lokal dipetakan ke terminologi standar: diagnosis ke ICD-10, lab ke LOINC, obat ke KFA. Secara konsep itu ConceptMap: satu arah, per konteks, tiap pasangan punya equivalence; kode yang tidak cocok masuk antrean review coder, tidak dibuang.
+      Format dinormalisasi: waktu ke UTC, gender ke <code>male</code>/<code>female</code>. Sebelum kirim, uji di sandbox; OperationOutcome disimpan per record supaya bisa diperbaiki dan dikirim ulang secara idempoten berdasarkan identifier."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>mulai dari profile/IG dan panduan use case (elemen wajib, terminologi)?</li>
+      <li>tabel → resource: pasien → Patient (nomor IHS via NIK), kunjungan → Encounter, diagnosa → Condition?</li>
+      <li>identifier lokal dengan <code>system</code> per organisasi, Reference antar resource?</li>
+      <li>kode lokal → ICD-10/LOINC/KFA; ConceptMap satu arah dengan equivalence?</li>
+      <li>kode tak terpetakan → antrean review; normalisasi format (UTC, gender)?</li>
+      <li>validasi di sandbox, simpan OperationOutcome, kirim ulang idempoten?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Apa artinya resource 'valid terhadap profile'? Di mana Anda menjalankan validasi di pipeline integrasi kami?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Valid berarti lolos struktur, cardinality, tipe nilai, binding kode, invariant, dan aturan profile; profile adalah StructureDefinition yang mempersempit resource dasar, misalnya mewajibkan identifier atau mengikat kode ke ICD-10.
+      Resource bisa mengklaim profile lewat <code>meta.profile</code>, dan server bisa memeriksanya lewat <code>$validate</code> yang mengembalikan OperationOutcome, 200 baik valid maupun tidak. Business rule seperti duplikat dan reference yang resolve ada di luar spesifikasi.
+      Di pipeline: validasi sedini mungkin di sisi kami dan di sandbox saat development; di production kami tetap menangani OperationOutcome dari server. Validasi penuh dengan terminologi mahal dan bisa membuang data klinis karena satu field buruk, jadi record yang gagal disimpan untuk diperbaiki. Prinsipnya Postel's law."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>aspek validasi: struktur, cardinality, nilai, binding kode, invariant, profile?</li>
+      <li>profile = StructureDefinition yang mempersempit resource; klaim lewat <code>meta.profile</code>?</li>
+      <li><code>$validate</code> mengembalikan OperationOutcome (200 walau tidak valid)?</li>
+      <li>business rule (duplikat, reference) di luar spesifikasi?</li>
+      <li>validasi di development/sandbox; production: biaya dan risiko kehilangan data?</li>
+      <li>record gagal disimpan untuk diperbaiki; Postel's law?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<h2 id="bagian-2">Bagian 2 · Review acak 0001–0005 (seam penguasaan, ±40 menit)</h2>
+<p>Istirahat 5 menit dulu. Bagian ini tanpa materi baru: soal kuis dan lisan dari lesson 0001–0005, diacak bersama (interleaving).</p>
+
+<h3>Aturan main</h3>
+<ol>
+  <li><strong>Jangan buka catatan, lesson lama, reference, atau tab lain.</strong> Yang diuji adalah kemampuan menjawab pertanyaan interview FHIR tanpa catatan. Kalau Anda mengintip, hasilnya tidak berarti.</li>
+  <li><strong>Soal kuis:</strong> pilih satu jawaban. Ada tepat satu soal kuis untuk setiap topik lesson 0001–0005 (37 topik = 37 kuis), jadi setiap topik diuji minimal sekali.</li>
+  <li><strong>Soal lisan:</strong> jawab dengan suara keras (±60–90 detik, boleh direkam di ponsel) <em>sebelum</em> membuka checklist, lalu centang hanya poin yang benar-benar Anda sebut, bukan yang "sebenarnya tahu".</li>
+  <li><strong>Kriteria lulus per topik (sama seperti seam di track root, mis. review 0007, 0012, dan 0024):</strong> soal kuis acak dijawab benar, dan jawaban lisan memenuhi minimal 4 dari 6 poin checklist. Satu kesalahan di topik itu = topik lemah.
+    Topik yang kuisnya benar tapi tidak mendapat soal lisan tampil sebagai <em>Kuis lulus, lisan belum diuji</em> dan belum dihitung lulus.</li>
+</ol>
+
+<p class="note">
+  Urutan soal mengikuti seed yang tampil di bawah. Tombol "Acak ulang" membuat set baru, tapi kerjakan <strong>set pertama</strong> sampai selesai sebelum mengacak ulang; hasil set pertama itulah yang dilaporkan.
+  Untuk mengulang set yang sama nanti, tambahkan <code>?seed=NNN</code> di URL. Soal lisan ditarik 6 dari 14 yang ada, jadi topik lain bisa diuji lewat <code>?seed=</code> berbeda di sesi berikutnya (pengulangan berjarak).
+</p>
+
+<!--
+  Pengaturan review (cara agent mengubahnya):
+  - data-lessons = lesson FHIR 0001–0005 (semua topiknya ikut). Topik ss- (0006) sengaja tidak masuk: materinya baru dipelajari
+    beberapa menit sebelumnya, jadi skornya hanya fluency, bukan retensi.
+  - data-mc = jumlah topik kuis di pool (sekarang 37: dasar- 5, res- 10, rest- 7, bulk- 7, smart- 8), supaya draw() menarik tepat
+    satu kuis per topik. Hitung ulang bila bank soal 0001–0005 mendapat topik baru; tests/fhir-review-0006.test.js memeriksanya.
+  - data-oral = 6 (dari 14 soal lisan 0001–0005), sama seperti seam root.
+  - data-topics kosong. Untuk sesi ulang (topik lemah), isi slug lemah di data-topics dan pakai ?seed= baru, atau buat blok kedua.
+-->
+<div class="review" data-title="Review 0006 (FHIR 0001–0005)" data-lessons="0001,0002,0003,0004,0005"
+     data-topics="" data-mc="37" data-oral="6"></div>
+
+<section class="exercise">
+  <h2>Setelah selesai: laporkan hasilnya ke agent</h2>
+  <ol>
+    <li>Setelah semua soal dijawab, ringkasan per topik muncul di bawah soal terakhir.</li>
+    <li>Tekan <strong>Salin</strong> (atau blok teks di kotak ringkasan), lalu <strong>tempel ke agent</strong> di terminal, misalnya:
+      <em>"Ini hasil review 0006 FHIR, tolong dicatat."</em> Sebut juga skor Latihan 5 (bagian 1) dan bagian 3 bila ingin dicatat di NOTES.</li>
+    <li>Agent menulis learning record "sudah dikuasai" di <code>fhir/learning-records/</code> <strong>hanya untuk topik yang lulus</strong> (kuis benar dan lisan minimal 4 dari 6), dengan seed dan skor sebagai bukti.
+      Topik <em>Kuis lulus, lisan belum diuji</em> dicatat di NOTES saja, tanpa learning record.</li>
+    <li>Topik yang lemah dicatat sebagai baris "Topik lemah FHIR 0006: …" di <code>fhir/NOTES.md</code>, untuk diulang malam ini (lihat ROADMAP: "ulangi soal lisan yang lemah dari review 0006").</li>
+  </ol>
+  <p class="note">Hanya hasil review di bagian 2 ini yang dicatat sebagai bukti penguasaan FHIR. Skor kuis di lesson 0001–0005 dan kuis bagian 1 tidak dihitung.</p>
+</section>
+
+<h3>Kalau ada topik lemah</h3>
+<p>
+  Jangan baca ulang seluruh lesson. Buka hanya bagian cheat sheet untuk topik itu (±5 menit):
+  <a href="../reference/anatomi-resource.html">anatomi resource + datatype</a> (topik <code>res-</code>) atau
+  <a href="../reference/rest-search-bundle.html">REST, search, Bundle</a> (topik <code>rest-</code>); untuk <code>dasar-</code>, <code>bulk-</code>, dan <code>smart-</code> buka bagian yang sama di lesson asalnya.
+  Lalu tutup, dan jelaskan lagi dengan suara keras.
+</p>
+
+<h2 id="bagian-3">Bagian 3 · Bank tanya-jawab interview campuran (±20 menit)</h2>
+<p>
+  Pertanyaan interview nyata jarang berhenti di satu lesson. Enam soal di bawah sengaja mencampur topik (desain integrasi, SMART, Bulk Data, REST, SATUSEHAT).
+  Pilih minimal tiga secara acak (lempar dadu), jawab dengan suara keras dalam batas waktunya, lalu buka checklist. Timer ini menempel di atas layar saat Anda menggulir.
+</p>
+<div class="timer" data-segments="Tanya-jawab:20,STAR:10"></div>
+
+<blockquote>1. "Kami perlu mengirim data kunjungan rawat jalan dari SIMRS ke SATUSEHAT setiap hari. Rancang service Node-nya." (2 menit)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Saya pisahkan menjadi job terjadwal yang mengambil kunjungan baru dari SIMRS, mengubahnya ke resource FHIR, lalu mengirim lewat antrean, misalnya BullMQ, supaya ada retry dan backoff.
+    Token client credentials di-cache sampai mendekati <code>expires_in</code>. Prasyarat seperti nomor IHS Patient dan Practitioner diambil sekali lalu disimpan di tabel mapping.
+    Setiap record punya identifier lokal dengan <code>system</code> organisasi, jadi pengiriman ulang tidak membuat duplikat; secara FHIR umum ini conditional create dengan <code>If-None-Exist</code>, dan SATUSEHAT juga menolak duplikat dengan issue <code>duplicate</code>.
+    Respons sukses menyimpan id dari server untuk reference berikutnya; OperationOutcome gagal disimpan per record untuk diperbaiki. Data pasien adalah PHI: tidak masuk log biasa, secret di secret manager, dan ada audit siapa mengirim apa."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>job terjadwal + antrean dengan retry/backoff?</li>
+    <li>token di-cache, secret di server (bukan di React)?</li>
+    <li>prasyarat (nomor IHS Patient/Practitioner, Organization/Location) disimpan sebagai mapping?</li>
+    <li>idempoten lewat identifier (conditional create / penolakan duplikat)?</li>
+    <li>OperationOutcome per record disimpan untuk koreksi dan kirim ulang?</li>
+    <li>PHI: tidak di log biasa, audit akses?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0003-fhir-rest-api.html">0003</a> (conditional create, OperationOutcome), <a href="0005-smart-on-fhir.html">0005</a> (PHI, audit), bagian 1 di atas.</p>
+</details>
+
+<blockquote>2. "Ceritakan perjalanan data dari klik di EHR sampai React menampilkan daftar tanda vital pasien." (90 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "EHR membuka launch URL app dengan <code>iss</code> dan <code>launch</code>. App melakukan discovery di <code>.well-known/smart-configuration</code>, redirect ke authorize dengan PKCE, <code>state</code>, <code>aud</code>, dan scope <code>launch patient/Observation.rs</code>, lalu menukar code dan mendapat token plus <code>patient</code>.
+    Lalu search <code>GET Observation?patient=123&amp;category=vital-signs&amp;_sort=-date&amp;_count=50</code>; hasilnya Bundle <code>searchset</code>, dan halaman berikutnya diambil dari <code>link</code> relation <code>next</code>, bukan URL buatan sendiri.
+    Di React, label diambil dari <code>code.text</code>, lalu <code>display</code>, baru kode mentah; nilai dari <code>valueQuantity</code> dengan satuan UCUM, dan angka <code>decimal</code> dijaga presisinya."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>EHR launch: <code>iss</code> + <code>launch</code>, discovery?</li>
+    <li>authorization code + PKCE, scope <code>patient/Observation.rs</code>, konteks <code>patient</code>?</li>
+    <li>search dengan parameter (patient, category/code, sort, <code>_count</code>)?</li>
+    <li>Bundle <code>searchset</code> + paging lewat <code>link</code> <code>next</code>?</li>
+    <li>CodeableConcept ditampilkan dari <code>text</code>/<code>display</code>, bukan kode mentah?</li>
+    <li><code>valueQuantity</code>/UCUM atau presisi <code>decimal</code>?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0003-fhir-rest-api.html">0003</a>, <a href="0004-json-massal-bulk-data.html">0004</a>, <a href="0005-smart-on-fhir.html">0005</a>.</p>
+</details>
+
+<blockquote>3. "Tim data minta salinan semua Observation tiap malam untuk warehouse. Bagaimana Anda melakukannya?" (90 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Bukan search biasa, tapi Bulk Data <code>$export</code> dengan <code>_type=Observation</code>. Autentikasinya SMART Backend Services: JWT assertion, scope <code>system/Observation.rs</code>.
+    Kick-off dengan <code>Prefer: respond-async</code>, dapat 202 dan <code>Content-Location</code>, polling mengikuti <code>Retry-After</code> sampai 200 dengan manifest berisi URL file NDJSON.
+    Setiap file diproses streaming baris per baris dengan <code>readline</code> atau <code>pipeline</code>, insert ke database per batch dengan backpressure, tidak pernah <code>JSON.parse</code> satu file utuh.
+    Malam berikutnya pakai <code>_since</code> = <code>transactionTime</code> dari manifest sebelumnya supaya inkremental."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li><code>$export</code> (bukan search), dengan <code>_type</code>?</li>
+    <li>Backend Services + scope <code>system/</code>?</li>
+    <li>kick-off → 202 → polling (<code>Retry-After</code>) → manifest?</li>
+    <li>NDJSON diproses streaming per baris, batch insert?</li>
+    <li>backpressure / tidak <code>JSON.parse</code> file utuh?</li>
+    <li>inkremental dengan <code>_since</code> = <code>transactionTime</code>?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0004-json-massal-bulk-data.html">0004</a>, <a href="0005-smart-on-fhir.html">0005</a>.</p>
+</details>
+
+<blockquote>4. "Satu kunjungan menghasilkan Encounter, dua Condition, dan lima Observation. Bagaimana mengirimnya supaya tidak setengah tersimpan?" (60 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Di FHIR umum, Bundle <code>transaction</code> ke <code>POST [base]</code>: atomik, semua berhasil atau semua gagal. Encounter diberi <code>fullUrl</code> <code>urn:uuid:…</code> dan Condition/Observation merujuk ke urn itu; server mengganti reference dengan id asli.
+    <code>batch</code> tidak cocok karena setiap entry independen dan tidak boleh saling merujuk. Untuk retry aman, setiap entry memakai conditional create berdasarkan identifier.
+    Untuk SATUSEHAT khususnya, panduan IGD menyebut beberapa resource dikirim bersamaan memakai bundle; detail tipe Bundle dan aturan atomiknya perlu saya cek lagi di panduan use case."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>Bundle <code>transaction</code>, atomik?</li>
+    <li><code>fullUrl</code> <code>urn:uuid:</code> untuk saling merujuk?</li>
+    <li>kenapa bukan <code>batch</code> (independen, tanpa ketergantungan)?</li>
+    <li>conditional create / identifier untuk retry idempoten?</li>
+    <li>respons <code>transaction-response</code> berisi lokasi/id per entry?</li>
+    <li>jujur tentang detail SATUSEHAT yang perlu dicek di panduan?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0003-fhir-rest-api.html">0003</a>. Dukungan Bundle di SATUSEHAT: panduan interoperabilitas IGD menyebut Medication dan MedicationDispense "dikirimkan secara bersamaan menggunakan bundle" <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/interoperability/igd/">[24]</a></sup>; tipe Bundle dan perilaku atomiknya <strong>belum terverifikasi (diakses 2026-10-26)</strong>.</p>
+</details>
+
+<blockquote>5. "Pasien yang sama terdaftar di tiga sistem dengan nomor berbeda. Bagaimana FHIR membantu, dan apa jebakannya?" (60 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Logical <code>id</code> berbeda di setiap server dan tidak boleh dipakai sebagai identitas lintas sistem. Yang dipakai adalah <code>identifier</code>: pasangan <code>system</code> + <code>value</code>, misalnya NIK dengan system <code>https://fhir.kemkes.go.id/id/nik</code>, plus nomor rekam medis per rumah sakit dengan system masing-masing.
+    Satu Patient boleh punya banyak identifier. Search memakai token <code>identifier=system|value</code>, dan create memakai conditional create supaya tidak dobel.
+    Di Indonesia, MPI SATUSEHAT memberi nomor IHS setelah verifikasi NIK ke DUKCAPIL. Jebakannya: pasien tanpa NIK, misalnya bayi, punya alur sendiri, dan <code>value</code> tanpa <code>system</code> tidak bermakna."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li><code>id</code> vs <code>identifier</code> (id lokal per server)?</li>
+    <li><code>system</code> + <code>value</code>, beberapa identifier per Patient?</li>
+    <li>search token <code>identifier=system|value</code>?</li>
+    <li>conditional create untuk mencegah duplikat?</li>
+    <li>MPI/nomor IHS, verifikasi NIK ke DUKCAPIL?</li>
+    <li>jebakan: pasien tanpa NIK, value tanpa system?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0002-anatomi-resource-json.html">0002</a>, <a href="0003-fhir-rest-api.html">0003</a>, bagian 1b. Alur pasien tanpa NIK dan bayi ada di menu MPI dokumentasi SATUSEHAT (<code>pasien-bayi</code>, <code>pasien-no-nik</code>) dan tidak dibahas di lesson ini.</p>
+</details>
+
+<blockquote>6. "Kenapa kami memakai FHIR R4, bukan R5? Dan apa itu profile SATUSEHAT?" (60 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "R4 adalah rilis pertama yang memuat konten Normative, jadi bagian intinya stabil dan dijaga kompatibilitasnya; R5 masih Trial Use. Ekosistem IG besar dibangun di atas R4, dan SATUSEHAT juga: base URL-nya <code>fhir-r4</code> dan IG-nya SATUSEHAT FHIR R4 Implementation Guide.
+    Profile adalah StructureDefinition yang mempersempit resource dasar untuk konteks tertentu: elemen wajib, cardinality, binding terminologi seperti ICD-10 dan LOINC, serta extension Indonesia seperti kode wilayah administratif.
+    Resource bisa mengklaim profile di <code>meta.profile</code>, dan validator memeriksa aturan itu."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>R4 = konten Normative pertama; R5 Trial Use?</li>
+    <li>IG nasional dibangun di atas R4, termasuk SATUSEHAT?</li>
+    <li>profile = StructureDefinition berisi constraint?</li>
+    <li>contoh constraint: elemen wajib, binding terminologi?</li>
+    <li>extension untuk data lokal (mis. kode wilayah)?</li>
+    <li><code>meta.profile</code> + validasi?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0001-fondasi-fhir.html">0001</a>, bagian 1a dan 1c.</p>
+</details>
+
+<h2 id="bagian-4">Bagian 4 · Reframe 4 cerita STAR ke konteks health-tech (±10 menit)</h2>
+<p>
+  Cerita STAR <strong>tidak dibuat baru</strong>. Buka <code>star/draf-star.md</code> di root repo (empat tema: insiden produksi, refactor, konflik teknis, belajar teknologi baru) dan pakai cerita yang sudah Anda tulis.
+  Kalau sebagian masih kosong, isi dulu poin S/T/A/R dari pengalaman Anda sendiri; saya (agent) tidak bisa mengarang pengalaman Anda. File itu tidak perlu diubah untuk latihan ini: tulis versi health-tech di kertas atau catatan terpisah.
+</p>
+<p>
+  Yang diubah hanya <em>bingkainya</em>: pilih kalimat Situation dan Action yang menyentuh tiga hal yang dipedulikan perusahaan health-tech, lalu sebut padanan FHIR-nya dengan jujur ("di sana kami memakai X; di FHIR padanannya Y").
+  Porsi tetap: Situation ±20%, Task ±10%, <strong>Action ±60%</strong>, Result ±10%, "saya" bukan "kami", dan Result dengan angka. <sup class="cite"><a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[25]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Cerita di draf</th><th>Sorot sudut ini (bila memang ada di cerita Anda)</th><th>Jembatan ke FHIR / health-tech</th></tr></thead>
+  <tbody>
+    <tr><td>1. Bug/insiden produksi tersulit</td>
+      <td><strong>Data sensitif:</strong> insiden yang menyentuh data pribadi, log yang terlalu banyak bicara, akses yang salah. <strong>Integrasi:</strong> sistem pihak ketiga yang berubah format.</td>
+      <td>PHI di log dan query string, <code>AuditEvent</code>, OperationOutcome yang disimpan, retry idempoten dengan identifier</td></tr>
+    <tr><td>2. Refactor yang meningkatkan kualitas</td>
+      <td><strong>Integrasi antar sistem:</strong> memisahkan adapter/mapper dari logika bisnis, menambah test di batas integrasi. <strong>Volume:</strong> mengganti proses "muat semua" menjadi streaming/batch.</td>
+      <td>Lapisan mapping tabel → resource dan ConceptMap terpisah dan teruji; NDJSON + <code>pipeline</code>; validasi sebelum kirim</td></tr>
+    <tr><td>3. Konflik/beda pendapat teknis</td>
+      <td><strong>Data sensitif vs kecepatan:</strong> menyimpan token di browser vs backend, validasi ketat vs kehilangan data, buatan sendiri vs standar.</td>
+      <td>Public vs confidential client (BFF), Postel's law dan trade-off validasi di production, "pakai standar (FHIR/terminologi) daripada format sendiri"</td></tr>
+    <tr><td>4. Mempelajari teknologi baru dengan cepat</td>
+      <td><strong>Domain baru yang ketat aturan:</strong> cara Anda belajar dari spesifikasi resmi, bukan blog.</td>
+      <td>Track hari ini sebagai bukti: dari nol ke membaca R4, SMART, Bulk Data, dan dokumentasi SATUSEHAT dalam satu hari, dengan sumber primer</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>Volume besar:</strong> kalau Result Anda punya angka skala (baris, request/detik, ukuran file, waktu proses), letakkan di depan; health-tech selalu bicara data populasi.</li>
+  <li><strong>Jangan memaksa:</strong> kalau sebuah cerita tidak punya sudut health-tech, cukup tutup dengan satu kalimat jembatan ("pelajaran yang sama saya bawa ke data pasien: …"). Mengarang detail medis justru berbahaya di interview.</li>
+  <li><strong>Bonus "kenapa pindah stack"</strong> di draf ditulis untuk posisi .NET/Angular dan tidak berlaku di sini. Untuk posisi ini, pertanyaan yang lebih mungkin adalah "kenapa health-tech?"; jawab dengan alasan Anda sendiri, lalu kaitkan ke cerita 4.</li>
+  <li>Latihan: saat timer segmen <em>STAR</em> berjalan, ucapkan dua cerita yang sudah dibingkai ulang, masing-masing ±2 menit. Lebih dari 2,5 menit → pangkas Situation.</li>
+</ul>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±20 menit, malam ini)</span>
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/prerequisites/">SATUSEHAT Platform: Orientasi / Prerequisites</a>, lalu ikuti tautannya ke halaman resource
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">Patient</a> dan
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">Encounter</a>.
+  Untuk konsep validasi, baca <a href="https://hl7.org/fhir/R4/validation.html">FHIR R4: Validating Resources</a> (pendek, satu halaman).
+</div>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Indonesia (SATUSEHAT)") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a> · Cheat sheet: <a href="../reference/anatomi-resource.html">anatomi resource</a>, <a href="../reference/rest-search-bundle.html">REST, search, Bundle</a></p>
+
+<p class="ask">Ada yang belum jelas, atau jawaban yang menurut Anda benar tapi dinilai salah? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda ConceptMap dan StructureMap?", "bagaimana alur pasien bayi tanpa NIK di SATUSEHAT?", atau "tolong padatkan cerita insiden saya dengan sudut data sensitif". Untuk pertanyaan implementasi SATUSEHAT yang tidak terjawab dokumentasi, kanal resminya adalah <a href="https://faq.kemkes.go.id/category/satusehat-platform">FAQ SATUSEHAT Platform</a>; untuk interpretasi spesifikasi FHIR, <a href="https://chat.fhir.org/">chat.fhir.org</a>.</p>
+
+<p class="note sources">
+  Sumber (SATUSEHAT diakses 2026-10-26):
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/playbook/introduction/">[1] SATUSEHAT Playbook: Pendahuluan</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/postman-workshop/endpoint-information/">[2] Endpoint Information</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[3] Katalog API: Akses Token</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/api-code/access-sandbox/">[4] Kode Akses API (Sandbox)</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/prerequisites/">[5] Orientasi / Prerequisites</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[6] Resource Patient</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/master-data/master-patient-index/pasien-nik/">[7] MPI: Pasien dengan NIK</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[8] Resource Encounter</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/condition/">[9] Resource Condition</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/">[10] Resource Observation</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/">[11] Terminologi</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/standar-terminologi/">[12] Standar Terminologi (riwayat revisi)</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/validasi/">[13] Validasi Interoperabilitas</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/medication/">[14] Resource Medication (KFA)</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/">[15] FHIR di SATUSEHAT</a> ·
+  <a href="https://simplifier.net/guide/SATUSEHAT-FHIR-R4-Implementation-Guide/Home/FHIRProfiles/Patient.page.md?version=current">[16] SATUSEHAT FHIR R4 Implementation Guide (Simplifier): profile Patient</a> ·
+  <a href="https://hl7.org/fhir/R4/profiling.html">[17] FHIR R4 Profiling</a> ·
+  <a href="https://hl7.org/fhir/R4/validation.html">[18] FHIR R4 Validating Resources</a> ·
+  <a href="https://hl7.org/fhir/R4/resource-operation-validate.html">[19] FHIR R4 $validate</a> ·
+  <a href="https://hl7.org/fhir/R4/conceptmap.html">[20] FHIR R4 ConceptMap</a> ·
+  <a href="https://hl7.org/fhir/R4/conceptmap-operation-translate.html">[21] FHIR R4 ConceptMap $translate</a> ·
+  <a href="https://hl7.org/fhir/R4/valueset-concept-map-equivalence.html">[22] FHIR R4 ConceptMapEquivalence</a> ·
+  <a href="https://hl7.org/fhir/R4/conceptmap-example.json.html">[23] FHIR R4 contoh ConceptMap (JSON)</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/interoperability/igd/">[24] Panduan Interoperabilitas: Pelayanan IGD</a> ·
+  <a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[25] MIT CAPD: The STAR method for behavioral interviews</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0005-smart-on-fhir.html">← 0005 · Keamanan, SMART on FHIR, dan frontend React</a>
+  <a href="../index.html">Daftar lesson FHIR →</a>
+</nav>
+
+</main>
+<script src="../../assets/timer.js"></script>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0001.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../assets/questions/0004.js"></script>
+<script src="../assets/questions/0005.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/review.js"></script>
+</body>
+</html>
