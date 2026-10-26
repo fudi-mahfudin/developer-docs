@@ -1,0 +1,196 @@
+// Soal lesson 0001 (track FHIR) · Fondasi FHIR: HL7 v2 → FHIR, REST + JSON, Resource, R4 vs R5, maturity, Profile/Extension/IG.
+// Format: assets/README.md di root. Dimuat dari fhir/lessons/ sebagai ../assets/questions/0001.js.
+QuestionBank.labelTopics({
+  "dasar-v2-vs-fhir": "HL7 v2 vs FHIR",
+  "dasar-rest-json": "FHIR di atas REST + JSON",
+  "dasar-resource": "Resource, kategori, dan datatype",
+  "dasar-versi": "R4 vs R5, normative, dan maturity (FMM)",
+  "dasar-profil": "Profile, Extension, dan Implementation Guide",
+});
+
+QuestionBank.register([
+  {
+    id: "0001-01", lesson: "0001", topic: "dasar-v2-vs-fhir", type: "mc",
+    prompt: "Menurut halaman perbandingan v2 di spesifikasi R4, apa tantangan terbesar interoperabilitas HL7 v2?",
+    options: {
+      a: "Implementasi tiap sistem bervariasi, elemen yang didukung pun berbeda",
+      b: "Formatnya JSON sehingga terlalu besar untuk jaringan rumah sakit",
+      c: "Setiap pesan wajib dikirim lewat REST API dengan OAuth",
+      d: "Tidak ada cara sama sekali untuk mengirim data pasien",
+    },
+    answer: "a",
+    explain: "\"One of the biggest challenges with HL7 v2 interoperability is the variation of implementation\" dan \"the data elements supported can vary\". v2 adalah pesan berbasis segment (bukan JSON, bukan REST); justru variasi inilah yang ingin dikurangi FHIR dengan core yang kecil plus profile.",
+  },
+  {
+    id: "0001-02", lesson: "0001", topic: "dasar-v2-vs-fhir", type: "mc",
+    prompt: "Data lokal di HL7 v2 dikirim lewat Z-segment. Apa padanannya di FHIR, dan apa bedanya?",
+    options: {
+      a: "Z-segment juga, tetapi ditulis dalam format JSON, bukan pipe",
+      b: "Field bebas di root JSON, tanpa definisi apa pun",
+      c: "Extension ber-url ke definisinya, boleh di elemen mana pun",
+      d: "Tidak ada; data lokal harus dikirim lewat sistem lain",
+    },
+    answer: "c",
+    explain: "Makna Z-segment \"is opaque without prior manual explanation by the sender\". Extension FHIR wajib punya <code>url</code> yang \"identifies a retrievable extension definition\" dan \"can appear at any level (including within data types)\". Menambah properti sembarang ke JSON resource tidak sah: parser memakai definisi resource.",
+  },
+  {
+    id: "0001-03", lesson: "0001", topic: "dasar-rest-json", type: "mc",
+    prompt: "Klien Node Anda meminta JSON dari server FHIR R4. MIME type resmi apa yang dipakai di header <code>Accept</code>?",
+    options: {
+      a: "<code>application/json+fhir</code>",
+      b: "<code>application/fhir+json</code>",
+      c: "<code>text/fhir-json</code>",
+      d: "<code>application/hl7-v2+json</code>",
+    },
+    answer: "b",
+    explain: "\"The MIME-type for this format is <code>application/fhir+json</code>.\" (halaman JSON R4, berstatus Normative). Pola URL REST-nya <code>VERB [base]/[type]/[id]</code>, misalnya <code>GET [base]/Patient/123</code>.",
+  },
+  {
+    id: "0001-04", lesson: "0001", topic: "dasar-rest-json", type: "mc",
+    prompt: "Anda menerima objek JSON dari server FHIR dan perlu tahu jenis resource-nya sebelum diproses. Properti apa yang dibaca?",
+    options: {
+      a: "<code>type</code>",
+      b: "<code>meta.profile</code>",
+      c: "<code>kind</code>",
+      d: "<code>resourceType</code>",
+    },
+    answer: "d",
+    explain: "\"A resource is a JSON object with a property <code>resourceType</code> which informs the parser which resource type this is\". Di TypeScript, <code>resourceType</code> berperan sebagai discriminant dari union type. <code>meta.profile</code> hanya klaim kesesuaian terhadap profile, bukan jenis resource.",
+  },
+  {
+    id: "0001-05", lesson: "0001", topic: "dasar-resource", type: "mc",
+    prompt: "Mana yang membedakan <strong>Resource</strong> dari datatype seperti <code>HumanName</code> atau <code>CodeableConcept</code>?",
+    options: {
+      a: "Resource punya identitas URL sendiri dan versi yang berubah",
+      b: "Resource selalu lebih kecil dan hanya berisi nilai primitif",
+      c: "Resource tidak boleh direferensikan oleh resource lain mana pun",
+      d: "Resource hanya ada di XML, datatype hanya di JSON",
+    },
+    answer: "a",
+    explain: "Resource \"has a known identity (a URL) by which it can be addressed\" dan \"has an identified version that changes if the contents of the resource change\". Datatype adalah \"re-usable clusters of elements\" yang dipakai <em>di dalam</em> resource, tanpa alamat sendiri. Resource saling merujuk lewat <code>Reference</code>.",
+  },
+  {
+    id: "0001-06", lesson: "0001", topic: "dasar-resource", type: "mc",
+    prompt: "Di indeks resource R4, <code>Observation</code> (hasil lab, tanda vital) berada di kategori mana?",
+    options: {
+      a: "Foundation",
+      b: "Base",
+      c: "Clinical",
+      d: "Financial",
+    },
+    answer: "c",
+    explain: "Indeks resource R4 punya lima level: Foundation (mis. <code>Bundle</code>, <code>StructureDefinition</code>), Base (mis. <code>Patient</code>, <code>Encounter</code>), Clinical (mis. <code>Observation</code>, <code>Condition</code>), Financial (mis. <code>Claim</code>), dan Specialized.",
+  },
+  {
+    id: "0001-07", lesson: "0001", topic: "dasar-versi", type: "mc",
+    prompt: "<code>Patient</code> dan <code>Observation</code> di R4 bertanda <strong>N</strong> (Normative). Apa artinya bagi tim Anda?",
+    options: {
+      a: "Resource itu masih draft dan bisa dihapus kapan saja",
+      b: "Resource itu hanya boleh dipakai di Amerika Serikat saja",
+      c: "Resource itu wajib dipakai bersama SMART on FHIR selalu",
+      d: "Stabil, dikunci, dan tunduk pada aturan kompatibilitas antar versi",
+    },
+    answer: "d",
+    explain: "Normative: \"The content is considered to be stable and has been 'locked', subjecting it to FHIR Inter-version Compatibility Rules.\" Konten Trial Use sebaliknya: \"Future versions of FHIR may make significant changes\". <code>Encounter</code> di R4 belum normative (FMM 2).",
+  },
+  {
+    id: "0001-08", lesson: "0001", topic: "dasar-versi", type: "mc",
+    prompt: "R5 terbit 26 Maret 2023, tetapi banyak sistem dan IG (mis. US Core) tetap di R4. Fakta mana dari spesifikasi yang paling menjelaskan ini?",
+    options: {
+      a: "R5 menghapus resource Patient dan Observation dari spesifikasi dasar",
+      b: "R4 rilis normative pertama; R5 seluruhnya berstatus trial use",
+      c: "R5 hanya mendukung XML sehingga tidak cocok untuk JavaScript",
+      d: "R4 adalah versi terakhir yang boleh dipakai di produksi",
+    },
+    answer: "b",
+    explain: "R4 (Des 2018) adalah \"First Normative content\". Untuk R5: \"None of the content in this specification is considered 'Normative'\" (konten yang sudah normative di R4 tetap berlabel Normative), dan \"HL7 plans to publish the next release as a normative specification\". US Core: \"based on FHIR Version R4\". Klaim \"R4 paling dominan di produksi\" adalah pengamatan industri, bukan kalimat spesifikasi.",
+  },
+  {
+    id: "0001-09", lesson: "0001", topic: "dasar-versi", type: "mc",
+    prompt: "Sebuah resource berstatus Trial Use dengan <strong>FMM 5</strong>. Apa arti FMM 5?",
+    options: {
+      a: "Dipakai minimal 5 sistem produksi independen di beberapa negara",
+      b: "Baru diterbitkan di build, belum diuji oleh siapa pun",
+      c: "Sudah dikunci, dijamin tidak akan berubah di rilis berikutnya",
+      d: "Hanya diuji oleh tiga sistem buatan tim yang sama",
+    },
+    answer: "a",
+    explain: "FMM 5: \"has been implemented in at least 5 independent production systems in more than one country\". FMM 0 = draft di build, FMM 2 = diuji interoperabilitasnya oleh minimal tiga sistem <em>independen</em>. Jaminan \"dikunci\" hanya milik status Normative, bukan FMM berapa pun.",
+  },
+  {
+    id: "0001-10", lesson: "0001", topic: "dasar-profil", type: "mc",
+    prompt: "Apa yang <strong>bisa</strong> dilakukan sebuah profile (StructureDefinition) terhadap resource dasar?",
+    options: {
+      a: "Mengganti nama-nama elemen resource agar sesuai dengan sistem lama",
+      b: "Menambahkan properti JSON baru tanpa extension di root resource",
+      c: "Membatasi kardinalitas, mengikat value set, dan mendefinisikan extension baru",
+      d: "Mengonversi format JSON resource menjadi pesan berdelimiter HL7 v2",
+    },
+    answer: "c",
+    explain: "Profile adalah \"A set of constraints on a resource represented as a structure definition\". Contoh kemampuannya: \"change the cardinality of an element\", max 0 untuk melarang elemen, \"Specifying a binding to a different terminology value set\", dan mendefinisikan extension. Profile tidak mengganti nama elemen atau format; data lokal tetap lewat extension.",
+  },
+  {
+    id: "0001-11", lesson: "0001", topic: "dasar-profil", type: "mc",
+    prompt: "Server Node Anda menerima <code>Patient</code> yang berisi <code>modifierExtension</code> dengan <code>url</code> yang tidak dikenal. Apa yang benar?",
+    options: {
+      a: "Abaikan saja, sama seperti extension biasa yang tidak dikenal",
+      b: "Jangan diam-diam diabaikan: tolak, tangani khusus, atau beri peringatan",
+      c: "Pindahkan isinya ke field <code>extension</code> lalu simpan seperti biasa",
+      d: "Hapus seluruh resource itu dari database tanpa memberi tahu",
+    },
+    answer: "b",
+    explain: "Modifier extension dipakai \"If it is not safe for an application processing the content of the resource to ignore the extension\". Aplikasi yang tidak mengenalnya harus menolak, menanganinya dengan cara yang ditentukan, atau memberi peringatan. Extension biasa yang tidak dikenal boleh diabaikan dengan aman.",
+  },
+  {
+    id: "0001-12", lesson: "0001", topic: "dasar-profil", type: "mc",
+    prompt: "Apa itu <strong>Implementation Guide</strong> (IG), misalnya US Core?",
+    options: {
+      a: "Server FHIR referensi yang wajib dijalankan setiap rumah sakit",
+      b: "Versi terbaru FHIR yang menggantikan R4 untuk satu negara",
+      c: "Library JavaScript resmi untuk memvalidasi resource FHIR di browser",
+      d: "Kumpulan profile, extension, terminologi yang diterbitkan sebagai satu unit",
+    },
+    answer: "d",
+    explain: "IG: \"A coherent and bounded set of adaptations that are published as a single unit.\" US Core \"defines the minimum constraints on the FHIR resources to create the US Core Profiles\" dan dibangun di atas R4. IG tidak mengganti versi FHIR; ia menyesuaikan FHIR dasar ke konteks tertentu (negara, organisasi, use case).",
+  },
+
+  {
+    id: "0001-oral-1", lesson: "0001", topic: "dasar-v2-vs-fhir", type: "oral",
+    prompt: "\"Apa itu FHIR, dan apa bedanya dengan HL7 v2?\" Jawab dalam 60 detik.",
+    sample: "FHIR, Fast Healthcare Interoperability Resources, adalah standar HL7 untuk pertukaran data kesehatan yang dibangun dari komponen modular bernama <em>Resource</em>, misalnya Patient, Encounter, Observation. Setiap resource punya identitas URL, versi, dan bisa dibaca atau diubah sendiri lewat REST API, dengan format JSON (<code>application/fhir+json</code>) atau XML, di atas standar web yang sudah kita kenal: HTTP, JSON, OAuth. HL7 v2 adalah standar pesan yang lebih tua: pesan terdiri dari segment teks berdelimiter, segment tidak bisa dimanipulasi sendiri, dan implementasinya sangat bervariasi antar sistem; data lokal masuk Z-segment yang maknanya harus dijelaskan manual. Di FHIR, data lokal masuk extension yang punya URL ke definisinya, dan variasi dikelola lewat profile dan Implementation Guide. Keduanya bisa hidup berdampingan; banyak integrasi memetakan v2 ke FHIR.",
+    checklist: [
+      "FHIR = standar HL7, dibangun dari Resource modular (contoh: Patient, Observation)",
+      "Resource punya identitas URL dan versi, bisa dibaca/diubah sendiri",
+      "REST API + JSON/XML di atas standar web (HTTP, OAuth)",
+      "HL7 v2 = pesan dari segment, segment tidak bisa dimanipulasi sendiri",
+      "Masalah v2: variasi implementasi tinggi; Z-segment maknanya tidak jelas tanpa penjelasan manual",
+      "Padanan di FHIR: extension ber-URL + profile/IG; v2 dan FHIR bisa berdampingan",
+    ],
+  },
+  {
+    id: "0001-oral-2", lesson: "0001", topic: "dasar-profil", type: "oral",
+    prompt: "\"Kenapa FHIR 'dasar' tidak langsung cukup untuk sebuah negara atau organisasi? Jelaskan Profile, Extension, dan Implementation Guide.\" Jawab dalam 90 detik.",
+    sample: "Spesifikasi dasar FHIR sengaja menjadi platform bersama: resource-nya hanya memuat elemen yang akan didukung kebanyakan sistem, jadi spesifikasi menyatakan bahwa ia biasanya perlu diadaptasi ke konteks pemakaian. Adaptasi itu ditulis sebagai <strong>profile</strong>, yaitu StructureDefinition berisi constraint: misalnya <code>identifier</code> pasien wajib (kardinalitas 1..*), elemen tertentu dilarang (max 0), kode harus dari value set tertentu, atau elemen ditandai must support. Kebutuhan yang tidak ada di core ditambahkan sebagai <strong>extension</strong>: objek dengan <code>url</code> ke definisinya plus <code>value[x]</code>; kalau extension itu mengubah makna data, ia harus menjadi <code>modifierExtension</code> yang tidak boleh diabaikan. Sekumpulan profile, extension, dan terminologi untuk satu konteks diterbitkan sebagai <strong>Implementation Guide</strong>, misalnya US Core di Amerika yang dibangun di atas R4. Resource bisa menyatakan kesesuaiannya lewat <code>meta.profile</code>. Analogi TypeScript: resource dasar adalah type yang longgar, profile adalah type yang lebih ketat plus aturan validasi, dan IG adalah package berisi kumpulan type itu.",
+    checklist: [
+      "Spesifikasi dasar = platform bersama dengan core kecil, biasanya perlu diadaptasi ke konteks",
+      "Profile = StructureDefinition berisi constraint (kardinalitas, max 0, binding terminologi, must support)",
+      "Extension = url ke definisi + value[x]; menambah data yang tidak ada di core",
+      "modifierExtension mengubah makna, tidak boleh diabaikan diam-diam",
+      "Implementation Guide = kumpulan adaptasi yang diterbitkan sebagai satu unit (contoh US Core di atas R4)",
+      "meta.profile untuk menyatakan kesesuaian; analogi TS: type lebih ketat / package type",
+    ],
+  },
+  {
+    id: "0001-oral-3", lesson: "0001", topic: "dasar-versi", type: "oral",
+    prompt: "\"Kami memakai FHIR R4. Kenapa bukan R5? Dan apa arti label Normative dan FMM yang Anda lihat di spesifikasi?\" Jawab dalam 60 detik.",
+    sample: "R4, versi 4.0.1, adalah rilis pertama yang memuat konten normative, terbit akhir 2018. Normative berarti konten itu stabil dan dikunci: tunduk pada aturan kompatibilitas antarversi, jadi data yang valid di R4 tetap valid di versi berikutnya. Bagian penting seperti REST API, format JSON, Patient, dan Observation sudah normative di R4. Konten lain berstatus Trial Use dengan Maturity Model FMM 0 sampai 5; FMM 5 berarti sudah dipakai di minimal lima sistem produksi independen di lebih dari satu negara, tapi masih bisa berubah. R5 terbit Maret 2023 sebagai rilis trial use: tidak ada konten baru yang normative, ada perubahan seperti rework Subscriptions. Karena itu ekosistem, termasuk IG besar seperti US Core, masih dibangun di atas R4, dan migrasi baru masuk akal saat rilis normative berikutnya.",
+    checklist: [
+      "R4 = 4.0.1, rilis pertama dengan konten normative (2018–2019)",
+      "Normative = stabil, dikunci, tunduk aturan kompatibilitas antarversi",
+      "Contoh normative di R4: REST API, JSON, Patient, Observation",
+      "Trial Use + FMM 0–5; FMM 5 = minimal 5 sistem produksi independen, >1 negara",
+      "R5 (Maret 2023) berstatus trial use; contoh perubahan: rework Subscriptions",
+      "IG (mis. US Core) dan ekosistem masih di R4; HL7 berencana rilis berikutnya normative",
+    ],
+  },
+]);

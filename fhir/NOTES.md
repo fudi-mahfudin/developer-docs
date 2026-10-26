@@ -8,3 +8,4 @@
 - Agent yang membuat lesson wajib mengikuti skill `/teach` (baca `~/.claude/skills/teach/SKILL.md` langsung kalau skill tidak bisa dipanggil) dan mengambil fakta dari sumber primer (hl7.org/fhir/R4, SMART App Launch IG, Bulk Data Access IG, dokumentasi SATUSEHAT), bukan dari ingatan model. Detail SATUSEHAT yang tidak bisa diverifikasi publik ditandai "belum terverifikasi".
 - Hanya hasil review campuran 0006 yang dicatat sebagai bukti penguasaan. Kuis di lesson 0001–0005 adalah feedback cepat.
 - Cerita STAR tidak dibuat baru: 4 cerita di `../star/draf-star.md` di-reframe ke konteks health-tech di lesson 0006.
+- Lesson 0001 (Fondasi FHIR) selesai: topik bank soal `dasar-v2-vs-fhir`, `dasar-rest-json`, `dasar-resource`, `dasar-versi`, `dasar-profil`. Klaim "R4 paling dominan di produksi" sengaja dibingkai sebagai pengamatan industri (tidak ada kalimat spesifikasi); posisi SATUSEHAT terhadap R4 diserahkan ke 0006.
