@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0023 · Optimasi query: execution plan, SARGable, parameter sniffing, pagination</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0023 · Database · ±30 menit (15 konsep + kuis, 15 hands-on) · Hari 4</div>
+  <h1>Optimasi query: execution plan, SARGable, parameter sniffing, pagination, dan SQL dari EF Core</h1>
+  <p class="subtitle">Jawaban terstruktur untuk "query ini lambat", dengan bukti dari plan dan logical reads di lab sendiri</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Endpoint ini lambat dan query-nya dari EF Core. Bagaimana Anda menganalisis dan memperbaikinya?"</em>
+  tanpa catatan: mengambil SQL dari EF Core, membaca execution plan (scan vs seek, key lookup, estimated vs actual),
+  mengenali predikat yang tidak SARGable, menjelaskan parameter sniffing, dan memilih keyset pagination untuk halaman jauh,
+  dengan angka yang sudah Anda lihat sendiri pada 100.000 Product.
+</div>
+
+<p class="note">
+  Sebelum mulai: setup lab sudah dijalankan dan lab 0022 selesai, jadi <code>dbo.Product</code> kembali hanya punya <code>PK_Product</code> (clustered) dan <code>UQ_Product_Name</code>.
+  Lesson ini memakai istilah dari <a href="0022-index.html">0022</a> (Index Seek, Clustered Index Scan, Key Lookup, covering index, logical reads) tanpa mengulangnya.
+  Dua penyebab lambat yang ada di sisi aplikasi, <strong>N+1</strong> dan <strong>tracking yang tidak perlu (<code>AsNoTracking</code>)</strong>, sudah dibahas di
+  <a href="0006-ef-core-dan-star.html">lesson 0006</a> (bagian 3 dan 4): di jawaban interview cukup disebut sebagai hal pertama yang dicek.
+</p>
+
+<h2>1. Alur analisis, lalu membaca execution plan</h2>
+<p>Pewawancara ingin mendengar <strong>urutan kerja</strong>, bukan daftar trik. Urutan dari dokumentasi EF Core: temukan perintah yang lambat di log, jalankan SQL-nya di tool SQL, lalu baca execution plan-nya. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1]</a></sup></p>
+<ol>
+  <li><strong>Ambil SQL yang sebenarnya</strong>: log EF Core atau <code>ToQueryString</code> (bagian 5). Sekalian cek N+1 dan tracking (0006).</li>
+  <li><strong>Jalankan dengan actual plan + <code>SET STATISTICS IO ON</code></strong> di Azure Data Studio, VS Code mssql, atau SSMS.</li>
+  <li><strong>Baca plan</strong>: operator mana yang mahal, scan atau seek, Key Lookup berulang, estimated vs actual rows, warning.</li>
+  <li><strong>Perbaiki sesuai temuan</strong>: tulis ulang agar SARGable (bagian 2), index (0022), parameter sniffing (bagian 3), keyset pagination (bagian 4).</li>
+  <li><strong>Ukur lagi</strong> dengan angka yang sama: logical reads dan plan.</li>
+</ol>
+<p>
+  Execution plan menjelaskan "the sequence in which the source tables are accessed" dan "the methods used to extract data from each table".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/execution-plans">[2]</a></sup>
+  Ada dua bentuk:
+</p>
+<table>
+  <thead><tr><th></th><th>Estimated plan</th><th>Actual plan</th></tr></thead>
+  <tbody>
+    <tr><td>Query dijalankan?</td><td><strong>Tidak</strong>: "the T-SQL queries or batches do not execute" <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/display-the-estimated-execution-plan">[3]</a></sup></td><td>Ya</td></tr>
+    <tr><td>Isi</td><td>plan hasil kompilasi optimizer, tanpa angka runtime</td><td>"the compiled plan plus its execution context": jumlah baris aktual, warning, waktu <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide">[4]</a></sup></td></tr>
+    <tr><td>T-SQL</td><td><code>SET SHOWPLAN_XML ON</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-showplan-xml-transact-sql">[5]</a></sup></td><td><code>SET STATISTICS XML ON</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-xml-transact-sql">[6]</a></sup></td></tr>
+    <tr><td>Kapan</td><td>query yang terlalu lama/berbahaya untuk dijalankan (mis. UPDATE besar)</td><td>analisis normal: lihat apa yang <em>benar-benar</em> terjadi</td></tr>
+  </tbody>
+</table>
+<p>Yang dibaca di plan untuk interview:</p>
+<ul>
+  <li><strong>Operator dan biayanya.</strong> "It's particularly important to note the costs associated with each node of the plan, and to identify how indexes are used (or not)." <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1]</a></sup> Clustered Index Scan pada tabel besar untuk sedikit baris, atau Key Lookup yang dieksekusi ribuan kali, adalah tersangka utama (operator: <a href="0022-index.html">0022</a>).</li>
+  <li><strong>Estimated vs actual rows.</strong> Optimizer memilih plan dari <em>perkiraan</em>. Kalau perkiraannya 16.667 baris dan aktualnya 20, plan yang dipilih untuk 16.667 baris itu salah untuk 20 baris. Penyebab umum: statistik, local variable, dan parameter sniffing (bagian 3).</li>
+  <li><strong>Scan tidak selalu buruk.</strong> Scan bisa paling efisien bila "the result set of the query is a high percentage of rows from the table." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described">[7]</a></sup> Dan analisis plan di database kecil menyesatkan: "always make sure it contains data that is similar to your production system" <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1]</a></sup>, itu alasan lab memakai 100.000 baris.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Membaca plan</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review database 0024.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0024.</p>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="opt-plan" data-stack></div>
+</section>
+
+<h2>2. SARGable: jangan bungkus kolom dengan fungsi</h2>
+<p>
+  "The term SARGable in relational databases refers to a Search ARGumentable predicate that can use an index to speed up the execution of the query."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[8]</a></sup>
+  Aturannya satu: "Applying any function or computation on the column(s) in the search predicate generally makes the query non-sargable".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[9]</a></sup>
+  Index menyimpan nilai <em>kolom</em>, bukan nilai <code>YEAR(kolom)</code>, jadi engine harus menghitung fungsinya untuk setiap baris: scan.
+</p>
+<table>
+  <thead><tr><th>Non-SARGable (scan)</th><th>SARGable (bisa seek)</th></tr></thead>
+  <tbody>
+    <tr><td><code>WHERE YEAR(CreatedAt) = 2025 AND MONTH(CreatedAt) = 6</code></td><td><code>WHERE CreatedAt &gt;= '2025-06-01' AND CreatedAt &lt; '2025-07-01'</code></td></tr>
+    <tr><td><code>WHERE LEFT(Name, 12) = N'Product 0001'</code></td><td><code>WHERE Name LIKE N'Product 0001%'</code> (prefix)</td></tr>
+    <tr><td><code>WHERE Price * 1.1 &gt; 1000</code></td><td><code>WHERE Price &gt; 1000 / 1.1</code>: "the computation is moved to the other side of the predicate" <sup class="cite"><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[9]</a></sup></td></tr>
+    <tr><td><code>WHERE Name LIKE N'%0001'</code> (wildcard di depan)</td><td>tidak ada versi seek; butuh desain lain (mis. full-text search)</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Bukan hanya WHERE: "SARGability applies not only to WHERE clauses, but also to JOINs, HAVING, GROUP BY and ORDER BY clauses." Penyebab yang paling sering: <code>CONVERT()</code>, <code>CAST()</code>, <code>ISNULL()</code>, <code>COALESCE()</code> pada kolom. <sup class="cite"><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[9]</a></sup> Microsoft juga menulis di best practice stored procedure: "Avoid wrapping functions around columns specified in the WHERE and JOIN clauses." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-procedure-transact-sql">[10]</a></sup></li>
+  <li>Kalau fungsi tidak bisa dihindari: buat computed column dengan ekspresi yang sama lalu index kolom itu. <sup class="cite"><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[9]</a></sup></li>
+  <li><strong>Konversi tersembunyi:</strong> parameter <code>nvarchar</code> terhadap kolom <code>varchar</code> membuat SQL Server mengonversi <em>kolomnya</em> (<code>CONVERT_IMPLICIT</code>, terlihat sebagai warning di plan), efeknya sama dengan fungsi. Dapper: "On SQL Server it is crucial to use the unicode when querying unicode and ANSI when querying non unicode." <sup class="cite"><a href="https://github.com/DapperLib/Dapper">[11]</a></sup> Kolom lab bertipe <code>nvarchar</code>, jadi lab tidak mendemokannya.</li>
+  <li>Rentang tanggal: pakai <strong>half-open</strong> <code>&gt;= awal AND &lt; awal-berikutnya</code>. <code>BETWEEN '2025-06-01' AND '2025-06-30'</code> melewatkan baris tanggal 30 Juni yang punya jam.</li>
+</ul>
+<p class="note">Padanan Node: aturan ini sama di PostgreSQL/MySQL. Prisma <code>where: { createdAt: { gte, lt } }</code> menghasilkan rentang yang SARGable; masalahnya muncul saat Anda menulis raw SQL dengan fungsi pada kolom.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — SARGable atau bukan?</h2>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="opt-sargable" data-stack></div>
+</section>
+
+<h2>3. Parameter sniffing (versi ringkas)</h2>
+<p>
+  "Parameter sensitivity, also known as parameter sniffing, refers to a process where the Database Engine sniffs the current parameter values during compilation or recompilation, and passes them to the Query Optimizer".
+  Berlaku untuk stored procedure, query lewat <code>sp_executesql</code>, dan prepared query. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide#parameter-sensitivity">[4]</a></sup>
+  Query berparameter dari EF Core dan Dapper dikirim lewat <code>sp_executesql</code>, jadi ikut kena.
+</p>
+<p>
+  Biasanya ini bagus: plan dibuat sekali lalu dipakai ulang. Masalahnya muncul pada data tidak merata: "a single cached plan for a parameterized query isn't optimal for all possible incoming parameter values. This is the case with non-uniform data distributions."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/parameter-sensitive-plan-optimization">[12]</a></sup>
+  Lab sengaja timpang: Category 1 punya 90.000 Product, Category 6 hanya 20.
+</p>
+<table>
+  <thead><tr><th>Dipanggil pertama</th><th>Plan yang disimpan</th><th>Akibat untuk nilai lain</th></tr></thead>
+  <tbody>
+    <tr><td><code>@CategoryId = 6</code> (20 baris)</td><td>Index Seek + Key Lookup</td><td>Category 1: <strong>90.000 Key Lookup</strong>, logical reads ratusan ribu</td></tr>
+    <tr><td><code>@CategoryId = 1</code> (90.000 baris)</td><td>Clustered Index Scan</td><td>Category 6: scan seluruh tabel untuk 20 baris</td></tr>
+  </tbody>
+</table>
+<p>Gejala khas di produksi: "kemarin cepat, hari ini lambat, padahal kodenya tidak berubah", atau lambat hanya untuk nilai tertentu. Di actual plan, properti operator SELECT memperlihatkan nilai parameter saat kompilasi dan saat eksekusi; kalau berbeda jauh, curigai sniffing.</p>
+<p>Penanganan, masing-masing punya harga ("Each method has associated tradeoffs and drawbacks"): <sup class="cite"><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[9]</a></sup></p>
+<table>
+  <thead><tr><th>Cara</th><th>Efek</th><th>Harga</th></tr></thead>
+  <tbody>
+    <tr><td><code>OPTION (RECOMPILE)</code></td><td>"generate a new, temporary plan for the query and immediately discard that plan" <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/hints-transact-sql-query#recompile">[13]</a></sup></td><td>CPU kompilasi di setiap eksekusi; cocok untuk query yang tidak dipanggil ribuan kali per detik</td></tr>
+    <tr><td><code>OPTION (OPTIMIZE FOR (@p = nilai))</code></td><td>plan dibuat untuk nilai "khas" pilihan Anda</td><td>"requires a full understanding of optimal parameter values" <sup class="cite"><a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[9]</a></sup></td></tr>
+    <tr><td><code>OPTIMIZE FOR UNKNOWN</code> / local variable</td><td>memakai rata-rata selektivitas, bukan nilai yang dikirim <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide#parameter-sensitivity">[4]</a></sup></td><td>plan "rata-rata": stabil, tapi tidak terbaik untuk nilai ekstrem</td></tr>
+    <tr><td>Index yang lebih baik (mis. covering)</td><td>tanpa Key Lookup, satu plan bagus untuk semua nilai</td><td>biaya tulis dan storage index (0022)</td></tr>
+  </tbody>
+</table>
+<p>
+  <strong>SQL Server 2022:</strong> <em>Parameter Sensitive Plan (PSP) optimization</em> "automatically enables multiple, active cached plans for a single parameterized statement", aktif di compatibility level 160 (default database baru), saat ini hanya untuk predikat equality.
+  Fitur ini bisa menyembunyikan demo klasik, jadi skrip lab mematikannya sementara dengan
+  <code>ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = OFF</code> lalu menyalakannya lagi.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/parameter-sensitive-plan-optimization">[12]</a></sup>
+  Untuk interview, cukup sebut bahwa fitur ini ada; jawaban utamanya tetap mekanisme dan cara penanganan di atas.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 3 — Parameter sniffing</h2>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="opt-sniffing" data-stack></div>
+</section>
+
+<h2>4. Pagination: OFFSET/FETCH vs keyset</h2>
+<pre><code>-- OFFSET/FETCH (EF Core: .Skip(90000).Take(20))
+SELECT Id, Name, Price FROM dbo.Product
+ORDER BY Id
+OFFSET 90000 ROWS FETCH NEXT 20 ROWS ONLY;
+
+-- Keyset / seek (EF Core: .Where(p =&gt; p.Id &gt; lastId).Take(20))
+SELECT TOP (20) Id, Name, Price FROM dbo.Product
+WHERE Id &gt; @lastId
+ORDER BY Id;</code></pre>
+<ul>
+  <li>OFFSET "Specifies the number of rows to skip before the query starts to return rows" <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-order-by-clause-transact-sql">[14]</a></sup>, tapi melewati bukan berarti gratis: "The database must still process the first 20 entries, even if they aren't returned to the application; this creates possibly significant computation load that increases with the number of rows being skipped." Kalau data berubah di antara dua halaman, baris bisa terlewat atau tampil dua kali. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">[15]</a></sup></li>
+  <li>Keyset: "simply use a WHERE clause to skip rows, instead of an offset." Dengan index pada kolom urutannya, query ini "very efficient" dan tidak terpengaruh perubahan di baris sebelumnya. Batasannya: tidak bisa lompat ke halaman tertentu ("does not support random access"), hanya maju/mundur. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">[15]</a></sup></li>
+  <li><strong>Urutan harus unik</strong>, apa pun metodenya: "relational databases do not apply any ordering by default, even on the primary key." Urut menurut kolom yang bisa kembar (Price, CreatedAt)? Tambahkan <code>Id</code> sebagai pemecah seri, dan buat composite index yang cocok. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">[15]</a></sup></li>
+  <li>Keyset dua kolom ditulis dengan OR, karena perbandingan <code>(A, B) &gt; (x, y)</code> tidak didukung EF Core LINQ (dan tidak ada di T-SQL): <code>WHERE A &gt; @x OR (A = @x AND B &gt; @y)</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">[15]</a></sup></li>
+</ul>
+<pre><code>// EF Core, sampel resmi: urut Date lalu PostId, keyset dua kunci
+var nextPage = await context.Posts
+    .OrderBy(b =&gt; b.Date).ThenBy(b =&gt; b.PostId)
+    .Where(b =&gt; b.Date &gt; lastDate || (b.Date == lastDate &amp;&amp; b.PostId &gt; lastId))
+    .Take(10)
+    .ToListAsync();</code></pre>
+<p class="note">Kapan OFFSET tetap wajar: tabel kecil, admin panel dengan nomor halaman, halaman awal saja. Kapan keyset: infinite scroll, API "next cursor", export besar. Padanan Node: Prisma <code>skip/take</code> (offset) vs <code>cursor</code> + <code>take</code> (keyset).</p>
+
+<section class="exercise">
+  <h2>Latihan 4 — Pagination</h2>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="opt-pagination" data-stack></div>
+</section>
+
+<h2>5. Melihat SQL yang dihasilkan EF Core</h2>
+<pre><code>protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    =&gt; optionsBuilder
+        .UseSqlServer(connectionString)
+        .LogTo(Console.WriteLine, LogLevel.Information)   // setiap perintah SQL + durasinya
+        .EnableSensitiveDataLogging();                    // nilai parameter ikut tampil: HANYA development
+
+var query = db.Products
+    .Where(p =&gt; p.CategoryId == categoryId)
+    .OrderBy(p =&gt; p.Price)
+    .TagWith("Products by category");                    // komentar di SQL, mudah dicari di log
+
+Console.WriteLine(query.ToQueryString());               // SQL-nya, TANPA mengeksekusi query
+var products = await query.ToListAsync();</code></pre>
+<ul>
+  <li><strong>Simple logging</strong> (<code>LogTo</code>) "requires minimal configuration and no additional NuGet packages"; di level <code>Information</code> log berisi akses database. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/logging-events-diagnostics/simple-logging">[16]</a></sup> Setiap perintah dicatat dengan durasinya, mis. <code>Executed DbCommand (4ms) [Parameters=[...]]</code> lalu SQL-nya, jadi query lambat langsung terlihat. Tapi: "Leaving command execution logging enabled in your production environment is usually a bad idea." <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1]</a></sup> (Di ASP.NET Core, log yang sama keluar lewat <code>ILogger</code> dengan kategori <code>Microsoft.EntityFrameworkCore.Database.Command</code>.)</li>
+  <li><strong>Nilai parameter</strong> tidak ikut tampil di log maupun pesan exception secara default (di log muncul sebagai <code>@p0='?'</code>). <code>EnableSensitiveDataLogging</code> "Enables application data to be included in exception messages, logging, etc. This can include ... parameter values for commands being sent to the database"; aktifkan "only ... if you have the appropriate security measures in place". <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontextoptionsbuilder.enablesensitivedatalogging">[17]</a></sup></li>
+  <li><strong><code>ToQueryString()</code></strong> (EF Core 5+): "Generates a string representation of the query used. This string may not be suitable for direct execution and is intended only for use in debugging." <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.toquerystring">[18]</a></sup> Hasilnya berupa <code>DECLARE</code> parameter diikuti <code>SELECT ... WHERE [p].[CategoryId] = @__categoryId_0</code> (nama parameter tergantung versi). Salin ke Azure Data Studio, jalankan dengan actual plan: kembali ke langkah 2 di bagian 1.</li>
+  <li><strong><code>TagWith</code></strong> "allows you to inject a small, identifying comment into the SQL query", supaya SQL di log atau di monitoring server bisa dikaitkan ke kode LINQ-nya. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1]</a></sup></li>
+</ul>
+<p class="note">
+  Hubungkan ke bagian sebelumnya: <code>Skip/Take</code> diterjemahkan menjadi <code>OFFSET/FETCH</code>; <code>Where(p =&gt; p.CreatedAt.Year == 2025)</code> menjadi <code>DATEPART(year, ...)</code> pada kolom (non-SARGable, bandingkan dengan rentang tanggal); query berparameter EF Core kena parameter sniffing.
+  N+1 dan <code>AsNoTracking</code>: <a href="0006-ef-core-dan-star.html">lesson 0006</a>.
+  Padanan Node: <code>LogTo</code> ≈ Prisma <code>log: ['query']</code> atau knex <code>debug</code>; <code>ToQueryString</code> ≈ knex <code>.toString()</code> / <code>.toSQL()</code>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 5 — SQL dari EF Core</h2>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="opt-ef-sql" data-stack></div>
+</section>
+
+<!-- ============ HANDS-ON ============ -->
+<h2>6. Hands-on (±15 menit): lihat sendiri setiap masalah</h2>
+<p>
+  Skrip ini membuat index dan stored procedure sementara, memperlihatkan setiap masalah dan perbaikannya, lalu menghapus semuanya.
+  Bandingkan tiga hal: operator di plan, <strong>Estimated vs Actual Number of Rows</strong> (arahkan kursor ke operator), dan <strong>logical reads</strong> di tab Messages.
+</p>
+<ol>
+  <li>Container jalan (<code>docker start sql2022</code>), setup lab sudah dijalankan, lab 0022 sudah selesai.</li>
+  <li>Buka <code>dotnet/lab/0023-optimasi-query.sql</code> di Azure Data Studio, VS Code mssql, atau SSMS. Nyalakan actual execution plan.</li>
+  <li>Jalankan <strong>per bagian</strong> (blok sampai <code>GO</code>). Sebelum setiap query, tebak operatornya dan apakah reads naik atau turun. Catat:</li>
+</ol>
+<table>
+  <thead><tr><th>Bagian</th><th>Query</th><th>Operator</th><th>Logical reads</th></tr></thead>
+  <tbody>
+    <tr><td>1b / 1c</td><td><code>CategoryId = 6</code> literal vs local variable (estimated rows?)</td><td>…</td><td>… / …</td></tr>
+    <tr><td>2a</td><td><code>LEFT(Name, 12)</code> vs <code>LIKE N'Product 0001%'</code></td><td>…</td><td>… / …</td></tr>
+    <tr><td>2b</td><td><code>YEAR/MONTH</code> vs rentang tanggal</td><td>…</td><td>… / …</td></tr>
+    <tr><td>3a</td><td>proc: 6 dulu, lalu 1</td><td>…</td><td>… / …</td></tr>
+    <tr><td>3c</td><td>proc setelah covering index: 6, lalu 1</td><td>…</td><td>… / …</td></tr>
+    <tr><td>4a</td><td>OFFSET 90000 vs <code>Id &gt; 90000</code></td><td>…</td><td>… / …</td></tr>
+  </tbody>
+</table>
+<p class="note">Bagian 3 mematikan PSP optimization di level database dan menyalakannya lagi di 3d; bagian 0 dan 5 juga menyalakannya, jadi aman walau skrip berhenti di tengah lalu dijalankan ulang.
+  Lewat <code>sqlcmd</code>: <code>docker cp dotnet/lab/0023-optimasi-query.sql sql2022:/tmp/0023.sql</code> lalu
+  <code>docker exec sql2022 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Dev_Passw0rd!' -C -i /tmp/0023.sql</code>
+  (logical reads tampil, plan grafis tidak).</p>
+
+<pre class="script" data-file="dotnet/lab/0023-optimasi-query.sql"><code>-- Lesson 0023 · Optimasi query: execution plan, SARGable, parameter sniffing, pagination OFFSET vs keyset.
+-- Jalankan setelah dotnet/lab/00-setup-product-catalog-lab.sql (dan sesudah lab 0022 selesai, yang menghapus index-nya sendiri).
+-- Boleh dijalankan ulang. Jalankan PER BAGIAN (blok sampai GO), dengan actual execution plan menyala
+-- (tombol "Explain"/"Actual plan" di Azure Data Studio / VS Code mssql, Ctrl+M di SSMS).
+-- Untuk setiap query, bandingkan: operator di plan, Estimated vs Actual Number of Rows, dan logical reads (tab Messages).
+-- Angka di komentar adalah perkiraan; yang penting arah perubahannya.
+
+USE ProductCatalogLab;
+SET NOCOUNT ON;
+GO
+
+-- 0. Kondisi awal ---------------------------------------------------------------------------
+-- Bersihkan sisa skrip ini kalau pernah berhenti di tengah jalan.
+DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory;
+DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory_Recompile;
+DROP INDEX IF EXISTS IX_Product_CategoryId ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CategoryId_Covering ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CreatedAt ON dbo.Product;
+-- Bagian 3 mematikan PSP optimization; kembalikan ke default (ON) kalau skrip pernah terhenti sebelum bagian 5.
+ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = ON;
+GO
+
+-- Database baru di SQL Server 2022 memakai compatibility level 160: syarat PSP optimization (bagian 3).
+SELECT name, compatibility_level FROM sys.databases WHERE name = DB_NAME();
+SELECT name, value FROM sys.database_scoped_configurations
+WHERE name = N'PARAMETER_SENSITIVE_PLAN_OPTIMIZATION';
+GO
+
+-- Index untuk bagian 1 dan 3: hanya CategoryId (+ Id otomatis). Sengaja TIDAK covering.
+CREATE INDEX IX_Product_CategoryId ON dbo.Product (CategoryId);
+GO
+
+-- 1. Execution plan: estimated vs actual ---------------------------------------------------
+-- 1a. Estimated plan: query TIDAK dijalankan, hanya plan dari optimizer (tanpa angka runtime).
+--     SET SHOWPLAN_XML harus sendirian di batch-nya.
+SET SHOWPLAN_XML ON;
+GO
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 6;
+GO
+SET SHOWPLAN_XML OFF;
+GO
+
+-- 1b. Actual plan: query dijalankan, plan ikut membawa ActualRows. Klik XML-nya untuk membuka plan grafis.
+--     Literal 6: optimizer memakai histogram, perkiraan ±20 baris = aktual 20 -&gt; Index Seek + Key Lookup.
+SET STATISTICS IO ON;
+SET STATISTICS XML ON;
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 6;
+SET STATISTICS XML OFF;
+GO
+
+-- 1c. Perkiraan meleset. Local variable tidak bisa "diintip" saat kompilasi, jadi optimizer memakai
+--     rata-rata (density): 100.000 / 6 Category = perkiraan ±16.667 baris, padahal aktualnya 20.
+--     Dengan perkiraan sebesar itu, kemungkinan besar plan-nya Clustered Index Scan: reads sebanyak seluruh tabel
+--     untuk 20 baris. Selisih besar Estimated vs Actual = tanda pertama saat membaca plan query lambat.
+DECLARE @c int = 6;
+SET STATISTICS XML ON;
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = @c;
+SET STATISTICS XML OFF;
+GO
+
+-- 2. SARGable vs non-SARGable ---------------------------------------------------------------
+-- 2a. UQ_Product_Name (dari setup) berisi Name + Id, jadi kedua query ini dijawab dari index itu saja.
+-- Fungsi pada kolom: engine harus menghitung LEFT() untuk setiap baris -&gt; Index Scan seluruh index.
+SELECT Id, Name FROM dbo.Product WHERE LEFT(Name, 12) = N'Product 0001';
+
+-- Hasil sama (100 baris: Product 000100..000199), tapi LIKE dengan prefix tetap bisa dicari di index -&gt; Index Seek, reads jauh lebih kecil.
+SELECT Id, Name FROM dbo.Product WHERE Name LIKE N'Product 0001%';
+
+-- Wildcard di depan tidak punya titik awal di index -&gt; kembali scan (10 baris, tetap membaca seluruh index).
+SELECT Id, Name FROM dbo.Product WHERE Name LIKE N'%0001';
+GO
+
+-- 2b. Tanggal. Index pada CreatedAt; Id ikut otomatis, jadi SELECT Id, CreatedAt tetap covering.
+CREATE INDEX IX_Product_CreatedAt ON dbo.Product (CreatedAt);
+GO
+
+-- Non-SARGable: YEAR() dan MONTH() membungkus kolom -&gt; Index Scan seluruh IX_Product_CreatedAt.
+SELECT Id, CreatedAt FROM dbo.Product WHERE YEAR(CreatedAt) = 2025 AND MONTH(CreatedAt) = 6;
+
+-- SARGable: kolom dibiarkan polos, rentang half-open [1 Juni, 1 Juli) -&gt; Index Seek, hasil sama (3.323 baris menurut rumus seed).
+SELECT Id, CreatedAt FROM dbo.Product WHERE CreatedAt &gt;= '2025-06-01' AND CreatedAt &lt; '2025-07-01';
+GO
+
+-- 3. Parameter sniffing dengan data tidak merata -------------------------------------------
+-- Category 1 = 90.000 Product, Category 6 = 20 Product (setup). Satu plan tidak cocok untuk keduanya.
+CREATE OR ALTER PROCEDURE dbo.usp_ProductsByCategory @CategoryId int
+AS
+    SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = @CategoryId;
+GO
+
+-- SQL Server 2022 (compat 160) punya PSP optimization yang bisa menyimpan beberapa plan per query dan
+-- MENYEMBUNYIKAN efek klasik ini. Matikan dulu di level database supaya masalahnya terlihat (dinyalakan lagi di 3d).
+ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = OFF;
+-- Kosongkan plan cache database INI saja (jangan DBCC FREEPROCCACHE tanpa parameter di server bersama).
+ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;
+GO
+
+-- 3a. Nilai kecil lebih dulu: plan untuk 20 baris (Index Seek + Key Lookup) dikompilasi dan DISIMPAN.
+EXEC dbo.usp_ProductsByCategory @CategoryId = 6;   -- logical reads: puluhan
+-- Nilai besar memakai plan yang sama: 90.000 Key Lookup -&gt; logical reads ratusan ribu, jauh di atas satu scan.
+-- Di actual plan, lihat properti operator SELECT: Parameter Compiled Value = 6, Parameter Runtime Value = 1.
+EXEC dbo.usp_ProductsByCategory @CategoryId = 1;
+GO
+
+-- 3b. Urutan dibalik: plan untuk 90.000 baris (Clustered Index Scan) disimpan, lalu dipakai untuk 20 baris.
+ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;
+GO
+EXEC dbo.usp_ProductsByCategory @CategoryId = 1;   -- scan: wajar untuk 90% tabel
+EXEC dbo.usp_ProductsByCategory @CategoryId = 6;   -- tetap scan seluruh tabel untuk 20 baris
+GO
+
+-- 3c. Dua perbaikan.
+-- Perbaikan 1: OPTION (RECOMPILE) -&gt; plan baru setiap eksekusi, dibuang setelahnya. Bayarannya CPU kompilasi tiap panggilan.
+CREATE OR ALTER PROCEDURE dbo.usp_ProductsByCategory_Recompile @CategoryId int
+AS
+    SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = @CategoryId
+    OPTION (RECOMPILE);
+GO
+EXEC dbo.usp_ProductsByCategory_Recompile @CategoryId = 6;   -- Index Seek + Key Lookup
+EXEC dbo.usp_ProductsByCategory_Recompile @CategoryId = 1;   -- Clustered Index Scan
+GO
+-- Alternatif lain (tidak dijalankan): OPTION (OPTIMIZE FOR (@CategoryId = 1)) memakai nilai "khas" yang Anda pilih;
+-- OPTION (OPTIMIZE FOR UNKNOWN) memakai rata-rata, sama seperti local variable di 1c.
+
+-- Perbaikan 2 (akar masalah): covering index. Tidak ada Key Lookup, jadi Index Seek bagus untuk 20 MAUPUN 90.000 baris
+-- dan plan yang disimpan aman untuk semua nilai.
+DROP INDEX IF EXISTS IX_Product_CategoryId ON dbo.Product;
+CREATE INDEX IX_Product_CategoryId_Covering ON dbo.Product (CategoryId) INCLUDE (Name, Price);
+GO
+EXEC sp_recompile N'dbo.usp_ProductsByCategory';
+GO
+EXEC dbo.usp_ProductsByCategory @CategoryId = 6;   -- Index Seek, beberapa reads
+EXEC dbo.usp_ProductsByCategory @CategoryId = 1;   -- Index Seek yang sama, reads sebanding scan, tanpa lookup
+GO
+
+-- 3d. Nyalakan lagi PSP optimization dan ulangi skenario 3a (index non-covering).
+DROP INDEX IF EXISTS IX_Product_CategoryId_Covering ON dbo.Product;
+CREATE INDEX IX_Product_CategoryId ON dbo.Product (CategoryId);
+ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = ON;
+ALTER DATABASE SCOPED CONFIGURATION CLEAR PROCEDURE_CACHE;
+GO
+-- Kalau PSP memilih predikat ini, nilai 6 dan 1 mendapat plan (query variant) berbeda dan reads untuk 1 kembali wajar.
+-- Tidak dijamin terjadi untuk setiap query; bandingkan reads-nya dengan 3a.
+EXEC dbo.usp_ProductsByCategory @CategoryId = 6;
+EXEC dbo.usp_ProductsByCategory @CategoryId = 1;
+GO
+-- Query Store aktif default di database baru SQL Server 2022; variant PSP tercatat di sini (kosong = PSP tidak dipakai).
+SELECT query_variant_query_id, parent_query_id, dispatcher_plan_id
+FROM sys.query_store_query_variant;
+GO
+
+-- 4. Pagination: OFFSET/FETCH vs keyset -----------------------------------------------------
+-- 4a. Urut Id. Halaman ke-4.501 (20 per halaman): OFFSET harus membaca dan membuang 90.000 baris dulu.
+SELECT Id, Name, Price FROM dbo.Product
+ORDER BY Id
+OFFSET 90000 ROWS FETCH NEXT 20 ROWS ONLY;     -- logical reads: ratusan (hampir seluruh tabel)
+
+-- Keyset: aplikasi mengingat Id terakhir halaman sebelumnya, lalu Index Seek langsung ke sana.
+DECLARE @lastId int = 90000;
+SELECT TOP (20) Id, Name, Price FROM dbo.Product
+WHERE Id &gt; @lastId
+ORDER BY Id;                                   -- logical reads: hitungan jari, hasil sama persis
+GO
+
+-- 4b. Urutan yang lebih realistis: Product terbaru dulu (CreatedAt DESC), Id sebagai pemecah seri supaya urutan unik.
+-- IX_Product_CreatedAt (dari bagian 2) secara efektif berisi (CreatedAt, Id), cocok dengan urutan ini.
+SELECT Id, Name, CreatedAt FROM dbo.Product
+ORDER BY CreatedAt DESC, Id DESC
+OFFSET 90000 ROWS FETCH NEXT 20 ROWS ONLY;     -- scan + sort, atau 90.000 lookup: mahal
+GO
+
+-- Nilai kunci baris terakhir halaman sebelumnya. Di aplikasi nilainya datang dari halaman yang baru ditampilkan;
+-- di sini diambil dengan OFFSET supaya hasilnya bisa dibandingkan, jadi STATISTICS IO dimatikan sebentar.
+SET STATISTICS IO OFF;
+DECLARE @lastCreatedAt datetime2(0), @lastId int;
+SELECT @lastCreatedAt = CreatedAt, @lastId = Id FROM dbo.Product
+ORDER BY CreatedAt DESC, Id DESC
+OFFSET 89999 ROWS FETCH NEXT 1 ROWS ONLY;
+SET STATISTICS IO ON;
+
+-- Keyset dua kunci. T-SQL tidak punya (CreatedAt, Id) &lt; (@a, @b), jadi ditulis dengan OR.
+-- Syarat pertama (CreatedAt &lt;= ...) memberi rentang seek; sisanya membuang baris seri yang sudah tampil.
+-- Hasilnya harus sama dengan query OFFSET di atas, dengan Index Seek + 20 Key Lookup saja.
+SELECT TOP (20) Id, Name, CreatedAt FROM dbo.Product
+WHERE CreatedAt &lt;= @lastCreatedAt
+  AND (CreatedAt &lt; @lastCreatedAt OR Id &lt; @lastId)
+ORDER BY CreatedAt DESC, Id DESC;
+GO
+
+SET STATISTICS IO OFF;
+GO
+
+-- 5. Kembalikan lab ke kondisi setup --------------------------------------------------------
+DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory;
+DROP PROCEDURE IF EXISTS dbo.usp_ProductsByCategory_Recompile;
+DROP INDEX IF EXISTS IX_Product_CategoryId ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CategoryId_Covering ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CreatedAt ON dbo.Product;
+ALTER DATABASE SCOPED CONFIGURATION SET PARAMETER_SENSITIVE_PLAN_OPTIMIZATION = ON;
+GO
+
+-- Harus kembali hanya PK_Product dan UQ_Product_Name, dan PSP optimization = 1 (ON).
+SELECT i.name, i.type_desc
+FROM sys.indexes AS i
+WHERE i.object_id = OBJECT_ID(N'dbo.Product') AND i.index_id &gt; 0
+ORDER BY i.index_id;
+SELECT name, value FROM sys.database_scoped_configurations
+WHERE name = N'PARAMETER_SENSITIVE_PLAN_OPTIMIZATION';
+GO
+</code></pre>
+
+<h2>7. Latihan tulis query</h2>
+<p>Tulis sendiri di editor SQL, jalankan di lab, baru buka jawaban. Tidak dinilai otomatis; bandingkan hasil, plan, dan logical reads.</p>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>A.</strong> Laporan "Product baru per bulan" menjalankan
+    <code>SELECT Id, CreatedAt FROM dbo.Product WHERE CONVERT(char(7), CreatedAt, 120) = '2025-03';</code>
+    Buat <code>IX_Product_CreatedAt (CreatedAt)</code>, tulis ulang query ini supaya SARGable, buktikan jumlah barisnya sama dan plan-nya berubah dari Index Scan menjadi Index Seek, lalu hapus index-nya.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>CREATE INDEX IX_Product_CreatedAt ON dbo.Product (CreatedAt);
+SET STATISTICS IO ON;
+
+-- Sebelum: CONVERT membungkus kolom -&gt; Index Scan seluruh IX_Product_CreatedAt
+SELECT Id, CreatedAt FROM dbo.Product WHERE CONVERT(char(7), CreatedAt, 120) = '2025-03';
+
+-- Sesudah: kolom polos, rentang half-open -&gt; Index Seek
+SELECT Id, CreatedAt FROM dbo.Product
+WHERE CreatedAt &gt;= '2025-03-01' AND CreatedAt &lt; '2025-04-01';
+
+-- Bukti jumlah sama
+SELECT
+    (SELECT COUNT(*) FROM dbo.Product WHERE CONVERT(char(7), CreatedAt, 120) = '2025-03') AS Lama,
+    (SELECT COUNT(*) FROM dbo.Product WHERE CreatedAt &gt;= '2025-03-01' AND CreatedAt &lt; '2025-04-01') AS Baru;
+
+SET STATISTICS IO OFF;
+DROP INDEX IF EXISTS IX_Product_CreatedAt ON dbo.Product;</code></pre>
+    <p>Kedua versi menghasilkan 3.434 baris (menurut rumus seed). Kenapa tidak <code>BETWEEN '2025-03-01' AND '2025-03-31'</code>? <code>'2025-03-31'</code> berarti 31 Maret pukul 00:00:00, jadi Product yang dibuat siang hari tanggal 31 terlewat. Rentang half-open <code>&lt; '2025-04-01'</code> benar untuk tipe tanggal apa pun.
+      Di EF Core bentuk yang sama: <code>.Where(p =&gt; p.CreatedAt &gt;= from &amp;&amp; p.CreatedAt &lt; to)</code>, bukan <code>p.CreatedAt.Month == 3</code>.</p>
+  </details>
+</div>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>B.</strong> Halaman katalog diurutkan menurut harga termurah (<code>ORDER BY Price, Id</code>), 20 per halaman, dan sekarang memakai OFFSET.
+    Tulis (1) index yang mendukung urutan ini dan (2) query keyset untuk "halaman berikutnya" jika baris terakhir halaman sebelumnya punya <code>Price = @lastPrice</code> dan <code>Id = @lastId</code>.
+    Uji dengan nilai baris ke-20 halaman pertama, lalu bandingkan hasilnya dengan <code>OFFSET 20 ROWS FETCH NEXT 20 ROWS ONLY</code>. Hapus index setelahnya.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>-- (1) Price di key; Id otomatis ikut sebagai key terakhir (clustered key), Name di INCLUDE -&gt; covering
+CREATE INDEX IX_Product_Price ON dbo.Product (Price) INCLUDE (Name);
+GO
+
+-- Nilai baris terakhir halaman pertama (di aplikasi: dari halaman yang baru ditampilkan)
+DECLARE @lastPrice decimal(18, 2), @lastId int;
+SELECT @lastPrice = Price, @lastId = Id FROM dbo.Product
+ORDER BY Price, Id
+OFFSET 19 ROWS FETCH NEXT 1 ROWS ONLY;
+
+-- (2) Keyset: halaman berikutnya
+SELECT TOP (20) Id, Name, Price FROM dbo.Product
+WHERE Price &gt; @lastPrice OR (Price = @lastPrice AND Id &gt; @lastId)
+ORDER BY Price, Id;
+
+-- Pembanding: harus 20 baris yang sama
+SELECT Id, Name, Price FROM dbo.Product
+ORDER BY Price, Id
+OFFSET 20 ROWS FETCH NEXT 20 ROWS ONLY;
+GO
+
+DROP INDEX IF EXISTS IX_Product_Price ON dbo.Product;</code></pre>
+    <p><code>Id</code> wajib ada di <code>ORDER BY</code> dan di kondisi keyset supaya urutan unik: tanpa itu, dua Product berharga sama bisa terlewat atau tampil dua kali antar halaman.
+      Index <code>(Price)</code> pada tabel ber-clustered key <code>Id</code> sudah diurutkan (Price, Id), jadi keyset menjadi Index Seek + Top tanpa Sort.
+      Kalau optimizer tidak memakai seek untuk bentuk OR, tulis setara: <code>WHERE Price &gt;= @lastPrice AND (Price &gt; @lastPrice OR Id &gt; @lastId)</code> (bentuk yang dipakai bagian 4b skrip).
+      EF Core: <code>.OrderBy(p =&gt; p.Price).ThenBy(p =&gt; p.Id).Where(p =&gt; p.Price &gt; lastPrice || (p.Price == lastPrice &amp;&amp; p.Id &gt; lastId)).Take(20)</code>.</p>
+  </details>
+</div>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 6 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Endpoint daftar Product tiba-tiba lambat. Query-nya dari EF Core. Bagaimana Anda menganalisis dan memperbaikinya?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Pertama saya ambil SQL-nya: log EF Core di level Information menampilkan setiap perintah beserta durasinya, atau <code>ToQueryString</code> untuk satu query.
+      Sekalian saya cek sisi aplikasi: N+1, tracking yang tidak perlu, kolom berlebih.
+      Lalu SQL itu saya jalankan di Azure Data Studio dengan actual execution plan dan <code>SET STATISTICS IO ON</code>.
+      Di plan saya cari Clustered Index Scan pada tabel besar, Key Lookup yang dieksekusi ribuan kali, dan selisih besar estimated vs actual rows.
+      Kalau ada fungsi di kolom WHERE, misalnya <code>YEAR(CreatedAt)</code>, saya tulis ulang jadi rentang supaya SARGable. Kalau index-nya kurang, saya buat composite atau covering index.
+      Kalau lambatnya hanya untuk nilai parameter tertentu, saya curigai parameter sniffing. Kalau halaman jauh yang lambat, saya ganti OFFSET dengan keyset pagination.
+      Terakhir saya ukur lagi: logical reads harus turun dan plan berubah."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>ambil SQL yang sebenarnya: logging EF Core (durasi per perintah) atau <code>ToQueryString</code>?</li>
+      <li>cek sisi aplikasi dulu: N+1, <code>AsNoTracking</code>, projection (lesson 0006)?</li>
+      <li>jalankan dengan actual execution plan + <code>SET STATISTICS IO</code> (logical reads)?</li>
+      <li>baca plan: scan vs seek, Key Lookup berulang, estimated vs actual rows?</li>
+      <li>perbaikan sesuai temuan: SARGable, index covering/composite, parameter sniffing, keyset pagination?</li>
+      <li>ukur lagi sesudah perbaikan dan bandingkan dengan angka sebelumnya?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Apa itu parameter sniffing, kapan jadi masalah, dan bagaimana menanganinya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saat query berparameter atau stored procedure pertama kali dikompilasi, SQL Server mengintip nilai parameter saat itu dan membuat plan untuk nilai tersebut, lalu plan itu disimpan dan dipakai ulang. Itu biasanya bagus.
+      Masalahnya muncul kalau datanya tidak merata: di lab saya, Category 6 punya 20 Product dan Category 1 punya 90.000. Kalau 6 dipanggil duluan, plan Index Seek + Key Lookup disimpan, lalu Category 1 menjalankan 90.000 key lookup.
+      EF Core dan Dapper juga kena karena mengirim query berparameter lewat sp_executesql.
+      Penanganannya: <code>OPTION (RECOMPILE)</code> dengan harga CPU kompilasi, <code>OPTIMIZE FOR</code> nilai yang khas, atau memperbaiki akarnya dengan covering index supaya satu plan bagus untuk semua nilai.
+      Di SQL Server 2022 ada PSP optimization yang bisa menyimpan beberapa plan per query."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>plan dikompilasi untuk nilai parameter pertama, lalu disimpan dan dipakai ulang?</li>
+      <li>jadi masalah kalau distribusi data tidak merata (contoh 20 vs 90.000 baris)?</li>
+      <li>berlaku untuk stored procedure dan query berparameter (sp_executesql dari EF Core/Dapper)?</li>
+      <li><code>OPTION (RECOMPILE)</code>: plan per eksekusi, bayar CPU kompilasi?</li>
+      <li><code>OPTIMIZE FOR</code> / <code>OPTIMIZE FOR UNKNOWN</code>, atau perbaiki akar dengan covering index?</li>
+      <li>SQL Server 2022: PSP optimization menyimpan beberapa plan per query?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review 0024 akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">Microsoft Learn: EF Core, Performance Diagnosis</a>
+  (alur log → SQL → execution plan), lalu
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">EF Core Pagination</a> (offset vs keyset).
+  Kalau masih ada waktu: bagian "Step 5" dan "Step 6" di
+  <a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">Troubleshoot high-CPU-usage issues</a> (parameter sniffing dan SARGability).
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/sql-optimasi-query.html">Reference: Optimasi query</a> · Index: <a href="../reference/sql-index.html">Reference: Index</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Database (SQL Server)")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa itu Query Store dan bagaimana dipakai untuk menemukan query yang tiba-tiba lambat?", "kapan computed column + index lebih baik daripada menulis ulang query?", atau "bagaimana keyset pagination dipakai untuk tombol halaman sebelumnya?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/ef/core/performance/performance-diagnosis">[1] EF Core: Performance Diagnosis</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/execution-plans">[2] Execution plans</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/display-the-estimated-execution-plan">[3] Display the estimated execution plan</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/query-processing-architecture-guide">[4] Query processing architecture guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-showplan-xml-transact-sql">[5] SET SHOWPLAN_XML</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-xml-transact-sql">[6] SET STATISTICS XML</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described">[7] Clustered and nonclustered indexes described</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[8] Index architecture and design guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/troubleshoot/sql/database-engine/performance/troubleshoot-high-cpu-usage-issues">[9] Troubleshoot high-CPU-usage issues</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-procedure-transact-sql">[10] CREATE PROCEDURE (best practices)</a> ·
+  <a href="https://github.com/DapperLib/Dapper">[11] Dapper README</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/performance/parameter-sensitive-plan-optimization">[12] Parameter Sensitive Plan optimization</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/hints-transact-sql-query">[13] Query hints</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/select-order-by-clause-transact-sql">[14] ORDER BY clause (OFFSET/FETCH)</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/pagination">[15] EF Core: Pagination</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/logging-events-diagnostics/simple-logging">[16] EF Core: Simple logging</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.dbcontextoptionsbuilder.enablesensitivedatalogging">[17] EnableSensitiveDataLogging</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/microsoft.entityframeworkcore.entityframeworkqueryableextensions.toquerystring">[18] ToQueryString</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0022-index.html">← 0022 · Index</a>
+  <a href="0024-review-database.html">0024 · Review database →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0023.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/hands-on.js"></script>
+</body>
+</html>

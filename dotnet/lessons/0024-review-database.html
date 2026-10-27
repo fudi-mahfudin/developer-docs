@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0024 · Review campuran database</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0024 · Review campuran · ±40 menit · penutup Hari 4 · seam penguasaan</div>
+  <h1>Review campuran database</h1>
+  <p class="subtitle">Tanpa materi baru. Soal kuis dan lisan dari lesson 0019–0023, diacak bersama dua topik performa EF Core dari 0006 (N+1 dan <code>AsNoTracking</code>).</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> tahu dengan jujur topik database mana (SQL dasar, Stored Procedure, transaction dan locking, index, optimasi query)
+  yang <em>benar-benar menempel</em>, sehingga Anda bisa menjawab "query ini lambat, apa yang Anda lakukan?" di interview tanpa ragu.
+  Topik yang masih lemah masuk ke daftar <a href="../reference/ulang-sebelum-interview.html">ulang sebelum interview</a>.
+</div>
+
+<h2>Aturan main</h2>
+<ol>
+  <li><strong>Jangan buka catatan, lesson lama, reference, atau SSMS.</strong> Yang diuji adalah kemampuan menjawab seperti di interview. Kalau Anda mengintip, hasilnya tidak berarti.</li>
+  <li><strong>Soal kuis:</strong> pilih satu jawaban. Ada satu soal kuis untuk setiap topik lesson 0019–0023 dan untuk dua topik 0006, jadi setiap topik diuji minimal sekali (29 kuis).</li>
+  <li><strong>Soal lisan:</strong> jawab dengan suara keras (±60 detik, boleh direkam di ponsel) <em>sebelum</em> membuka checklist. Untuk soal "tulis SP" atau "tulis query", ucapkan atau tulis di kertas dulu, baru buka checklist. Lalu centang poin yang benar-benar Anda sebut, bukan yang "sebenarnya tahu".</li>
+  <li><strong>Kriteria lulus per topik (sama seperti review 0007 dan 0012):</strong> soal kuis acak dijawab benar, dan jawaban lisan memenuhi minimal 4 dari 6 poin checklist. Satu kesalahan di topik itu = topik lemah. Topik yang kuisnya benar tapi tidak mendapat soal lisan tampil sebagai <em>Kuis lulus, lisan belum diuji</em> dan belum dihitung lulus.</li>
+</ol>
+
+<p class="note">
+  Urutan soal mengikuti seed yang tampil di bawah. Tombol "Acak ulang" membuat set baru, tapi kerjakan <strong>set pertama</strong> sampai selesai sebelum mengacak ulang.
+  Hasil set pertama itulah yang dilaporkan. Kalau ingin mengulang set yang sama nanti, tambahkan <code>?seed=NNN</code> di URL.
+  Soal lisan ditarik 6 dari 13 yang ada, jadi topik yang belum dapat soal lisan bisa diuji lewat <code>?seed=</code> lain di sesi berikutnya (pengulangan berjarak).
+</p>
+
+<!--
+  Pengaturan review (cara agent mengubahnya):
+  - data-lessons = lesson database 0019–0023 (semua topiknya ikut).
+  - data-topics = topik performa EF Core dari 0006 yang disebut spec: ef-n-plus-1, ef-no-tracking.
+    Bila hasil 0007/0012/0018 mencatat topik EF Core lain yang lemah (mis. ef-tracking), tambahkan slug-nya di sini.
+  - data-mc = jumlah topik kuis = 27 topik 0019–0023 + jumlah slug di data-topics (sekarang 29), supaya draw()
+    menarik tepat satu kuis per topik. Hitung ulang bila bank soal 0019–0023 mendapat topik baru.
+  - data-oral = 6 (sama seperti 0007/0012).
+  Cek tanpa file test: ~/.nvm/versions/node/v24.21.0/bin/node -e dengan tests/helpers.js
+  (runAsBrowserScripts(["0006","0019","0020","0021","0022","0023"]) dan loadLesson(...).select(...)).
+-->
+<div class="review" data-title="Review 0024 (database)" data-lessons="0019,0020,0021,0022,0023"
+     data-topics="ef-n-plus-1,ef-no-tracking" data-mc="29" data-oral="6"></div>
+
+<section class="exercise">
+  <h2>Setelah selesai: laporkan hasilnya ke agent</h2>
+  <ol>
+    <li>Setelah semua soal dijawab, ringkasan per topik muncul di bawah soal terakhir.</li>
+    <li>Tekan <strong>Salin</strong> (atau blok teks di kotak ringkasan), lalu <strong>tempel ke agent</strong> di terminal, misalnya:
+      <em>"Ini hasil review 0024, tolong dicatat."</em></li>
+    <li>Agent akan menulis learning record "sudah dikuasai" <strong>hanya untuk topik yang lulus</strong> (kuis benar dan lisan minimal 4 dari 6), dengan seed dan skor sebagai bukti.
+      Topik <em>Kuis lulus, lisan belum diuji</em> dicatat di NOTES saja, tanpa learning record.</li>
+    <li>Topik yang lemah dicatat sebagai baris "Topik lemah 0024: …" di NOTES dan masuk ke bagian 2b <a href="../reference/ulang-sebelum-interview.html">ulang sebelum interview</a>.</li>
+  </ol>
+  <p class="note">Untuk topik database, hanya hasil review 0024 yang dicatat sebagai bukti penguasaan. Skor kuis di lesson 0019–0023 dan hasil lab di SQL Server tidak dihitung.</p>
+</section>
+
+<h2>Kalau ada topik lemah</h2>
+<p>
+  Jangan baca ulang seluruh lesson. Buka hanya bagian reference untuk topik itu (±5 menit), lalu tutup dan coba jelaskan lagi dengan suara keras.
+  Kalau topik lemahnya soal menulis query (top-N per grup, SP dengan <code>TRY/CATCH</code>, index covering, keyset pagination),
+  ulangi latihan tulis query di lesson asalnya tanpa melihat jawaban, lalu jalankan di SQL Server bila container lab tersedia.
+  Kerangka jawaban 30 detik untuk semua topik database ada di bagian 3b <a href="../reference/ulang-sebelum-interview.html">ulang sebelum interview</a>.
+</p>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (hanya untuk topik lemah, setelah review)</span>
+  <a href="../reference/sql-dasar.html">SQL dasar</a> ·
+  <a href="../reference/stored-procedure.html">Stored Procedure</a> ·
+  <a href="../reference/transaction-locking.html">Transaction &amp; locking</a> ·
+  <a href="../reference/sql-index.html">Index</a> ·
+  <a href="../reference/sql-optimasi-query.html">Optimasi query</a> ·
+  <a href="../reference/ef-core.html">EF Core (N+1, <code>AsNoTracking</code>)</a>.
+  Sumber resminya (Microsoft Learn: SQL Server, T-SQL, EF Core) dikutip di masing-masing reference dan tercatat di <a href="../RESOURCES.md">RESOURCES.md</a>.
+</div>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Database (SQL Server)")</p>
+
+<p class="ask">Ada jawaban yang menurut Anda benar tapi dinilai salah, atau penjelasannya belum masuk? Tanyakan ke saya (agent) di terminal, misalnya: "kenapa SNAPSHOT tetap bisa gagal saat UPDATE?" atau "kenapa <code>YEAR(OrderDate) = 2024</code> tidak bisa seek?"</p>
+
+<nav class="lesson-nav">
+  <a href="0023-optimasi-query.html">← 0023 · Optimasi query</a>
+  <a href="../index.html">Daftar lesson →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../assets/questions/0019.js"></script>
+<script src="../assets/questions/0020.js"></script>
+<script src="../assets/questions/0021.js"></script>
+<script src="../assets/questions/0022.js"></script>
+<script src="../assets/questions/0023.js"></script>
+<script src="../../assets/review.js"></script>
+</body>
+</html>

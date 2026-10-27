@@ -8,7 +8,7 @@
  * Tombol Mulai/Jeda/Reset. Segmen berganti otomatis saat waktunya habis (seperti pewawancara yang
  * memotong), dan segmen yang sedang berjalan disorot di daftar. Waktu dihitung dari jam sistem,
  * jadi tetap akurat walau tab sempat tidak aktif.
- * Pure logic (parseSegments, timerState, formatClock) diuji di tests/timer.test.js lewat require().
+ * Pure logic (parseSegments, timerState, formatClock) diuji di tests/shared/timer.test.js lewat require().
  */
 (function (root) {
   function parseSegments(spec) {

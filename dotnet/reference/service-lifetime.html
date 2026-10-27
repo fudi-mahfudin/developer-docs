@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Service Lifetime dan captive dependency</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Backend · DI</div>
+<h1>Service Lifetime dan captive dependency</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0004-service-lifetime.html">Lesson 0004</a>.</p>
+
+<h2>Tiga lifetime <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/service-lifetimes">[1]</a></sup></h2>
+<table>
+  <thead><tr><th>Registrasi</th><th>Instance</th><th>Dispose</th><th>Pakai untuk</th><th>Padanan Node / NestJS</th></tr></thead>
+  <tbody>
+    <tr><td><code>AddTransient</code></td><td>baru setiap kali diminta</td><td>akhir scope</td><td>service ringan tanpa state</td><td><code>new X()</code> · <code>Scope.TRANSIENT</code></td></tr>
+    <tr><td><code>AddScoped</code></td><td>satu per HTTP request</td><td>akhir request</td><td><strong>DbContext</strong>, Repository, Service, data user per request</td><td>objek di <code>req</code> / <code>res.locals</code> · <code>Scope.REQUEST</code></td></tr>
+    <tr><td><code>AddSingleton</code></td><td>satu seumur aplikasi</td><td>app shutdown</td><td>cache, state mahal/global; <strong>harus thread-safe</strong></td><td>instance di level module · <code>Scope.DEFAULT</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Kenapa DbContext Scoped <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/dbcontext-configuration/">[4]</a></sup></h2>
+<ul>
+  <li>DbContext = satu unit of work yang pendek. Di web app: satu request = satu unit of work.</li>
+  <li><code>AddDbContext</code> mendaftarkannya Scoped secara default.</li>
+  <li>Satu request: Service dan Repository berbagi DbContext dan change tracker yang sama.</li>
+  <li>Antar request: instance terpisah, karena DbContext <strong>tidak thread-safe</strong>.</li>
+</ul>
+
+<h2>Aturan aman <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/service-lifetimes#scoped">[1]</a></sup></h2>
+<p>Dependensi harus hidup <em>sama lama atau lebih lama</em> dari konsumennya.</p>
+<table>
+  <thead><tr><th>Konsumen ↓ menerima →</th><th>Transient</th><th>Scoped</th><th>Singleton</th></tr></thead>
+  <tbody>
+    <tr><td>Transient / Scoped</td><td>aman</td><td>aman</td><td>aman</td></tr>
+    <tr><td>Singleton</td><td>hati-hati (ikut hidup selamanya)</td><td><strong>captive dependency</strong></td><td>aman</td></tr>
+    <tr><td>Middleware (constructor)</td><td colspan="2">terima di parameter <code>InvokeAsync</code>, bukan constructor</td><td>aman</td></tr>
+  </tbody>
+</table>
+
+<h2>Captive dependency <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/guidelines#captive-dependency">[2]</a></sup></h2>
+<pre><code>builder.Services.AddDbContext&lt;AppDbContext&gt;(...);   // Scoped
+builder.Services.AddSingleton&lt;PriceCache&gt;();
+public class PriceCache(AppDbContext db) { }        // ✗ DbContext ikut hidup selamanya
+// Development: InvalidOperationException
+//   "Cannot consume scoped service 'AppDbContext' from singleton 'PriceCache'."</code></pre>
+
+<h2>Deteksi dan perbaikan <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/overview#scope-validation">[3]</a></sup></h2>
+<ul>
+  <li><strong>Scope validation</strong> aktif default di Development: Scoped tidak boleh di-resolve dari root provider atau di-inject ke Singleton.</li>
+  <li>Selalu aktif: <code>builder.Host.UseDefaultServiceProvider(o =&gt; o.ValidateScopes = true);</code></li>
+  <li>Perbaikan 1: turunkan lifetime konsumen (Singleton → Scoped).</li>
+  <li>Perbaikan 2: inject <code>IServiceScopeFactory</code>, lalu <code>using var scope = f.CreateScope();</code> dan ambil service dari <code>scope.ServiceProvider</code> (juga untuk <code>BackgroundService</code>).</li>
+  <li>Beda NestJS: request scope "bubbles up" otomatis. .NET tidak; ia melempar exception.</li>
+</ul>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  Transient: baru setiap diminta. Scoped: satu per request, di-dispose di akhir request; contoh DbContext karena satu request satu unit of work.
+  Singleton: satu seumur aplikasi, harus thread-safe. Captive dependency: service berumur panjang memegang dependensi berumur lebih pendek
+  (Singleton + DbContext), sehingga state bocor antar request dan DbContext dipakai paralel. Scope validation di Development melempar exception;
+  perbaiki dengan menurunkan lifetime atau <code>IServiceScopeFactory</code>.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/service-lifetimes">[1] Service lifetimes</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/guidelines">[2] DI guidelines</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/overview#scope-validation">[3] Scope validation</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/dbcontext-configuration/">[4] DbContext lifetime</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/injection-scopes">[5] NestJS injection scopes</a></p>
+</main>
+</body>
+</html>

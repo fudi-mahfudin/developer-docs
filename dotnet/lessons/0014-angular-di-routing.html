@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0014 · Angular 16: Service, DI hierarkis, routing, dan guard</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0014 · Frontend · ±14 menit</div>
+  <h1>Service, DI, dan routing di Angular, dilihat dari React</h1>
+  <p class="subtitle">Angular Service, injector hierarkis vs React Context, <code>Routes</code>, lazy loading, dan guard (sintaks v16)</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Anda dari React. Bagaimana Angular 16 berbagi logika antar component lewat Service dan DI, dan bagaimana Anda melindungi halaman admin dengan routing dan guard?"</em>
+  dalam 60 detik, dengan padanan React untuk setiap bagian.
+</div>
+
+<h2>1. Angular Service: logika keluar dari component</h2>
+<p>
+  Service adalah "typically a class with a narrow, well-defined purpose", dan component bisa
+  "delegate certain tasks to services, such as fetching data from the server, validating user input, or logging directly to the console"
+  <sup class="cite"><a href="https://v16.angular.io/guide/creating-injectable-service">[1]</a></sup>.
+  Ini sama dengan pola Service di backend (lesson 0001): Controller tipis, logika di Service.
+  Di React, padanannya custom hook + Context, atau store seperti Zustand.
+</p>
+
+<pre><code>@Injectable({ providedIn: 'root' })        // daftar ke root injector
+export class ProductService {
+  constructor(private http: HttpClient) {}  // service boleh bergantung pada service lain
+  getAll() { return this.http.get&lt;Product[]&gt;('/api/products'); }
+}
+
+@Component({ selector: 'app-product-list', templateUrl: './product-list.component.html' })
+export class ProductListComponent {
+  constructor(private products: ProductService) {}   // inject lewat tipe parameter
+  // atau: private products = inject(ProductService);
+}</code></pre>
+
+<p>
+  Angular membaca tipe parameter constructor untuk tahu apa yang dibutuhkan; cara lain adalah fungsi <code>inject()</code>
+  <sup class="cite"><a href="https://v16.angular.io/guide/dependency-injection">[2]</a></sup>.
+  Tidak ada <code>new ProductService()</code> di mana pun: yang membuat instance adalah <strong>injector</strong>.
+  "When a dependency is requested, the injector checks its registry to see if there is an instance already available there. If not, a new instance is created and stored in the registry"
+  <sup class="cite"><a href="https://v16.angular.io/guide/dependency-injection">[2]</a></sup>.
+  Ini mirip DI container ASP.NET Core yang Anda daftarkan di composition root.
+</p>
+
+<h2>2. Di mana service didaftarkan menentukan berapa instance-nya</h2>
+<table>
+  <thead><tr><th>Tempat provider</th><th>Instance</th><th>Padanan React / .NET</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>@Injectable({ providedIn: 'root' })</code></td>
+      <td>"a single, shared instance" untuk seluruh aplikasi, dan tree-shakable <sup class="cite"><a href="https://v16.angular.io/guide/dependency-injection">[2]</a></sup></td>
+      <td>Satu Provider di sekitar <code>&lt;App /&gt;</code>; mirip Singleton di .NET</td>
+    </tr>
+    <tr>
+      <td><code>providers: [...]</code> di <code>@NgModule</code></td>
+      <td>Satu instance untuk component di <code>ModuleInjector</code> yang sama <sup class="cite"><a href="https://v16.angular.io/guide/dependency-injection">[2]</a></sup></td>
+      <td>Cara lama (sebelum v6); masih banyak di codebase</td>
+    </tr>
+    <tr>
+      <td><code>providers: [...]</code> di <code>@Component</code></td>
+      <td>"a new instance of the service with each new instance of that component" <sup class="cite"><a href="https://v16.angular.io/guide/dependency-injection">[2]</a></sup></td>
+      <td><code>&lt;FormContext.Provider&gt;</code> di dalam component itu</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  Dokumentasi v16 menyarankan <code>providedIn</code>: "Using the <code>@Injectable()</code> <code>providedIn</code> property is preferable to using the <code>@NgModule()</code> <code>providers</code> array",
+  karena service yang tidak dipakai bisa dibuang saat build (tree-shaking)
+  <sup class="cite"><a href="https://v16.angular.io/guide/hierarchical-dependency-injection">[3]</a></sup>.
+  Service di level component ikut mati bersama component-nya: "When the component instance is destroyed, so is that service instance"
+  <sup class="cite"><a href="https://v16.angular.io/guide/hierarchical-dependency-injection">[3]</a></sup>.
+</p>
+
+<h2>3. DI hierarkis vs React Context</h2>
+<p>
+  Angular punya dua hierarki injector: <code>ModuleInjector</code> (dari <code>@NgModule</code> / <code>providedIn</code>) dan
+  <code>ElementInjector</code>, yang "Created implicitly at each DOM element" dan kosong kecuali Anda mengisi <code>providers</code> di component atau directive.
+  Urutan pencariannya: "If the component's injector lacks the provider, it passes the request up to its parent component's <code>ElementInjector</code>",
+  lalu ke <code>ModuleInjector</code>, dan "If Angular still doesn't find the provider, it throws an error"
+  <sup class="cite"><a href="https://v16.angular.io/guide/hierarchical-dependency-injection">[3]</a></sup>.
+</p>
+<p>
+  Ini pola yang sama dengan React Context: component "will use the value of the nearest <code>&lt;LevelContext&gt;</code> in the UI tree above it"
+  <sup class="cite"><a href="https://react.dev/learn/passing-data-deeply-with-context">[4]</a></sup>.
+  Di Angular juga, "the first one Angular encounters is the one it uses to resolve the dependency"
+  <sup class="cite"><a href="https://v16.angular.io/guide/hierarchical-dependency-injection">[3]</a></sup>,
+  jadi provider yang lebih dekat meng-override yang di atas.
+</p>
+<table>
+  <thead><tr><th></th><th>React Context</th><th>Angular DI</th></tr></thead>
+  <tbody>
+    <tr><td>Yang dibagi</td><td>Value apa saja di <code>value={...}</code></td><td>Instance class Service (atau token lain)</td></tr>
+    <tr><td>Cara meminta</td><td><code>useContext(Ctx)</code></td><td>Tipe parameter constructor atau <code>inject(Service)</code></td></tr>
+    <tr><td>Yang membuat instance</td><td>Anda sendiri, di Provider</td><td>Injector, sekali per injector</td></tr>
+    <tr><td>Kalau tidak ada provider</td><td>Default value dari <code>createContext</code></td><td>Error <code>NullInjector</code> (kecuali <code>@Optional()</code>)</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  <strong>Jebakan lazy loading.</strong> "Angular creates a lazy loaded module with its own injector, a child of the root injector"
+  <sup class="cite"><a href="https://v16.angular.io/guide/singleton-services">[5]</a></sup>.
+  Kalau service didaftarkan di <code>providers</code> sebuah module yang di-import juga oleh modul lazy, Anda bisa dapat dua instance.
+  Karena itu <code>RouterModule.forRoot()</code> hanya dipanggil di root dan modul fitur memakai <code>forChild()</code>:
+  "If the <code>RouterModule</code> didn't have <code>forRoot()</code> then each feature module would instantiate a new <code>Router</code> instance, which would break the application as there can only be one <code>Router</code>"
+  <sup class="cite"><a href="https://v16.angular.io/guide/singleton-services">[5]</a></sup>.
+  Aman-nya: pakai <code>providedIn: 'root'</code>.
+</p>
+
+<h2>4. Routing: <code>Routes</code>, <code>routerLink</code>, <code>&lt;router-outlet&gt;</code></h2>
+<p>
+  Di aplikasi NgModule v16, <code>ng new --routing</code> membuat <code>AppRoutingModule</code>, "an NgModule where you can configure your routes".
+  Setiap route berisi <code>path</code> dan <code>component</code>; link memakai atribut <code>routerLink</code>, dan <code>&lt;router-outlet&gt;</code>
+  "informs Angular to update the application view with the component for the selected route"
+  <sup class="cite"><a href="https://v16.angular.io/guide/router">[6]</a></sup>.
+</p>
+
+<pre><code>const routes: Routes = [
+  { path: 'products', component: ProductListComponent },
+  { path: 'products/:id', component: ProductDetailComponent },     // /products/42
+  { path: 'admin', canActivate: [authGuard], canMatch: [authGuard],
+    loadChildren: () =&gt; import('./admin/admin.module').then(m =&gt; m.AdminModule) },
+  { path: '', redirectTo: 'products', pathMatch: 'full' },
+  { path: '**', component: PageNotFoundComponent },                // selalu paling akhir
+];
+
+@NgModule({ imports: [RouterModule.forRoot(routes)], exports: [RouterModule] })
+export class AppRoutingModule {}</code></pre>
+
+<table>
+  <thead><tr><th>Angular 16</th><th>Padanan React Router</th></tr></thead>
+  <tbody>
+    <tr><td><code>Routes</code> + <code>RouterModule.forRoot(routes)</code></td><td><code>createBrowserRouter([...])</code> / <code>&lt;Routes&gt;</code></td></tr>
+    <tr><td><code>&lt;a routerLink="/products"&gt;</code></td><td><code>&lt;Link to="/products"&gt;</code></td></tr>
+    <tr><td><code>&lt;router-outlet&gt;</code></td><td><code>&lt;Outlet /&gt;</code></td></tr>
+    <tr><td><code>inject(ActivatedRoute).snapshot.paramMap.get('id')</code></td><td><code>useParams().id</code></td></tr>
+    <tr><td><code>this.router.navigate(['/products', id])</code></td><td><code>navigate(`/products/${id}`)</code></td></tr>
+  </tbody>
+</table>
+<p>
+  Urutan route penting: "the <code>Router</code> uses a first-match wins strategy when matching routes, so more specific routes should be placed above less specific routes",
+  dan wildcard <code>**</code> "comes last because it matches every URL"
+  <sup class="cite"><a href="https://v16.angular.io/guide/router">[6]</a></sup>.
+</p>
+
+<h2>5. Lazy loading: unduh fitur saat dibutuhkan</h2>
+<p>
+  "By default, NgModules are eagerly loaded". Lazy loading "loads NgModules as needed" dan "helps keep initial bundle sizes smaller".
+  Caranya: "use <code>loadChildren</code> (instead of <code>component</code>)" dengan <code>import()</code> dinamis, lalu
+  "be sure to remove the <code>ItemsModule</code> from the <code>AppModule</code>"
+  <sup class="cite"><a href="https://v16.angular.io/guide/lazy-loading-ngmodules">[7]</a></sup>.
+  Padanan React: <code>lazy</code> yang "lets you defer loading component's code until it is rendered for the first time"
+  <sup class="cite"><a href="https://react.dev/reference/react/lazy">[8]</a></sup>.
+  Kalau modul tetap ada di <code>imports</code> <code>AppModule</code>, ia ikut bundle awal dan lazy loading-nya sia-sia.
+</p>
+
+<h2>6. Guard: siapa boleh masuk</h2>
+<p>
+  Guard dipasang di konfigurasi route. Nilai kembaliannya mengatur router
+  <sup class="cite"><a href="https://v16.angular.io/guide/router-tutorial-toh#milestone-5-route-guards">[9]</a></sup>:
+</p>
+<ul>
+  <li><code>true</code>: "The navigation process continues"</li>
+  <li><code>false</code>: "The navigation process stops and the user stays put"</li>
+  <li><code>UrlTree</code>: "The current navigation cancels and a new navigation is initiated to the <code>UrlTree</code> returned" (cara redirect ke <code>/login</code>)</li>
+  <li>Boleh juga <code>Observable&lt;boolean&gt;</code> atau <code>Promise&lt;boolean&gt;</code>; router menunggu hasilnya.</li>
+</ul>
+
+<pre><code>// auth.guard.ts — functional guard, gaya v16 (dari contoh resmi router v16)
+export const authGuard: CanActivateFn = () =&gt; {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  return auth.isLoggedIn ? true : router.parseUrl('/login');   // UrlTree = redirect
+};</code></pre>
+
+<table>
+  <thead><tr><th>Guard</th><th>Fungsi (dokumentasi v16)</th></tr></thead>
+  <tbody>
+    <tr><td><code>canActivate</code></td><td>"To mediate navigation <em>to</em> a route"</td></tr>
+    <tr><td><code>canActivateChild</code></td><td>"To mediate navigation <em>to</em> a child route"</td></tr>
+    <tr><td><code>canDeactivate</code></td><td>"To mediate navigation <em>away</em> from the current route" (mis. form belum disimpan)</td></tr>
+    <tr><td><code>resolve</code></td><td>"To perform route data retrieval <em>before</em> route activation"</td></tr>
+    <tr><td><code>canMatch</code></td><td>"To control whether a <code>Route</code> should be used at all"; dicek sebelum modul lazy dimuat</td></tr>
+  </tbody>
+</table>
+<p>
+  Sumber tabel: <sup class="cite"><a href="https://v16.angular.io/guide/router-tutorial-toh#milestone-5-route-guards">[9]</a></sup>.
+  Dengan <code>canActivate</code> saja, "the router is still loading the <code>AdminModule</code> even if the user can't visit any of its components";
+  pasang guard yang sama di <code>canMatch</code> supaya modul hanya dimuat untuk user yang login
+  <sup class="cite"><a href="https://v16.angular.io/guide/router-tutorial-toh#milestone-5-route-guards">[9]</a></sup>.
+</p>
+<p class="note">
+  <strong>Class guard sudah deprecated.</strong> Di v16, <code>class AuthGuard implements CanActivate</code> ditandai
+  "Class-based <code>Route</code> guards are deprecated in favor of functional guards"
+  <sup class="cite"><a href="https://v16.angular.io/api/router/CanActivate">[10]</a></sup>.
+  Anda akan menemukannya di codebase lama, jadi kenali, tapi tulis yang baru sebagai <code>CanActivateFn</code>.
+  Ingat juga: guard berjalan di browser, jadi ia hanya mengatur navigasi. Data tetap harus dilindungi otorisasi di API (lesson 0017).
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Kuis campuran</h2>
+  <p>Topiknya sengaja diselang-seling. Jawab tanpa scroll ke atas; kalau ragu, tebak dulu, lalu baca penjelasannya.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0018-star-mock-interview.html">mock interview 0018</a>.</p>
+  <div class="quiz" data-bank-lesson="0014" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik. Jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Anda dari React. Bagaimana Angular 16 berbagi logika antar component lewat Service dan DI, dan bagaimana Anda melindungi halaman admin dengan routing dan guard?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Di Angular, logika dan state yang dibagi ditaruh di <strong>Angular Service</strong>, class <code>@Injectable</code> yang disuntikkan lewat constructor atau <code>inject()</code>.
+      Kalau <code>providedIn: 'root'</code>, Angular membuat satu instance bersama untuk seluruh aplikasi, dan service-nya tree-shakable.
+      Kalau saya taruh di <code>providers</code> sebuah component, setiap instance component itu dapat instance sendiri yang ikut hancur bersama component.
+      Injector-nya hierarkis: Angular mencari dari <code>ElementInjector</code> component ke parent, lalu ke root, mirip <code>useContext</code> yang membaca Provider terdekat,
+      bedanya yang dibagi instance class dan dipilih berdasarkan tipe.
+      Untuk halaman, saya definisikan <code>Routes</code> di <code>AppRoutingModule</code> dengan <code>RouterModule.forRoot</code>, pakai <code>routerLink</code> dan <code>&lt;router-outlet&gt;</code>,
+      dan wildcard <code>**</code> di paling akhir karena first-match wins.
+      Fitur admin saya lazy load dengan <code>loadChildren</code> dan <code>import()</code>, seperti <code>React.lazy</code>.
+      Lalu saya pasang functional guard <code>CanActivateFn</code> yang meng-inject <code>AuthService</code>: kalau login kembalikan <code>true</code>, kalau tidak kembalikan <code>UrlTree</code> ke <code>/login</code>.
+      Supaya bundle admin tidak terunduh untuk user anonim, guard yang sama saya pasang di <code>canMatch</code>. Guard hanya UX; otorisasi sebenarnya tetap di API."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Angular Service sebagai class <code>@Injectable</code> yang disuntikkan lewat constructor atau <code>inject()</code>?</li>
+      <li><code>providedIn: 'root'</code> = satu instance bersama (dan tree-shakable)?</li>
+      <li><code>providers</code> di component = instance per component, resolusi naik ke parent lalu root, dibandingkan dengan React Context?</li>
+      <li><code>Routes</code> + <code>routerLink</code> + <code>&lt;router-outlet&gt;</code>, dan wildcard <code>**</code> paling akhir?</li>
+      <li>lazy loading dengan <code>loadChildren</code> + <code>import()</code> (padanan <code>React.lazy</code>)?</li>
+      <li>functional guard dengan <code>inject()</code>, return <code>true</code> atau <code>UrlTree</code>, plus <code>canMatch</code> / guard bukan pengganti otorisasi API?</li>
+    </ul>
+    <p class="note">Kalau kurang dari 4 poin, ulangi sebelum lesson 0015. Soal ini juga akan muncul lagi di mock interview 0018.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://v16.angular.io/guide/hierarchical-dependency-injection">Angular v16: Hierarchical injectors</a>,
+  dokumentasi resmi versi 16. Baca bagian "Types of injector hierarchies" dan "Resolution rules".
+  Kalau masih ada waktu, lanjut ke <a href="https://v16.angular.io/guide/router-tutorial-toh#milestone-5-route-guards">Router tutorial: Milestone 5, Route guards</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/angular-di-routing.html">Reference: Angular 16 Service, DI, routing, dan guard</a> · Sebelumnya: <a href="../reference/angular-dasar.html">Reference Angular dasar</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan saya sengaja memakai <code>providers</code> di component, bukan <code>providedIn: 'root'</code>?" atau "apa bedanya <code>canActivate</code> dan <code>canMatch</code> untuk modul lazy?"</p>
+
+<nav class="lesson-nav">
+  <a href="0013-angular-dasar.html">← 0013 · Angular dasar</a>
+  <a href="0015-rxjs.html">0015 · RxJS: Observable, <code>switchMap</code>, unsubscribe →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

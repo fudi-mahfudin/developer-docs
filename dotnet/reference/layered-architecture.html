@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Layered architecture ASP.NET Core</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Backend</div>
+<h1>Layered architecture ASP.NET Core Web API</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0001-layer-dan-alur-request.html">Lesson 0001</a>.</p>
+
+<h2>Alur request</h2>
+<div class="flow">
+  <span class="box">HTTP</span><span class="arrow">→</span><span class="box">Middleware</span><span class="arrow">→</span>
+  <span class="box">Controller</span><span class="arrow">→</span><span class="box">Service</span><span class="arrow">→</span>
+  <span class="box">Repository</span><span class="arrow">→</span><span class="box">DbContext</span><span class="arrow">→</span><span class="box">DB</span>
+</div>
+<p>Hasil kembali sebagai <strong>DTO</strong>, dan Controller memilih status HTTP-nya.</p>
+
+<h2>Folder &amp; tanggung jawab</h2>
+<table>
+  <thead><tr><th>Folder</th><th>Boleh berisi</th><th>Tidak boleh berisi</th><th>Padanan Express</th></tr></thead>
+  <tbody>
+    <tr><td><code>Controllers/</code></td><td>Routing attribute, binding, pilihan status code</td><td>Aturan bisnis, query DB</td><td>routes + controllers</td></tr>
+    <tr><td><code>DTOs/</code></td><td><code>record</code> request/response</td><td>Logika</td><td>Zod/Joi schema</td></tr>
+    <tr><td><code>Services/</code></td><td>Aturan bisnis, mapping Entity ↔ DTO</td><td><code>HttpContext</code>, <code>ActionResult</code>, <code>DbContext</code></td><td>services/</td></tr>
+    <tr><td><code>Repositories/</code></td><td>Query &amp; simpan via <code>DbContext</code></td><td>Aturan bisnis</td><td>data-access layer</td></tr>
+    <tr><td><code>Models/</code></td><td>Entity (Product, Category)</td><td>Atribut HTTP</td><td>Prisma model</td></tr>
+    <tr><td><code>Data/</code></td><td><code>AppDbContext</code>, Migrations</td><td>Aturan bisnis</td><td>Prisma client + migrate</td></tr>
+    <tr><td><code>Config/</code></td><td>Kelas Options, extension <code>AddXxx()</code></td><td>Secret (taruh di User Secrets/env)</td><td>config/ + .env</td></tr>
+    <tr><td><code>Program.cs</code></td><td>Registrasi DI, urutan middleware</td><td>Logika bisnis</td><td>app.js / server.js</td></tr>
+  </tbody>
+</table>
+
+<h2>Tiga aturan</h2>
+<ol>
+  <li><strong>Layer hanya memanggil layer di bawahnya.</strong> Controller tidak memakai <code>DbContext</code> langsung, dan tidak berisi aturan bisnis. <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#traditional-n-layer-architecture-applications">[1]</a></sup> <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/mvc/controllers/actions?view=aspnetcore-8.0#what-is-a-controller">[3]</a></sup></li>
+  <li><strong>Bergantung pada interface</strong> (<code>IProductService</code>, <code>IProductRepository</code>), bukan kelas konkret dan tanpa <code>new</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0#overview-of-dependency-injection">[2]</a></sup></li>
+  <li><strong>Hanya composition root (<code>Program.cs</code>) yang tahu implementasi konkret.</strong> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#ui-layer">[1]</a></sup></li>
+</ol>
+
+<pre><code>builder.Services.AddDbContext&lt;AppDbContext&gt;(o =&gt; o.UseSqlServer(cfg.GetConnectionString("Default")));
+builder.Services.AddScoped&lt;IProductRepository, ProductRepository&gt;();
+builder.Services.AddScoped&lt;IProductService, ProductService&gt;();
+builder.Services.Configure&lt;JwtSettings&gt;(cfg.GetSection("Jwt"));</code></pre>
+
+<h2>Jawaban 60 detik</h2>
+<p>
+  Layered dalam satu project. Controller = HTTP, Service = aturan bisnis, Repository = akses data via EF Core.
+  DTO memisahkan kontrak API dari skema DB. Semua bergantung pada interface dan disambungkan di Program.cs
+  (composition root), sehingga Service bisa di-unit-test dengan mock. Config lewat appsettings + Options Pattern.
+  Kalau domain bertambah kompleks, pindah ke Clean Architecture.
+</p>
+
+<h2>Pertanyaan lanjutan yang mungkin muncul</h2>
+<ul>
+  <li>"Kenapa DTO?" → mencegah over-posting, menyembunyikan property, payload lebih kecil, object graph lebih datar; skema DB tidak bocor. <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-web-api?view=aspnetcore-8.0#prevent-over-posting">[4]</a></sup></li>
+  <li>"Kenapa Service tidak memakai <code>new</code>?" → dependensi langsung sulit diganti dan sulit di-unit-test; DI memakai interface + registrasi di container + injeksi lewat constructor. <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0#overview-of-dependency-injection">[2]</a></sup></li>
+  <li>"Kenapa Options Pattern?" → akses konfigurasi bertipe per kelompok setting (encapsulation, separation of concerns). <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0">[5]</a></sup> Detail: lesson 0005.</li>
+  <li>"Repository di atas EF Core perlu?" → pro/kontra di lesson 0011.</li>
+  <li>"Layer vs tier?" → layer = pemisahan logis, tier = pemisahan fisik (server/proses berbeda). <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures#what-are-layers">[1]</a></sup></li>
+</ul>
+
+<p class="note">Sumber: <a href="https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures">[1] Microsoft Learn: Common web application architectures</a> · <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-8.0">[2] Dependency injection in ASP.NET Core</a> · <a href="https://learn.microsoft.com/en-us/aspnet/core/mvc/controllers/actions?view=aspnetcore-8.0">[3] Handle requests with controllers</a> · <a href="https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-web-api?view=aspnetcore-8.0#prevent-over-posting">[4] Tutorial web API: Prevent over-posting</a> · <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0">[5] Options pattern</a></p>
+</main>
+</body>
+</html>
