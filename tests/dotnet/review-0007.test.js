@@ -1,5 +1,5 @@
 // Run from repo root: node --test
-// Seam 0007: review campuran Hari 1 menarik soal dari lesson 0001–0006.
+// Seam 0007: review campuran Hari 1 menarik soal dari lesson 0001–0006 dan suplemen LINQ 0025.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -7,7 +7,7 @@ const path = require("node:path");
 const { draw, seededRandom } = require("../../assets/bank.js");
 const { ROOT, loadLesson, runAsBrowserScripts } = require("../helpers.js");
 
-const DAY1 = ["0001", "0002", "0003", "0004", "0005", "0006"];
+const DAY1 = ["0001", "0002", "0003", "0004", "0005", "0006", "0025"];
 const html = fs.readFileSync(path.join(ROOT, "dotnet", "lessons", "0007-review-hari-1.html"), "utf8");
 
 const reviewAttrs = () => {
@@ -28,7 +28,7 @@ test("Day 1 question files run together as browser scripts (shared global scope,
   assert.deepEqual([...lessons].sort(), DAY1);
 });
 
-test("0007 review covers lessons 0001–0006 and loads each question file before review.js", () => {
+test("0007 review covers lessons 0001–0006 + 0025 and loads each question file before review.js", () => {
   assert.deepEqual(reviewAttrs().lessons.sort(), DAY1);
   const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
   const at = src => scripts.indexOf(src);

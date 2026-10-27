@@ -37,7 +37,7 @@
   Topik Hari 1 masuk lewat data-topics (pengulangan berjarak). Cara agent mengisinya:
   - Setelah hasil review 0007 dicatat di NOTES sebagai "Topik lemah 0007: slug1, slug2", ganti data-topics
     dengan daftar itu, lalu set data-mc = 18 (jumlah topik kuis Hari 2) + jumlah slug di data-topics.
-    Semua file questions/0001–0006.js sudah dimuat di bawah, jadi tidak perlu menambah <script>.
+    Semua file questions/0001–0006.js dan 0025.js sudah dimuat di bawah, jadi tidak perlu menambah <script>.
   - Kalau 0007 belum dikerjakan, atau tidak ada topik lemah, pakai daftar default di bawah:
     satu topik "jebakan interview" per lesson Hari 1 (layer, value/reference type, async, captive dependency,
     urutan middleware, N+1). Alasannya: tetap ada retrieval berjarak untuk setiap lesson Hari 1 tanpa
@@ -45,7 +45,7 @@
   - tests/dotnet/review-0012.test.js memeriksa bahwa data-mc cocok dengan jumlah topik dan setiap slug ada di bank.
 -->
 <div class="review" data-title="Review 0012 (Hari 2)" data-lessons="0008,0009,0010,0011"
-     data-topics="layer,csharp-value-ref,csharp-async,di-captive,mw-order,ef-n-plus-1" data-mc="24" data-oral="6"></div>
+     data-topics="layer,csharp-value-ref,csharp-async,linq-single,di-captive,mw-order,ef-n-plus-1" data-mc="25" data-oral="6"></div>
 
 <p class="note">
   Topik Hari 1 yang ikut diacak di sini: kalau review 0007 sudah dikerjakan, isinya adalah topik yang lemah di sana.
@@ -104,6 +104,7 @@
 <script src="../assets/questions/0004.js"></script>
 <script src="../assets/questions/0005.js"></script>
 <script src="../assets/questions/0006.js"></script>
+<script src="../assets/questions/0025.js"></script>
 <script src="../assets/questions/0008.js"></script>
 <script src="../assets/questions/0009.js"></script>
 <script src="../assets/questions/0010.js"></script>

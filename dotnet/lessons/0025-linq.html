@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0025 · LINQ untuk live coding: operator, First vs Single, GroupBy, jebakan EF Core</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0025 · Fondasi C# · ±30 menit (15 materi + kuis, 15 latihan tulis) · suplemen setelah 0003</div>
+  <h1>LINQ untuk live coding</h1>
+  <p class="subtitle">Peta <code>array.*</code> → LINQ, <code>First</code> vs <code>Single</code>, <code>GroupBy</code> dan top-N per grup, apa yang bisa diterjemahkan EF Core, multiple enumeration</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> saat diminta
+  <em>"Tulis LINQ untuk 3 Product termahal per Category, lalu jelaskan"</em>,
+  Anda bisa menulisnya tanpa melihat catatan dan menjelaskannya dalam 90 detik.
+  Anda juga bisa menjawab jebakan klasik <em>"Apa beda <code>First</code>, <code>FirstOrDefault</code>, dan <code>Single</code>?"</em>
+</div>
+
+<p class="note">Prasyarat: <a href="0003-async-task-dan-linq.html">0003</a> (deferred execution, <code>IEnumerable</code> vs <code>IQueryable</code>). Konsep itu tidak diulang di sini; lesson ini soal <em>menulis</em>.</p>
+
+<h2>1. Peta <code>array.*</code> → LINQ</h2>
+<p>
+  Operator LINQ adalah extension method pada <code>IEnumerable&lt;T&gt;</code> (in-memory) dan <code>IQueryable&lt;T&gt;</code> (EF Core).
+  Operator yang mengembalikan satu nilai, seperti <code>Sum</code> atau <code>Average</code>, "execute immediately". Operator yang mengembalikan sequence ditunda (deferred).
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/#types-of-query-operators">[1]</a></sup>
+  Sebagian besar sudah Anda kenal dari TS:
+</p>
+
+<table>
+  <thead><tr><th>TypeScript</th><th>LINQ</th><th>Catatan</th></tr></thead>
+  <tbody>
+    <tr><td><code>filter</code></td><td><code>Where</code></td><td></td></tr>
+    <tr><td><code>map</code></td><td><code>Select</code></td><td>Satu hasil per elemen</td></tr>
+    <tr><td><code>flatMap</code></td><td><code>SelectMany</code></td><td>"flattens them into one sequence" <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/projection-operations">[3]</a></sup></td></tr>
+    <tr><td><code>sort((a, b) =&gt; …)</code></td><td><code>OrderBy</code> / <code>OrderByDescending</code>, lalu <code>ThenBy</code> / <code>ThenByDescending</code></td><td>Kunci kedua = <code>ThenBy</code>, bukan <code>OrderBy</code> lagi. Tidak mengubah list asal.</td></tr>
+    <tr><td><code>slice(s, s + n)</code></td><td><code>Skip(s).Take(n)</code></td><td>Paging</td></tr>
+    <tr><td><code>find</code></td><td><code>FirstOrDefault</code></td><td>Lihat bagian 2</td></tr>
+    <tr><td><code>some</code> / <code>every</code></td><td><code>Any</code> / <code>All</code></td><td><code>All</code> pada sequence kosong = <code>true</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.all?view=net-8.0">[14]</a></sup></td></tr>
+    <tr><td><code>includes</code></td><td><code>Contains</code></td><td></td></tr>
+    <tr><td><code>reduce</code> untuk total</td><td><code>Count</code>, <code>Sum</code>, <code>Average</code>, <code>Max</code>, <code>Min</code></td><td>Mengembalikan angka</td></tr>
+    <tr><td>lodash <code>maxBy</code> / <code>uniqBy</code></td><td><code>MaxBy</code>, <code>MinBy</code>, <code>DistinctBy</code></td><td>Baru di .NET 6 <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-6#new-linq-apis">[9]</a></sup>; mengembalikan <em>elemen</em>, bukan nilainya</td></tr>
+    <tr><td>lodash <code>groupBy</code> / <code>keyBy</code></td><td><code>GroupBy</code>, <code>ToDictionary</code></td><td>Lihat bagian 3</td></tr>
+  </tbody>
+</table>
+
+<pre><code>var murahTersedia = products
+    .Where(p =&gt; p.Stock &gt; 0)
+    .OrderBy(p =&gt; p.CategoryId)
+    .ThenByDescending(p =&gt; p.Price)       // kunci kedua
+    .Select(p =&gt; new { p.Name, p.Price }) // projection ke anonymous type
+    .ToList();</code></pre>
+
+<p>
+  <strong>Query syntax</strong> cukup Anda kenali. Compiler menerjemahkannya menjadi pemanggilan method yang sama; keduanya "semantically identical".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/write-linq-queries">[2]</a></sup>
+  Operator seperti <code>Count</code>, <code>Max</code>, dan <code>First</code> hanya tersedia sebagai method, jadi untuk live coding pakai method syntax.
+</p>
+<pre><code>var q1 = from p in products where p.Stock == 0 orderby p.Name select p.Name;   // query syntax
+var q2 = products.Where(p =&gt; p.Stock == 0).OrderBy(p =&gt; p.Name).Select(p =&gt; p.Name); // method syntax</code></pre>
+
+<h2>2. Satu elemen: <code>First</code>, <code>Single</code>, dan versi <code>…OrDefault</code></h2>
+<p>Bedanya hanya pada dua pertanyaan: apa yang terjadi kalau <strong>tidak ada</strong> yang cocok, dan apa yang terjadi kalau <strong>lebih dari satu</strong> yang cocok.</p>
+<table>
+  <thead><tr><th></th><th>Tidak ada yang cocok</th><th>Lebih dari satu cocok</th><th>Kapan dipakai</th></tr></thead>
+  <tbody>
+    <tr><td><code>First</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.first?view=net-8.0">[4]</a></sup></td><td><code>InvalidOperationException</code></td><td>ambil yang pertama</td><td>Data <em>pasti</em> ada; ambil satu dari banyak</td></tr>
+    <tr><td><code>FirstOrDefault</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.firstordefault?view=net-8.0">[5]</a></sup></td><td><code>default</code> (null untuk reference type)</td><td>ambil yang pertama</td><td>Padanan <code>find</code>; boleh kosong</td></tr>
+    <tr><td><code>Single</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.single?view=net-8.0">[6]</a></sup></td><td><code>InvalidOperationException</code></td><td><code>InvalidOperationException</code></td><td>Harus tepat satu (invarian)</td></tr>
+    <tr><td><code>SingleOrDefault</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.singleordefault?view=net-8.0">[7]</a></sup></td><td><code>default</code></td><td><code>InvalidOperationException</code></td><td>Cari berdasarkan primary key / kolom unik</td></tr>
+  </tbody>
+</table>
+<p>
+  "The default value for reference and nullable types is <code>null</code>". Untuk <code>int</code>, nilainya <code>0</code>, dan itu sering membingungkan.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.firstordefault?view=net-8.0">[5]</a></sup>
+  Sejak .NET 6 ada overload dengan nilai default sendiri: <code>FirstOrDefault(p =&gt; …, fallback)</code>.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-6#new-linq-apis">[9]</a></sup>
+  Keempat operator ini mengeksekusi query <em>saat itu juga</em>. Di EF Core, pakai versi async-nya (<code>FirstOrDefaultAsync</code>, <code>SingleOrDefaultAsync</code>).
+</p>
+<pre><code>// Controller GET /products/{id}
+var p = await _db.Products.SingleOrDefaultAsync(x =&gt; x.Id == id);
+if (p is null) return NotFound();</code></pre>
+
+<h2>3. <code>GroupBy</code>, top-N per grup, <code>Join</code></h2>
+<p>
+  <code>GroupBy</code> menghasilkan <code>IEnumerable&lt;IGrouping&lt;TKey, T&gt;&gt;</code>. Setiap grup punya <code>.Key</code>, dan grup itu sendiri adalah sequence elemennya,
+  sehingga Anda bisa langsung memanggil <code>Count()</code>, <code>Sum()</code>, atau <code>OrderBy()</code> di atasnya.
+  Grup muncul sesuai urutan elemen pertama yang membawa kuncinya.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.groupby?view=net-8.0">[8]</a></sup>
+</p>
+<pre><code>// Jumlah Product dan total stok per Category
+var ringkas = products
+    .GroupBy(p =&gt; p.CategoryId)
+    .Select(g =&gt; new { CategoryId = g.Key, Jumlah = g.Count(), Stok = g.Sum(p =&gt; p.Stock) });
+
+// Top-3 termahal per Category: urutkan DI DALAM grup, baru Take
+var top3 = products
+    .GroupBy(p =&gt; p.CategoryId)
+    .Select(g =&gt; new { CategoryId = g.Key, Top = g.OrderByDescending(p =&gt; p.Price).Take(3).ToList() });
+
+// Gabung dengan Category: Join (= INNER JOIN), atau dictionary untuk lookup cepat
+var denganNama = products.Join(categories, p =&gt; p.CategoryId, c =&gt; c.Id, (p, c) =&gt; new { p.Name, Category = c.Name });
+var namaCategory = categories.ToDictionary(c =&gt; c.Id, c =&gt; c.Name);   // lalu namaCategory[g.Key]
+
+// Cari duplikat: grup yang anggotanya lebih dari satu
+var namaDuplikat = products.GroupBy(p =&gt; p.Name).Where(g =&gt; g.Count() &gt; 1).Select(g =&gt; g.Key);</code></pre>
+<p>
+  Ini sama dengan top-N per grup dengan <code>ROW_NUMBER() OVER (PARTITION BY …)</code> di <a href="0019-sql-dasar.html">0019</a>, hanya ditulis di C#.
+  <code>Join</code> hanya mengembalikan pasangan yang cocok, jadi Category tanpa Product <em>hilang</em> dari hasil. Kalau Category kosong juga harus muncul, mulai dari <code>categories</code>
+  dan hitung Product-nya di dalam <code>Select</code> (lihat latihan D).
+</p>
+
+<h2>4. Apakah EF Core bisa menerjemahkannya ke SQL?</h2>
+<p>
+  Pada <code>IQueryable</code>, LINQ Anda diterjemahkan menjadi SQL, dan tidak semua operator punya padanan SQL.
+  Aturan EF Core: method C# biasa hanya boleh dipanggil di <strong>top-level projection</strong> ("essentially, the last call to <code>Select()</code>").
+  Kalau ekspresi yang tidak bisa diterjemahkan muncul "in any place other than the top-level projection", EF Core "throws a runtime exception".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval">[11]</a></sup>
+  Exception ini baru muncul <em>saat aplikasi jalan</em>, bukan saat compile.
+</p>
+<pre><code>// ✅ method C# di Select terakhir: SQL mengambil data, FormatNama jalan di .NET
+await _db.Products.Select(p =&gt; new { Nama = FormatNama(p.Name) }).ToListAsync();
+// ❌ method C# di Where: runtime exception (sebelum EF Core 3.0: diam-diam menarik semua baris)
+await _db.Products.Where(p =&gt; FormatNama(p.Name).Contains("pro")).ToListAsync();</code></pre>
+<ul>
+  <li><strong><code>GroupBy</code> + agregat</strong> (<code>Count</code>, <code>Sum</code>, <code>Max</code>, <code>Min</code>, <code>Average</code>) diterjemahkan menjadi <code>GROUP BY</code>; filter pada agregat menjadi <code>HAVING</code>.
+    Tidak ada struktur database yang bisa merepresentasikan <code>IGrouping</code> itu sendiri.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/complex-query-operators#groupby">[10]</a></sup></li>
+  <li><strong>Top-N per grup</strong> (<code>g.OrderBy…Take(n)</code>) didukung sejak EF Core 6 dan diterjemahkan dengan <code>ROW_NUMBER()</code>.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-6.0/whatsnew#improved-groupby-support">[12]</a></sup></li>
+  <li><strong><code>Join</code></strong> "naturally translates to <code>INNER JOIN</code>".
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/complex-query-operators#join">[10]</a></sup></li>
+  <li>Kalau memang harus diproses di memori, pilih client evaluation <em>secara eksplisit</em> dengan <code>AsEnumerable</code>/<code>ToListAsync</code>, setelah memfilter sebanyak mungkin di database.
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval#explicit-client-evaluation">[11]</a></sup></li>
+</ul>
+
+<h2>5. Multiple enumeration</h2>
+<p>
+  Variabel query menyimpan definisinya, bukan hasilnya. "The enumeration result is not calculated once and cached". Jadi setiap <code>Count()</code>, <code>foreach</code>, atau <code>ToList()</code>
+  menjalankan query dari awal lagi. Kalau sumbernya database, "multiple enumerations would hurt the performance".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1851">[13]</a></sup>
+</p>
+<pre><code>// ❌ dua query ke database
+var q = _db.Products.Where(p =&gt; p.Stock == 0);
+var n = await q.CountAsync();
+foreach (var p in q) { … }
+
+// ✅ satu query: materialisasi sekali, lalu pakai list-nya
+var habis = await _db.Products.Where(p =&gt; p.Stock == 0).ToListAsync();
+var n = habis.Count;
+foreach (var p in habis) { … }</code></pre>
+<p>EF Core menyebut hal yang sama: "if you're enumerating multiple times, then storing results in a list helps more since there's only one query to the database".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval#explicit-client-evaluation">[11]</a></sup>
+  Padanan Node: memanggil fungsi yang mengembalikan <code>prisma.product.findMany(…)</code> dua kali.</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Pilih operator, tebak hasilnya</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review campuran 0007.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0007-review-hari-1.html">review campuran 0007</a>.</p>
+  <div class="quiz" data-bank-lesson="0025" data-stack></div>
+</section>
+
+<!-- ============ HANDS-ON ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Tulis sendiri di lab (±15 menit)</h2>
+  <p>Butuh .NET 8 SDK (<a href="../ROADMAP.md">ROADMAP Hari 0</a>). Langkahnya:</p>
+  <ol>
+    <li><code>dotnet new console -o LinqLab &amp;&amp; cd LinqLab</code></li>
+    <li>Ganti isi <code>Program.cs</code> dengan skrip di bawah (tombol copy).</li>
+    <li><code>dotnet run</code>. Cocokkan output tiga demo dengan komentar <code>// …</code> di sebelahnya.</li>
+    <li>Tulis jawaban latihan A–D di bawah setiap <code>// TODO</code>, jalankan lagi, lalu bandingkan dengan output yang diharapkan sebelum membuka jawaban.</li>
+  </ol>
+
+<pre class="script" data-file="dotnet/lab/0025-linq.cs"><code>// Lesson 0025 · LINQ untuk live coding. Lab in-memory, .NET 8.
+// Cara pakai: dotnet new console -o LinqLab &amp;&amp; cd LinqLab
+//             ganti isi Program.cs dengan file ini, lalu: dotnet run
+// Data sengaja memuat kasus uji: nama Product duplikat (Mouse, Kaos),
+// Category tanpa Product (Mainan), dan Product dengan Stock 0.
+
+var categories = new List&lt;Category&gt;
+{
+    new(1, "Elektronik"),
+    new(2, "Buku"),
+    new(3, "Pakaian"),
+    new(4, "Mainan"),
+    new(5, "Dapur"),
+};
+
+var products = new List&lt;Product&gt;
+{
+    new(1,  "Laptop",   15000000m, 5,  1),
+    new(2,  "Mouse",      250000m, 0,  1),
+    new(3,  "Keyboard",   750000m, 12, 1),
+    new(4,  "Monitor",   3000000m, 3,  1),
+    new(5,  "Headset",    500000m, 0,  1),
+    new(6,  "Novel",      120000m, 20, 2),
+    new(7,  "Kamus",      200000m, 0,  2),
+    new(8,  "Komik",       50000m, 40, 2),
+    new(9,  "Kaos",       100000m, 30, 3),
+    new(10, "Jaket",      450000m, 0,  3),
+    new(11, "Kaos",        95000m, 10, 3),
+    new(12, "Wajan",      300000m, 7,  5),
+    new(13, "Mouse",      180000m, 8,  1),
+    new(14, "Panci",      350000m, 2,  5),
+    new(15, "Spatula",     40000m, 25, 5),
+};
+
+// ---------- Demo 1: First / FirstOrDefault / Single / SingleOrDefault ----------
+Console.WriteLine("== Demo 1: satu elemen ==");
+Console.WriteLine(products.First(p =&gt; p.Name == "Mouse").Id);                      // 2 (yang pertama)
+Console.WriteLine(products.FirstOrDefault(p =&gt; p.Name == "Drone") is null);       // True
+Console.WriteLine(products.SingleOrDefault(p =&gt; p.Id == 99) is null);             // True
+try
+{
+    products.Single(p =&gt; p.Name == "Mouse");                                       // ada dua Mouse
+}
+catch (InvalidOperationException)
+{
+    Console.WriteLine("Single: InvalidOperationException (lebih dari satu)");
+}
+
+// ---------- Demo 2: multiple enumeration ----------
+Console.WriteLine("== Demo 2: multiple enumeration ==");
+int calls = 0;
+var mahal = products.Where(p =&gt; { calls++; return p.Price &gt; 1000000m; });
+var jumlah = mahal.Count();      // enumerasi ke-1
+var daftar = mahal.ToList();     // enumerasi ke-2: predicate jalan lagi
+Console.WriteLine($"{jumlah} produk, predicate dipanggil {calls} kali");          // 2 produk, 30 kali
+
+// ---------- Demo 3: query syntax = method syntax ----------
+Console.WriteLine("== Demo 3: query syntax ==");
+var q1 = from p in products where p.Stock == 0 orderby p.Name select p.Name;
+var q2 = products.Where(p =&gt; p.Stock == 0).OrderBy(p =&gt; p.Name).Select(p =&gt; p.Name);
+Console.WriteLine(string.Join(", ", q1));                                          // Headset, Jaket, Kamus, Mouse
+Console.WriteLine(q1.SequenceEqual(q2));                                           // True
+
+// ---------- Latihan: tulis jawaban Anda di bawah setiap TODO, lalu dotnet run ----------
+Console.WriteLine("== Latihan A: 3 Product termahal per Category ==");
+// TODO A
+
+Console.WriteLine("== Latihan B: Category yang tidak punya Product dengan Stock 0 ==");
+// TODO B
+
+Console.WriteLine("== Latihan C: nama Product yang duplikat ==");
+// TODO C
+
+Console.WriteLine("== Latihan D: total nilai stok (Price x Stock) per Category, terbesar dulu ==");
+// TODO D
+
+record Category(int Id, string Name);
+record Product(int Id, string Name, decimal Price, int Stock, int CategoryId);</code></pre>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>A.</strong> <strong>3 Product termahal per Category</strong>, tampilkan nama Category.
+    Output yang diharapkan: <code>Elektronik: Laptop 15000000, Monitor 3000000, Keyboard 750000</code>, lalu Buku, Pakaian, dan Dapur (Mainan tidak muncul karena tidak punya Product).</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>var namaCategory = categories.ToDictionary(c =&gt; c.Id, c =&gt; c.Name);
+var top3 = products
+    .GroupBy(p =&gt; p.CategoryId)
+    .Select(g =&gt; new
+    {
+        Category = namaCategory[g.Key],
+        Top = g.OrderByDescending(p =&gt; p.Price).Take(3).Select(p =&gt; $"{p.Name} {p.Price}")
+    });
+foreach (var x in top3) Console.WriteLine($"{x.Category}: {string.Join(", ", x.Top)}");
+// Elektronik: Laptop 15000000, Monitor 3000000, Keyboard 750000
+// Buku: Kamus 200000, Novel 120000, Komik 50000
+// Pakaian: Jaket 450000, Kaos 100000, Kaos 95000
+// Dapur: Panci 350000, Wajan 300000, Spatula 40000</code></pre>
+    <p>Grup muncul sesuai urutan Product pertama tiap Category di list. Nama Category diambil dari dictionary, satu kali, bukan dengan <code>categories.First(…)</code> di dalam <code>Select</code>.</p>
+  </details>
+</div>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>B.</strong> <strong>Category yang tidak punya satu pun Product dengan Stock 0.</strong> Output yang diharapkan: <code>Mainan, Dapur</code>.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>var aman = categories
+    .Where(c =&gt; !products.Any(p =&gt; p.CategoryId == c.Id &amp;&amp; p.Stock == 0))
+    .Select(c =&gt; c.Name);
+Console.WriteLine(string.Join(", ", aman));   // Mainan, Dapur</code></pre>
+    <p>Mainan ikut muncul karena tidak punya Product sama sekali. Versi <code>products.Where(p =&gt; p.CategoryId == c.Id).All(p =&gt; p.Stock &gt; 0)</code> memberi hasil yang sama,
+      karena <code>All</code> pada sequence kosong bernilai <code>true</code>. Kalau Category kosong tidak boleh ikut, tambahkan syarat <code>products.Any(p =&gt; p.CategoryId == c.Id)</code>. Tanyakan ini ke interviewer: itu poin plus.</p>
+  </details>
+</div>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>C.</strong> <strong>Nama Product yang duplikat.</strong> Output yang diharapkan: <code>Mouse, Kaos</code>.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>var duplikat = products
+    .GroupBy(p =&gt; p.Name)
+    .Where(g =&gt; g.Count() &gt; 1)
+    .Select(g =&gt; g.Key);
+Console.WriteLine(string.Join(", ", duplikat));   // Mouse, Kaos</code></pre>
+    <p>Pola "GroupBy → filter jumlah anggota" sama dengan <code>GROUP BY Name HAVING COUNT(*) &gt; 1</code>, dan di EF Core memang diterjemahkan menjadi itu.</p>
+  </details>
+</div>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>D.</strong> <strong>Total nilai stok (<code>Price × Stock</code>) per Category, terbesar dulu, termasuk Category tanpa Product.</strong>
+    Output yang diharapkan: <code>Elektronik: 94440000</code>, <code>Buku: 4400000</code>, <code>Pakaian: 3950000</code>, <code>Dapur: 3800000</code>, <code>Mainan: 0</code>.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>var nilai = categories
+    .Select(c =&gt; new
+    {
+        c.Name,
+        Total = products.Where(p =&gt; p.CategoryId == c.Id).Sum(p =&gt; p.Price * p.Stock)
+    })
+    .OrderByDescending(x =&gt; x.Total);
+foreach (var x in nilai) Console.WriteLine($"{x.Name}: {x.Total}");</code></pre>
+    <p>Mulai dari <code>categories</code> supaya Mainan tetap muncul dengan 0 (<code>Sum</code> dari sequence kosong = 0).
+      Versi <code>products.GroupBy(p =&gt; p.CategoryId)</code> atau <code>Join</code> lebih ringkas, tapi Mainan hilang dari hasilnya.</p>
+  </details>
+</div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>Tulis kodenya di kertas, lalu pasang timer 90 detik dan jelaskan dengan suara keras. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tulis LINQ untuk 3 Product termahal per Category (tampilkan nama Category), lalu jelaskan setiap bagiannya."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>var nama = categories.ToDictionary(c =&gt; c.Id, c =&gt; c.Name);
+var top3 = products
+    .GroupBy(p =&gt; p.CategoryId)
+    .Select(g =&gt; new {
+        Category = nama[g.Key],
+        Top = g.OrderByDescending(p =&gt; p.Price).Take(3).ToList()
+    });</code></pre>
+    <p>
+      "<code>GroupBy</code> membuat satu <code>IGrouping</code> per CategoryId; <code>Key</code>-nya CategoryId. Di dalam setiap grup saya urutkan dari Price termahal lalu <code>Take(3)</code>, jadi urutannya harus OrderByDescending dulu baru Take.
+      Nama Category saya ambil lewat dictionary sekali jalan, bukan query per Category di dalam loop. Di SQL ini setara <code>ROW_NUMBER() OVER (PARTITION BY CategoryId ORDER BY Price DESC)</code>.
+      Kalau sumbernya EF Core, query tetap <code>IQueryable</code> sampai <code>ToListAsync</code>, dan sejak EF Core 6 pola top-N per grup ini diterjemahkan ke SQL dengan ROW_NUMBER."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>memakai <code>GroupBy</code> per CategoryId dan menyebut <code>IGrouping</code> dengan <code>.Key</code>?</li>
+      <li>menulis <code>OrderByDescending(Price)</code> dulu, baru <code>Take(3)</code>, di dalam grup?</li>
+      <li>mengambil nama Category lewat dictionary/Join/navigation, bukan query per Category di loop?</li>
+      <li>menulis kode yang sintaksnya benar (lambda, <code>new { … }</code>, kurung)?</li>
+      <li>menyebut padanan SQL <code>ROW_NUMBER() OVER (PARTITION BY … ORDER BY … DESC)</code>?</li>
+      <li>menyebut bahwa di EF Core query tetap <code>IQueryable</code> sampai <code>ToListAsync</code>, dan EF Core 6+ menerjemahkan top-N per grup?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kalau kurang, ulangi besok pagi sebelum lesson berikutnya (spacing).
+      Review 0007 juga bisa menanyakan "First vs FirstOrDefault vs Single vs SingleOrDefault" secara lisan, dengan checklist yang sama gayanya (lihat <a href="../reference/linq.html">reference</a>).</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/">Microsoft Learn: Standard query operators overview</a>,
+  lalu <a href="https://learn.microsoft.com/en-us/ef/core/querying/complex-query-operators">EF Core: Complex Query Operators</a> bagian "Join" dan "GroupBy".
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/linq.html">Reference: LINQ untuk live coding</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kenapa <code>g.Take(3).OrderByDescending(...)</code> salah?" atau "bagaimana menulis latihan A langsung di EF Core dari <code>_db.Categories</code>?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/">[1] Standard query operators overview</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/write-linq-queries">[2] Write LINQ queries</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/projection-operations">[3] Projection operations</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.first?view=net-8.0">[4] Enumerable.First</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.firstordefault?view=net-8.0">[5] Enumerable.FirstOrDefault</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.single?view=net-8.0">[6] Enumerable.Single</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.singleordefault?view=net-8.0">[7] Enumerable.SingleOrDefault</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.groupby?view=net-8.0">[8] Enumerable.GroupBy</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-6#new-linq-apis">[9] What's new in .NET 6: New LINQ APIs</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/complex-query-operators">[10] EF Core: Complex Query Operators</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval">[11] EF Core: Client vs. Server Evaluation</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-6.0/whatsnew#improved-groupby-support">[12] What's new in EF Core 6: Improved GroupBy support</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1851">[13] CA1851: Possible multiple enumerations</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.all?view=net-8.0">[14] Enumerable.All</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0003-async-task-dan-linq.html">← 0003 · async/Task dan LINQ</a>
+  <a href="0004-service-lifetime.html">0004 · Service Lifetime →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0025.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/hands-on.js"></script>
+</body>
+</html>

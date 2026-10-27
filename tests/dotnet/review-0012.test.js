@@ -8,7 +8,7 @@ const path = require("node:path");
 const { draw, seededRandom } = require("../../assets/bank.js");
 const { ROOT, loadLesson, runAsBrowserScripts } = require("../helpers.js");
 
-const DAY1 = ["0001", "0002", "0003", "0004", "0005", "0006"];
+const DAY1 = ["0001", "0002", "0003", "0004", "0005", "0006", "0025"];
 const DAY2 = ["0008", "0009", "0010", "0011"];
 const html = fs.readFileSync(path.join(ROOT, "dotnet", "lessons", "0012-review-hari-2.html"), "utf8");
 

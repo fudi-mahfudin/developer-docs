@@ -10,6 +10,7 @@ Pindah dari stack TypeScript/Node.js/React ke posisi fullstack .NET 8 + Angular 
 - Bisa mendemokan satu siklus red-green-refactor dan membedakan unit test vs integration test
 - Bisa menjawab konsep Angular 16 inti (NgModule, DI, RxJS, lifecycle, forms, interceptor) dengan padanan React
 - Punya 4 cerita STAR siap pakai
+- Bisa menulis LINQ untuk soal live coding umum (filter, grup, top-N, join, cari duplikat) dan tahu mana yang diterjemahkan EF Core ke SQL
 - Database (SQL Server): bisa menjelaskan clustered vs non-clustered index, membaca execution plan sederhana (scan vs seek, key lookup), menulis Stored Procedure dengan `TRY/CATCH` + transaction, menjelaskan isolation level dan deadlock, serta menulis query top-N-per-grup (`ROW_NUMBER`)
 
 ## Constraints

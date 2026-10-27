@@ -11,8 +11,8 @@ const { ROOT, loadLesson, runAsBrowserScripts } = require("../helpers.js");
 const { parseSegments } = require("../../assets/timer.js");
 
 const CONCEPT = ["0001", "0002", "0003", "0004", "0005", "0006", "0008", "0009", "0010", "0011",
-                 "0013", "0014", "0015", "0016", "0017"];
-const REVIEWED = CONCEPT.filter(n => n <= "0011"); // lessons covered by reviews 0007 and 0012
+                 "0013", "0014", "0015", "0016", "0017", "0025"];
+const REVIEWED = CONCEPT.filter(n => n <= "0011" || n === "0025"); // lessons covered by reviews 0007 and 0012 (0025 = suplemen Hari 1)
 const STAR = ["star-insiden", "star-refactor", "star-konflik", "star-belajar"];
 const html = fs.readFileSync(path.join(ROOT, "dotnet", "lessons", "0018-star-mock-interview.html"), "utf8");
 
@@ -61,7 +61,7 @@ test("weak topics from 0007/0012 get their own part: one quiz each, all from rev
   const reviewed = loadLesson(...REVIEWED).select({ lessons: REVIEWED });
   topics.forEach(t => {
     const qs = reviewed.filter(q => q.topic === t);
-    assert.ok(qs.some(q => q.type === "mc"), `topik "${t}" bukan topik kuis dari lesson 0001–0011`);
+    assert.ok(qs.some(q => q.type === "mc"), `topik "${t}" bukan topik kuis dari lesson 0001–0011 atau 0025`);
   });
   assert.equal(mc, topics.length, "data-mc harus sama dengan jumlah topik lemah");
   const pool = bank().select({ lessons, topics });
