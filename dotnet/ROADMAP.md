@@ -74,6 +74,8 @@ npm i -g @angular/cli@16     # atau pakai npx @angular/cli@16 tanpa global insta
 
 Latihan cepat (console app `dotnet new console`): buat `record ProductDto`, list produk, filter dengan LINQ, method `async Task<int>`.
 
+**LINQ untuk live coding** (lesson 0025, suplemen setelah 0003, ±30 menit): `GroupBy` + top-N per grup, `Join`, cari duplikat, `First` vs `Single` vs `…OrDefault`, apa yang bisa diterjemahkan EF Core, multiple enumeration. Lab in-memory `dotnet/lab/0025-linq.cs`.
+
 **Topik wajib bisa dijelaskan:**
 - Value type vs reference type (`struct` vs `class`), boxing singkat.
 - `IEnumerable<T>` vs `IQueryable<T>` (in-memory vs diterjemahkan ke SQL).

@@ -52,6 +52,16 @@
   Kapan query dikirim ke database, `AsEnumerable`/`ToList` sebagai client evaluation, tidak ada `WhereAsync`, tidak boleh operasi paralel di satu DbContext. Use for: IEnumerable vs IQueryable dan async EF Core.
 - [.NET API: IQueryable&lt;T&gt;](https://learn.microsoft.com/en-us/dotnet/api/system.linq.iqueryable-1?view=net-8.0) dan [Expression Trees](https://learn.microsoft.com/en-us/dotnet/csharp/advanced-topics/expression-trees/)
   IQueryable mewarisi IEnumerable, query sebagai expression tree yang diterjemahkan provider. Use for: IEnumerable vs IQueryable.
+- [Microsoft Learn: Standard query operators overview](https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/), [Write LINQ queries](https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/write-linq-queries), dan [Projection operations](https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/projection-operations)
+  Operator singleton dieksekusi langsung, query syntax = method syntax setelah dikompilasi, `Select` vs `SelectMany`. Use for: menulis LINQ (lesson 0025).
+- [.NET API: Enumerable.First](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.first?view=net-8.0), [FirstOrDefault](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.firstordefault?view=net-8.0), [Single](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.single?view=net-8.0), [SingleOrDefault](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.singleordefault?view=net-8.0), [GroupBy](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.groupby?view=net-8.0), [All](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.all?view=net-8.0)
+  Kapan melempar `InvalidOperationException`, nilai default, urutan grup, `All` pada sequence kosong. Use for: First vs Single (lesson 0025).
+- [What's new in .NET 6: New LINQ APIs](https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-6#new-linq-apis)
+  `MaxBy`/`MinBy`, `DistinctBy`, `FirstOrDefault` dengan nilai default. Use for: operator LINQ modern.
+- [EF Core: Complex Query Operators](https://learn.microsoft.com/en-us/ef/core/querying/complex-query-operators) dan [What's new in EF Core 6: Improved GroupBy support](https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-6.0/whatsnew#improved-groupby-support)
+  `Join` → INNER JOIN, `GroupBy` + agregat → GROUP BY/HAVING, top-N per grup → ROW_NUMBER, GroupJoin tidak diterjemahkan. Use for: LINQ mana yang jadi SQL (lesson 0025).
+- [CA1851: Possible multiple enumerations of IEnumerable collection](https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1851)
+  Hasil enumerasi tidak di-cache; perbaikan dengan materialisasi. Use for: multiple enumeration (lesson 0025).
 - [MDN: Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise)
   Definisi Promise sebagai pembanding `Task`. Use for: padanan TS/JS.
 - [Microsoft Learn: Dependency injection guidelines](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection/guidelines)

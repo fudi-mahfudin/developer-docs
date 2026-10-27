@@ -223,6 +223,16 @@ Query LINQ yang disimpan sebagai expression tree sehingga provider (EF Core) bis
 Padanan Node: `prisma.product.findMany({ where })` vs `array.filter(...)`.
 _Avoid_: Query object, IEnumerable (berbeda: filternya jalan di memori)
 
+**Multiple Enumeration**:
+Mengenumerasi variabel query (`IEnumerable`/`IQueryable`) lebih dari sekali; karena hasilnya tidak di-cache, setiap `Count`, `foreach`, atau `ToList` menjalankan query dari awal (untuk EF Core: satu round-trip database per enumerasi).
+Padanan Node: memanggil `prisma.product.findMany(...)` dua kali untuk data yang sama.
+_Avoid_: Double query, re-iteration
+
+**Client Evaluation**:
+Bagian query LINQ EF Core yang dijalankan di .NET, bukan diterjemahkan ke SQL; sejak EF Core 3.0 hanya diizinkan di top-level projection (`Select` terakhir), di tempat lain menyebabkan runtime exception kecuali dipilih eksplisit dengan `AsEnumerable`/`ToList`.
+Padanan Node: mengambil baris dengan Prisma lalu `array.filter` di JS.
+_Avoid_: Client-side query, in-memory filter (terlalu umum)
+
 ## Dependency Injection
 
 **Captive Dependency**:

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · LINQ untuk live coding</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Fondasi C#</div>
+<h1>LINQ untuk live coding</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0025-linq.html">Lesson 0025</a>. Konsep deferred/IQueryable: <a href="async-dan-linq.html">async/Task dan LINQ</a>.</p>
+
+<h2>TS → LINQ <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/">[1]</a></sup></h2>
+<table>
+  <thead><tr><th>TypeScript</th><th>LINQ</th><th>TypeScript</th><th>LINQ</th></tr></thead>
+  <tbody>
+    <tr><td><code>filter</code></td><td><code>Where</code></td><td><code>find</code></td><td><code>FirstOrDefault</code></td></tr>
+    <tr><td><code>map</code></td><td><code>Select</code></td><td><code>some</code> / <code>every</code></td><td><code>Any</code> / <code>All</code> (kosong → <code>true</code>)</td></tr>
+    <tr><td><code>flatMap</code></td><td><code>SelectMany</code></td><td><code>includes</code></td><td><code>Contains</code></td></tr>
+    <tr><td><code>sort</code> (2 kunci)</td><td><code>OrderBy</code> + <code>ThenBy(Descending)</code></td><td><code>reduce</code> (total)</td><td><code>Count</code>, <code>Sum</code>, <code>Average</code>, <code>Max</code>, <code>Min</code></td></tr>
+    <tr><td><code>slice</code></td><td><code>Skip(s).Take(n)</code></td><td>lodash <code>maxBy</code>/<code>uniqBy</code></td><td><code>MaxBy</code>, <code>MinBy</code>, <code>DistinctBy</code> (.NET 6+)</td></tr>
+    <tr><td>lodash <code>groupBy</code></td><td><code>GroupBy</code> → <code>IGrouping</code> + <code>.Key</code></td><td>lodash <code>keyBy</code></td><td><code>ToDictionary(k =&gt; …, v =&gt; …)</code></td></tr>
+  </tbody>
+</table>
+<p>Method syntax untuk live coding. Query syntax (<code>from p in … where … select p</code>) = method syntax yang sama setelah dikompilasi <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/write-linq-queries">[2]</a></sup>.</p>
+
+<h2>Satu elemen <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.single?view=net-8.0">[3]</a></sup></h2>
+<table>
+  <thead><tr><th></th><th>0 cocok</th><th>&gt;1 cocok</th><th>Pakai untuk</th></tr></thead>
+  <tbody>
+    <tr><td><code>First</code></td><td>exception</td><td>yang pertama</td><td>pasti ada; satu dari banyak (+ <code>OrderBy</code>)</td></tr>
+    <tr><td><code>FirstOrDefault</code></td><td><code>default</code> (null / 0)</td><td>yang pertama</td><td>boleh kosong (= <code>find</code>)</td></tr>
+    <tr><td><code>Single</code></td><td>exception</td><td>exception</td><td>harus tepat satu</td></tr>
+    <tr><td><code>SingleOrDefault</code></td><td><code>default</code></td><td>exception</td><td>primary key / kolom unik → cek null → 404</td></tr>
+  </tbody>
+</table>
+<p>Keempatnya mengeksekusi langsung. Exception = <code>InvalidOperationException</code>. EF Core: <code>…Async</code>.</p>
+
+<h2>Pola yang sering diminta</h2>
+<pre><code>// top-N per grup (= ROW_NUMBER() OVER (PARTITION BY …))
+products.GroupBy(p =&gt; p.CategoryId)
+        .Select(g =&gt; new { g.Key, Top = g.OrderByDescending(p =&gt; p.Price).Take(3).ToList() });
+// agregat per grup (= GROUP BY)
+products.GroupBy(p =&gt; p.CategoryId).Select(g =&gt; new { g.Key, Total = g.Sum(p =&gt; p.Price * p.Stock) });
+// duplikat (= GROUP BY … HAVING COUNT(*) &gt; 1)
+products.GroupBy(p =&gt; p.Name).Where(g =&gt; g.Count() &gt; 1).Select(g =&gt; g.Key);
+// gabung (= INNER JOIN; sisi tanpa pasangan hilang)
+products.Join(categories, p =&gt; p.CategoryId, c =&gt; c.Id, (p, c) =&gt; new { p.Name, Cat = c.Name });
+// termasuk grup kosong: mulai dari sisi "induk"
+categories.Select(c =&gt; new { c.Name, Total = products.Where(p =&gt; p.CategoryId == c.Id).Sum(p =&gt; p.Stock) });
+// "tidak punya satu pun yang …"
+categories.Where(c =&gt; !products.Any(p =&gt; p.CategoryId == c.Id &amp;&amp; p.Stock == 0));</code></pre>
+
+<h2>Jebakan</h2>
+<ul>
+  <li><strong>Urutan di dalam grup:</strong> <code>OrderByDescending</code> dulu, baru <code>Take</code>. <code>MaxBy</code> mengembalikan satu elemen.</li>
+  <li><strong>EF Core:</strong> method C# biasa hanya boleh di <code>Select</code> terakhir (top-level projection). Di <code>Where</code>/<code>OrderBy</code>/<code>GroupBy</code> → runtime exception, bukan compile error <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval">[4]</a></sup>.</li>
+  <li><strong>GroupBy di EF Core:</strong> + agregat → <code>GROUP BY</code>/<code>HAVING</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/complex-query-operators#groupby">[5]</a></sup>; top-N per grup → <code>ROW_NUMBER</code> sejak EF Core 6 <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-6.0/whatsnew#improved-groupby-support">[6]</a></sup>.</li>
+  <li><strong>Multiple enumeration:</strong> hasil tidak di-cache; <code>Count()</code> + <code>foreach</code> pada query = dua query. Materialisasi sekali (<code>ToListAsync</code>) lalu pakai list-nya <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1851">[7]</a></sup>.</li>
+</ul>
+
+<h2>Jawaban 60 detik: First vs Single</h2>
+<p>
+  <code>First</code> mengambil yang pertama cocok dan melempar exception kalau tidak ada; <code>FirstOrDefault</code> mengembalikan default (null untuk reference type), padanan <code>find</code>.
+  <code>Single</code> menegaskan tepat satu: exception kalau nol atau lebih dari satu; <code>SingleOrDefault</code> default kalau nol, tetap exception kalau lebih dari satu.
+  Primary key → <code>SingleOrDefault</code> + cek null untuk 404; satu dari banyak → <code>OrderBy</code> + <code>FirstOrDefault</code>. Semuanya eksekusi langsung; di EF Core pakai versi async.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/standard-query-operators/">[1] Standard query operators overview</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/write-linq-queries">[2] Write LINQ queries</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.single?view=net-8.0">[3] Enumerable.Single</a> (lihat juga First/FirstOrDefault/SingleOrDefault) ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval">[4] EF Core: Client vs. Server Evaluation</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/complex-query-operators">[5] EF Core: Complex Query Operators</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/what-is-new/ef-core-6.0/whatsnew#improved-groupby-support">[6] What's new in EF Core 6</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/fundamentals/code-analysis/quality-rules/ca1851">[7] CA1851</a></p>
+</main>
+</body>
+</html>

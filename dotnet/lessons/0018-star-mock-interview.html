@@ -68,12 +68,12 @@
   sementara bagian 1b mengacak semua topik. Cara agent mengisinya:
   - Gabungkan baris "Topik lemah 0007: …" dan "Topik lemah 0012: …" di NOTES. Topik 0007 yang sudah lulus di 0012 dibuang.
     Ganti data-topics dengan daftar itu, set data-mc = jumlah slug, lalu node --test.
-    Semua file questions/0001–0017.js sudah dimuat, jadi tidak perlu menambah <script>.
+    Semua file questions/0001–0017.js dan 0025.js sudah dimuat, jadi tidak perlu menambah <script>.
   - Kalau 0007/0012 belum dikerjakan, pakai default di bawah: empat jebakan Hari 1 (value vs reference type, async/await,
     captive dependency, N+1) dan satu jebakan per lesson Hari 2 (DIP, kenapa red dulu, test double, Repository di atas EF Core).
     Ini mengikuti pendekatan 0012: tetap ada pengulangan berjarak tanpa membengkakkan waktu 20 menit.
   - Kalau 0007 dan 0012 sama-sama tanpa topik lemah, biarkan default.
-  - tests/dotnet/review-0018.test.js memeriksa bahwa data-mc = jumlah topik, setiap slug punya soal kuis dari lesson 0001–0011.
+  - tests/dotnet/review-0018.test.js memeriksa bahwa data-mc = jumlah topik, setiap slug punya soal kuis dari lesson 0001–0011 atau 0025.
 -->
 <div class="review" data-part="lemah" data-title="Mock 0018 · 1a topik lemah" data-lessons=""
      data-topics="csharp-value-ref,csharp-async,di-captive,ef-n-plus-1,solid-dip,tdd-red,test-double,repo-ef-core" data-mc="8" data-oral="1"></div>
@@ -84,8 +84,8 @@
   Agent memperbaruinya setelah hasil review dicatat.
 </p>
 
-<h4>1b · Acak dari semua lesson 0001–0017</h4>
-<div class="review" data-part="acak" data-title="Mock 0018 · 1b konsep acak" data-lessons="0001,0002,0003,0004,0005,0006,0008,0009,0010,0011,0013,0014,0015,0016,0017"
+<h4>1b · Acak dari semua lesson 0001–0017 dan 0025</h4>
+<div class="review" data-part="acak" data-title="Mock 0018 · 1b konsep acak" data-lessons="0001,0002,0003,0004,0005,0006,0008,0009,0010,0011,0013,0014,0015,0016,0017,0025"
      data-topics="" data-mc="8" data-oral="2"></div>
 
 <h3>Bagian 2 · Live coding (25 menit)</h3>
@@ -156,6 +156,7 @@
 <script src="../assets/questions/0015.js"></script>
 <script src="../assets/questions/0016.js"></script>
 <script src="../assets/questions/0017.js"></script>
+<script src="../assets/questions/0025.js"></script>
 <script src="../assets/questions/0018.js"></script>
 <script src="../../assets/review.js"></script>
 </body>
