@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0010 · Jenis test: Unit Test vs Integration Test, Mock/stub/fake, WebApplicationFactory</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0010 · Hari 2 · Testing · ±14 menit</div>
+  <h1>Jenis test dan test double untuk Product Catalog</h1>
+  <p class="subtitle">Unit Test vs Integration Test vs E2E, mock vs stub vs fake, <code>WebApplicationFactory</code>, dan apa yang sebaiknya di-mock</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Apa beda Unit Test, Integration Test, dan E2E? Apa beda mock, stub, dan fake, dan apa yang Anda mock?"</em>
+  dalam dua jawaban 60 detik, dengan contoh <code>ProductService</code> dan endpoint <code>POST /api/products</code>.
+</div>
+
+<h2>1. Tiga jenis test, satu piramida</h2>
+<p>
+  Microsoft: "Unit tests are used to test isolated software components, such as individual class methods.
+  Integration tests confirm that two or more app components work together to produce an expected result, possibly including every component required to fully process a request."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0#introduction-to-integration-tests">[1]</a></sup>
+  Integration test biasanya menyentuh "Database · File system · Network appliances · Request-response pipeline". <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0#introduction-to-integration-tests">[1]</a></sup>
+</p>
+
+<table>
+  <thead><tr><th>Jenis</th><th>Yang diuji di Product Catalog</th><th>Kecepatan</th><th>Padanan Node</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Unit Test</strong></td><td><code>ProductService.CreateAsync</code>, repository di-mock dengan Moq</td><td>Milidetik <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#characteristics-of-good-unit-tests">[2]</a></sup></td><td>Jest + <code>jest.fn()</code> <sup class="cite"><a href="https://jestjs.io/docs/mock-functions">[7]</a></sup></td></tr>
+    <tr><td><strong>Integration Test</strong></td><td><code>POST /api/products</code> lewat pipeline HTTP, Controller, Service, sampai database test</td><td>Lebih lambat: "Take longer to run" <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0#introduction-to-integration-tests">[1]</a></sup></td><td>Supertest + database test <sup class="cite"><a href="https://github.com/ladjs/supertest">[8]</a></sup></td></tr>
+    <tr><td><strong>E2E</strong></td><td>Browser membuka form Angular, submit, data muncul di daftar</td><td>Paling lambat, "notoriously flaky" <sup class="cite"><a href="https://martinfowler.com/articles/practical-test-pyramid.html">[4]</a></sup></td><td>Playwright / Cypress</td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>Testing pyramid</strong> menurut Ham Vocke (artikel di martinfowler.com) punya dua aturan: "Write tests with different granularity" dan
+  "The more high-level you get the fewer tests you should have." <sup class="cite"><a href="https://martinfowler.com/articles/practical-test-pyramid.html">[4]</a></sup>
+  Microsoft bahkan memberi aturan praktis: "If a behavior can be tested using either a unit test or an integration test, choose the unit test."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0#introduction-to-integration-tests">[1]</a></sup>
+  Jadi aturan harga ≤ 0 cukup di unit test (lesson 0009); integration test cukup membuktikan bahwa request yang salah benar-benar berakhir sebagai 400.
+</p>
+<p class="note">
+  Di GLOSSARY: <strong>Integration Test</strong> = API sungguhan lewat <code>WebApplicationFactory</code>; <em>bukan</em> E2E (yang dari browser sampai DB).
+  Pewawancara sering sengaja mencampur dua istilah ini.
+</p>
+
+<h2>2. Mock, stub, fake: semuanya test double</h2>
+<p>
+  "Test Double is a generic term for any case where you replace a production object for testing purposes."
+  <sup class="cite"><a href="https://martinfowler.com/bliki/TestDouble.html">[3]</a></sup> Bedanya ada di <em>peran</em> objek itu dalam test:
+</p>
+
+<table>
+  <thead><tr><th>Istilah</th><th>Definisi (Fowler <sup class="cite"><a href="https://martinfowler.com/bliki/TestDouble.html">[3]</a></sup>)</th><th>Contoh Product Catalog</th><th>Padanan Jest</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Stub</strong></td><td>"provide canned answers to calls made during the test"</td><td><code>_repo.Setup(r =&gt; r.ExistsByNameAsync("Keyboard")).ReturnsAsync(true)</code></td><td><code>jest.fn().mockReturnValue(true)</code></td></tr>
+    <tr><td><strong>Mock</strong></td><td>"pre-programmed with expectations" dan "checked during verification to ensure they got all the calls they were expecting"</td><td><code>_repo.Verify(r =&gt; r.AddAsync(It.IsAny&lt;Product&gt;()), Times.Never)</code></td><td><code>expect(fn).toHaveBeenCalled()</code></td></tr>
+    <tr><td><strong>Fake</strong></td><td>"actually have working implementations, but usually take some shortcut" (contohnya "an InMemoryTestDatabase")</td><td>SQLite in-memory menggantikan SQL Server</td><td>Repository berbasis array, SQLite <code>:memory:</code></td></tr>
+    <tr><td>Dummy</td><td>"passed around but never actually used"</td><td><code>null</code> / <code>Mock.Of&lt;ILogger&lt;ProductService&gt;&gt;()</code> sekadar mengisi constructor</td><td><code>{}</code> sebagai argumen</td></tr>
+  </tbody>
+</table>
+
+<p>
+  Kalimat kunci untuk interview: "only mocks insist upon behavior verification. The other doubles can, and usually do, use state verification."
+  <sup class="cite"><a href="https://martinfowler.com/articles/mocksArentStubs.html">[5]</a></sup>
+  Microsoft merangkumnya: "You run <code>Assert</code> operations against a mock object, but not against a stub."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#unit-testing-terminology">[2]</a></sup>
+</p>
+<p class="note">
+  <strong>Jebakan istilah:</strong> objek <code>new Mock&lt;IProductRepository&gt;()</code> dari Moq <sup class="cite"><a href="https://github.com/devlooped/moq/wiki/Quickstart">[6]</a></sup>
+  belum tentu <em>mock</em>. Kalau Anda hanya memakai <code>Setup/Returns</code> dan tidak pernah <code>Verify</code>, perannya stub.
+  Microsoft juga mencatat bahwa dokumentasi .NET memakai "fake" sebagai istilah umum ("a fake can be a stub or a mock"), sementara Fowler/Meszaros memakainya lebih sempit.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#unit-testing-terminology">[2]</a></sup>
+  Di interview, sebut definisi Fowler lalu tambahkan catatan ini: itu tanda Anda paham, bukan hafal.
+</p>
+
+<h2>3. <code>WebApplicationFactory</code>: menguji API tanpa deploy</h2>
+<p>
+  "ASP.NET Core supports integration tests using a unit test framework with a test web host and an in-memory test server."
+  <code>WebApplicationFactory&lt;TEntryPoint&gt;</code> "is used to create a TestServer for the integration tests. <code>TEntryPoint</code> is the entry point class of the SUT, usually <code>Program.cs</code>."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0">[1]</a></sup>
+  Ia ada di paket <code>Microsoft.AspNetCore.Mvc.Testing</code> (sudah ada di setup ROADMAP).
+</p>
+
+<pre><code>// Program.cs (paling bawah): class Program implisit dibuat public supaya bisa jadi TEntryPoint
+public partial class Program { }
+
+// Test project
+public class ApiFactory : WebApplicationFactory&lt;Program&gt;
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder) =&gt;
+        builder.ConfigureServices(services =&gt;
+        {
+            // dijalankan SETELAH Program.cs: hapus DbContext SQL Server, daftarkan SQLite in-memory (fake)
+        });
+}
+
+public class ProductsApiTests(ApiFactory factory) : IClassFixture&lt;ApiFactory&gt;
+{
+    [Fact]
+    public async Task Post_InvalidPrice_Returns400()
+    {
+        var client = factory.CreateClient();                         // Arrange: HttpClient ke TestServer
+        var response = await client.PostAsJsonAsync("/api/products",
+            new CreateProductRequest("Mouse", 0, 1, 1));             // Act: request HTTP sungguhan, in-memory
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode); // Assert: status code
+    }
+}</code></pre>
+
+<ul>
+  <li><strong>Kenapa <code>public partial class Program</code>?</strong> Microsoft: "Expose the implicitly defined <code>Program</code> class to the test project", lewat <code>InternalsVisibleTo</code> atau partial class public. <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0">[1]</a></sup></li>
+  <li><strong>Kenapa penggantian DbContext berhasil?</strong> "The test app's <code>builder.ConfigureServices</code> callback is executed <em>after</em> the app's <code>Program.cs</code> code is executed." <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0">[1]</a></sup></li>
+  <li><strong>Ganti satu service untuk satu test saja:</strong> <code>factory.WithWebHostBuilder(b =&gt; b.ConfigureTestServices(...))</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0">[1]</a></sup></li>
+  <li><strong><code>IClassFixture</code></strong> berbagi satu factory untuk semua test di class itu ("provide shared object instances across the tests in the class"). <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0">[1]</a></sup></li>
+</ul>
+<p class="note">
+  Padanan Node: Supertest, <code>request(app).post("/api/products")</code>. Supertest juga tidak butuh server yang sudah listen:
+  "if the server is not already listening for connections then it is bound to an ephemeral port for you". <sup class="cite"><a href="https://github.com/ladjs/supertest">[8]</a></sup>
+  Bedanya, <code>TestServer</code> bahkan tidak membuka port; semuanya in-memory.
+</p>
+
+<h2>4. Apa yang di-mock, apa yang tidak</h2>
+<table>
+  <thead><tr><th>Mock / stub</th><th>Jangan di-mock</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>
+        Batas I/O di unit test: <code>IProductRepository</code>, HTTP client ke layanan lain, jam sistem (<code>IDateTimeProvider</code>).
+        Unit test yang baik itu "Isolated": "no dependencies on any outside factors, such as a file system or database."
+        <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#characteristics-of-good-unit-tests">[2]</a></sup>
+      </td>
+      <td>
+        Entity dan DTO (objek data biasa, pakai yang asli); SUT itu sendiri; method private ("write your tests against the public method")
+        <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices#validate-private-methods-with-public-methods">[2]</a></sup>;
+        dan <code>DbSet</code> untuk query, karena LINQ adalah "static extension method calls over <code>IQueryable</code>".
+        <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#mocking-or-stubbing-dbcontext-and-dbset">[9]</a></sup>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  Untuk database di integration test, dokumentasi EF Core punya urutan saran yang jelas: utamakan database produksi asli (mis. lewat Testcontainers);
+  kalau butuh test double, repository pattern; kalau tidak bisa, SQLite in-memory. Provider EF Core in-memory "is <strong>highly discouraged</strong>".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#summary">[9]</a></sup>
+  ROADMAP memakai SQLite karena cepat disiapkan; trade-off-nya: "testing against SQLite does not guarantee the same results as against SQL Server"
+  (mis. SQLite case-sensitive, SQL Server tidak). <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#sqlite-as-a-database-fake">[9]</a></sup>
+  Menyebut trade-off ini di interview langsung terdengar mid-level.
+</p>
+<p class="note">
+  Ini juga menyambung ke lesson 0011: salah satu argumen <em>pro</em> Repository di atas EF Core adalah kemudahan di-mock, dan dokumentasi EF Core sendiri menyebutnya
+  "the only approach allowing the comprehensive and reliable stubbing/mocking of the data layer", dengan "significant cost". <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy#different-types-of-test-doubles">[9]</a></sup>
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1: Jenis test dan <code>WebApplicationFactory</code></h2>
+  <p>Jawab tanpa scroll ke atas. Soal-soal ini muncul lagi, diacak, di review campuran 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0012-review-hari-2.html">review campuran 0012</a>.</p>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="test-jenis,test-waf" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2: Mock, stub, fake, dan apa yang di-mock</h2>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="test-double,test-mock-apa" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3: Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik untuk tiap pertanyaan dan jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Apa beda Unit Test, Integration Test, dan E2E? Bagaimana Anda menguji API Product Catalog tanpa deploy?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Unit test menguji satu komponen terisolasi, misalnya <code>ProductService</code> dengan <code>IProductRepository</code> di-mock pakai Moq; cepat, dalam milidetik, tanpa database.
+      Integration test memastikan beberapa komponen bekerja sama: pipeline HTTP, Controller, Service, sampai database.
+      E2E menguji dari browser Angular sampai database, paling lambat dan paling rapuh.
+      Itulah testing pyramid: banyak unit test, lebih sedikit integration test, sedikit sekali E2E. Microsoft juga bilang kalau satu perilaku bisa diuji dua cara, pilih unit test.
+      Untuk API saya pakai <code>WebApplicationFactory&lt;Program&gt;</code>: ia menjalankan aplikasi di TestServer in-memory, <code>CreateClient()</code> memberi <code>HttpClient</code>, jadi tanpa deploy.
+      Di <code>ConfigureWebHost</code> saya ganti DbContext ke SQLite in-memory; idealnya SQL Server asli lewat Testcontainers karena dialeknya beda.
+      Di Node padanannya Supertest dengan <code>request(app)</code>."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Unit test: satu komponen terisolasi, dependensi I/O diganti test double, cepat?</li>
+      <li>Integration test: dua komponen atau lebih bekerja sama, termasuk database/pipeline HTTP?</li>
+      <li>E2E: dari UI sampai database, paling lambat dan rapuh?</li>
+      <li>testing pyramid: makin tinggi levelnya makin sedikit jumlahnya; kalau bisa dua-duanya, pilih unit test?</li>
+      <li><code>WebApplicationFactory</code>: TestServer in-memory + <code>CreateClient()</code>, tanpa deploy?</li>
+      <li>mengganti DbContext di <code>ConfigureWebHost</code> (SQLite/Testcontainers) dan menyebut trade-off-nya?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kalau kurang, ulangi besok pagi sebelum review 0012 (spacing).</p>
+  </details>
+
+  <blockquote>"Apa beda mock, stub, dan fake? Apa yang Anda mock dan apa yang tidak?"</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Ketiganya test double, pengganti objek produksi saat test.
+      Stub memberi jawaban siap, misalnya <code>Setup(r =&gt; r.ExistsByNameAsync("Keyboard")).ReturnsAsync(true)</code>, dan saya tidak meng-assert apa pun terhadapnya.
+      Mock diverifikasi: test gagal kalau panggilan yang diharapkan tidak terjadi, misalnya <code>Verify(r =&gt; r.AddAsync(It.IsAny&lt;Product&gt;()), Times.Never)</code>.
+      Jadi bedanya di Assert, bukan di library; objek <code>Mock&lt;T&gt;</code> Moq bisa berperan sebagai stub.
+      Fake punya implementasi kerja dengan jalan pintas, contohnya SQLite in-memory menggantikan SQL Server.
+      Yang saya mock adalah batas I/O: repository, HTTP client ke layanan lain, jam sistem.
+      Yang tidak: Entity dan DTO, SUT-nya sendiri, method private, dan <code>DbSet</code> untuk query karena LINQ adalah extension method statis.
+      Di Jest padanannya <code>jest.fn().mockReturnValue(...)</code> untuk stub dan <code>expect(fn).toHaveBeenCalled()</code> untuk mock."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>test double sebagai istilah umum pengganti objek produksi?</li>
+      <li>Stub: jawaban siap (<code>Setup</code>/<code>Returns</code>), tidak di-assert?</li>
+      <li>Mock: diverifikasi panggilannya (<code>Verify</code>/<code>Times</code>), bedanya di Assert bukan di library?</li>
+      <li>Fake: implementasi kerja dengan jalan pintas (SQLite in-memory)?</li>
+      <li>yang di-mock: batas I/O seperti repository, HTTP client, jam sistem?</li>
+      <li>yang tidak di-mock: Entity/DTO, SUT, method private, <code>DbSet</code> untuk query?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0">Microsoft Learn: Integration tests in ASP.NET Core (.NET 8)</a>.
+  Baca "Introduction to integration tests", "Basic tests with the default WebApplicationFactory", dan "Customize WebApplicationFactory". Untuk istilah test double, lanjut ke
+  <a href="https://martinfowler.com/bliki/TestDouble.html">Martin Fowler: TestDouble</a> (satu halaman).
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/jenis-test.html">Reference: Jenis test dan test double</a> · Siklus TDD: <a href="../reference/red-green-refactor.html">Reference: Red-Green-Refactor</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan saya pakai <code>ConfigureTestServices</code> dibanding <code>ConfigureServices</code>?" atau "bagaimana Testcontainers dipasang di <code>ApiFactory</code>?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests?view=aspnetcore-8.0">[1] Microsoft Learn: Integration tests in ASP.NET Core</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-best-practices">[2] Microsoft Learn: Unit testing best practices for .NET</a> ·
+  <a href="https://martinfowler.com/bliki/TestDouble.html">[3] Martin Fowler: TestDouble</a> ·
+  <a href="https://martinfowler.com/articles/practical-test-pyramid.html">[4] Ham Vocke (martinfowler.com): The Practical Test Pyramid</a> ·
+  <a href="https://martinfowler.com/articles/mocksArentStubs.html">[5] Martin Fowler: Mocks Aren't Stubs</a> ·
+  <a href="https://github.com/devlooped/moq/wiki/Quickstart">[6] Moq Quickstart</a> ·
+  <a href="https://jestjs.io/docs/mock-functions">[7] Jest: Mock Functions</a> ·
+  <a href="https://github.com/ladjs/supertest">[8] SuperTest</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/testing/choosing-a-testing-strategy">[9] Microsoft Learn: EF Core, Choosing a testing strategy</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0009-red-green-refactor.html">← 0009 · Red-Green-Refactor</a>
+  <a href="0011-clean-architecture.html">0011 · Clean Architecture →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

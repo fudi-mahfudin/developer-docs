@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Forms, HttpClient, dan HTTP Interceptor (Angular 16)</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Frontend · Angular 16</div>
+<h1>Forms, HttpClient, dan HTTP Interceptor</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0016-forms-http-interceptor.html">Lesson 0016</a>.</p>
+
+<h2>Reactive vs template-driven</h2>
+<table>
+  <thead><tr><th></th><th>Reactive (<code>ReactiveFormsModule</code>)</th><th>Template-driven (<code>FormsModule</code>)</th></tr></thead>
+  <tbody>
+    <tr><td>Form model</td><td>eksplisit di class (<code>FormGroup</code>, <code>FormControl</code>, <code>FormBuilder</code>)</td><td>implisit, dibuat <code>ngModel</code></td></tr>
+    <tr><td>Data model</td><td>terstruktur, immutable</td><td>tidak terstruktur, mutable (<code>[(ngModel)]</code>)</td></tr>
+    <tr><td>Data flow</td><td>sinkron</td><td>asinkron (tick berikutnya)</td></tr>
+    <tr><td>Validasi</td><td>fungsi (<code>Validators.required</code>, custom = fungsi)</td><td>directive (<code>required</code>, custom = directive)</td></tr>
+    <tr><td>Test</td><td>tanpa render UI</td><td>butuh change detection + <code>fakeAsync</code>/<code>tick</code></td></tr>
+    <tr><td>Pilih kalau</td><td>form besar, dinamis, banyak validasi, perlu diuji</td><td>form kecil (signup email)</td></tr>
+    <tr><td>React</td><td>controlled input / React Hook Form</td><td>–</td></tr>
+  </tbody>
+</table>
+<pre><code>form = this.fb.group({ name: ['', Validators.required], price: [0, Validators.min(0.01)] });
+&lt;form [formGroup]="form" (ngSubmit)="save()"&gt; &lt;input formControlName="name"&gt; …
+form.valueChanges            // Observable: pipe(debounceTime, switchMap…)
+setValue(obj)                // struktur harus lengkap  ·  patchValue(obj) // sebagian</code></pre>
+
+<h2>HttpClient</h2>
+<ul>
+  <li><code>HttpClientModule</code> di <code>AppModule</code>; inject <code>HttpClient</code> ke Angular Service.</li>
+  <li>Semua method mengembalikan Observable cold: tanpa <code>subscribe</code> (atau <code>| async</code>) tidak ada request.</li>
+  <li><code>get&lt;Product[]&gt;()</code> = type assertion compile-time saja. Pakai <code>interface</code>.</li>
+  <li>Error: <code>HttpErrorResponse</code>. Server → status 4xx/5xx; jaringan → <code>status === 0</code>.</li>
+  <li><code>pipe(retry(2), catchError(...))</code>. <code>retry</code> = subscribe ulang = request ulang.</li>
+</ul>
+
+<h2>HTTP Interceptor</h2>
+<pre><code>@Injectable()
+export class AuthInterceptor implements HttpInterceptor {
+  intercept(req: HttpRequest&lt;unknown&gt;, next: HttpHandler) {
+    const authReq = req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
+    return next.handle(authReq).pipe(catchError(e =&gt; { /* 401 → login */ return throwError(() =&gt; e); }));
+  }
+}
+providers: [{ provide: HTTP_INTERCEPTORS, useClass: AuthInterceptor, multi: true }]</code></pre>
+<table>
+  <thead><tr><th>Aturan</th><th>Kenapa</th></tr></thead>
+  <tbody>
+    <tr><td><code>req.clone(...)</code>, jangan ubah <code>req</code></td><td><code>HttpRequest</code> readonly; retry harus melihat request yang sama</td></tr>
+    <tr><td>Panggil <code>next.handle(req)</code></td><td>teruskan ke interceptor berikutnya; terakhir <code>HttpBackend</code></td></tr>
+    <tr><td><code>multi: true</code></td><td>token berisi array interceptor; sediakan di injector yang sama dengan <code>HttpClientModule</code></td></tr>
+    <tr><td>Urutan = urutan provider</td><td>request A → B, response B → A; tidak bisa diubah setelahnya</td></tr>
+    <tr><td>Kegunaan</td><td>header auth, logging/timing, cache, error global (401), XSRF</td></tr>
+  </tbody>
+</table>
+<p>Versi fungsi (standalone): <code>HttpInterceptorFn</code> + <code>provideHttpClient(withInterceptors([...]))</code>, boleh <code>inject()</code>.</p>
+<p>Padanan: Axios <code>interceptors.request/response.use</code> (React) · Express middleware <code>next()</code> (backend). Glosarium: <strong>HTTP Interceptor</strong>, bukan "middleware".</p>
+
+<h2>Sumber</h2>
+<ul>
+  <li><a href="https://v16.angular.io/guide/forms-overview">Angular v16: Introduction to forms</a> · <a href="https://v16.angular.io/guide/reactive-forms">Reactive forms</a></li>
+  <li><a href="https://v16.angular.io/guide/http-request-data-from-server">Request data from a server</a> · <a href="https://v16.angular.io/guide/http-handle-request-errors">Handle request errors</a></li>
+  <li><a href="https://v16.angular.io/guide/http-intercept-requests-and-responses">Intercept requests and responses</a> · <a href="https://v16.angular.io/guide/http-interceptor-use-cases">Interceptor use-cases</a></li>
+</ul>
+</main>
+</body>
+</html>

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0003 · async/Task dan LINQ: IEnumerable vs IQueryable, deferred execution</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0003 · Fondasi C# · ±14 menit</div>
+  <h1>Task, await, dan kapan query benar-benar jalan</h1>
+  <p class="subtitle"><code>Task</code> vs <code>Promise</code>, bahaya <code>.Result</code> dan <code>async void</code>, <code>IEnumerable</code> vs <code>IQueryable</code>, deferred execution</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Kenapa query EF Core di Service Anda ditulis <code>await _db.Products.Where(...).ToListAsync()</code>, bukan <code>.ToList()</code> atau <code>.ToListAsync().Result</code>?"</em>
+  dalam 60 detik. Satu baris itu memuat dua konsep: async/await dan deferred execution.
+</div>
+
+<h2>1. <code>Task&lt;T&gt;</code> = <code>Promise&lt;T&gt;</code></h2>
+<p>
+  Di TS, <code>async function getById(): Promise&lt;Product&gt;</code>. Di C#, <code>async Task&lt;Product&gt; GetByIdAsync()</code>.
+  <code>Task</code> mewakili "the ongoing work"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/">[1]</a></sup>,
+  sama seperti Promise yang mewakili "the eventual completion (or failure) of an asynchronous operation"
+  <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise">[2]</a></sup>.
+  <code>Task</code> tanpa nilai = <code>Promise&lt;void&gt;</code>.
+</p>
+
+<table>
+  <thead><tr><th></th><th>C#</th><th>TypeScript</th></tr></thead>
+  <tbody>
+    <tr><td>Tipe</td><td><code>Task</code>, <code>Task&lt;T&gt;</code></td><td><code>Promise&lt;void&gt;</code>, <code>Promise&lt;T&gt;</code></td></tr>
+    <tr><td>Sudah jalan saat dipanggil?</td><td>Ya, task dari method async selalu "hot" <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/standard/asynchronous-programming-patterns/task-based-asynchronous-pattern-tap#task-status">[3]</a></sup></td><td>Ya, "processes that are already happening" <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise">[2]</a></sup></td></tr>
+    <tr><td>Tunggu banyak</td><td><code>await Task.WhenAll(a, b)</code></td><td><code>await Promise.all([a, b])</code></td></tr>
+    <tr><td>Exception</td><td>Disimpan di task, dilempar ulang saat <code>await</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/#handle-asynchronous-exceptions">[1]</a></sup></td><td>Promise rejected, dilempar saat <code>await</code></td></tr>
+    <tr><td>Konvensi nama</td><td>Akhiran <code>Async</code>: <code>GetByIdAsync</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/standard/asynchronous-programming-patterns/task-based-asynchronous-pattern-tap#naming-parameters-and-return-types">[3]</a></sup></td><td>Tidak ada</td></tr>
+  </tbody>
+</table>
+
+<p>
+  Kenapa backend perlu async? "The <code>await</code> keyword provides a nonblocking way to start a task, then continue execution when the task completes."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/#dont-block-await-instead">[1]</a></sup>
+  Selama query database berjalan, thread dikembalikan ke pool dan bisa melayani request lain.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/async">[4]</a></sup>
+  Bagi Anda yang dari Node ini terasa biasa. Bedanya, C# menyediakan dua jalan pintas yang tidak ada di JS, dan keduanya jebakan.
+</p>
+
+<h2>2. Dua jebakan: <code>.Result</code> dan <code>async void</code></h2>
+
+<h3>a. <code>.Result</code> / <code>.Wait()</code>: menunggu sambil memblokir</h3>
+<p>
+  JS tidak punya cara untuk menunggu Promise secara sinkron. C# punya: "The Result property is a blocking property. [...] the thread that's currently active is blocked until the task completes."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-return-types#taskt-return-type">[5]</a></sup>
+  Panduan ASP.NET Core tegas: "<strong>Do not</strong> block asynchronous execution by calling Task.Wait or Task&lt;TResult&gt;.Result",
+  karena "Many synchronous blocking calls lead to Thread Pool starvation and degraded response times."
+  Solusinya: "The entire call stack is asynchronous", dari action Controller sampai Repository.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0#avoid-blocking-calls">[6]</a></sup>
+</p>
+
+<pre><code>// ❌ memblokir thread request
+public IActionResult GetAll() =&gt; Ok(_service.GetAllAsync().Result);
+
+// ✅ async dari atas sampai bawah
+public async Task&lt;IActionResult&gt; GetAll() =&gt; Ok(await _service.GetAllAsync());</code></pre>
+
+<h3>b. <code>async void</code>: tidak bisa di-await, exception tidak bisa ditangkap</h3>
+<p>
+  <code>void</code> sebagai return type async hanya untuk event handler. "For methods other than event handlers that don't return a value, you should return a Task instead,
+  because an async method that returns void can't be awaited." Lebih parah: "The caller of a void-returning async method can't catch exceptions thrown from the method.
+  Such unhandled exceptions are likely to cause your application to fail."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-return-types#void-return-type">[5]</a></sup>
+  Di ASP.NET Core, Microsoft menyebut "Using <code>async void</code> is <strong>ALWAYS</strong> a bad practice": request dianggap selesai pada <code>await</code> pertama.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0#do-not-use-the-httpcontext-after-the-request-is-complete">[6]</a></sup>
+  Padanan Node: memanggil fungsi async tanpa <code>await</code> dan tanpa <code>.catch</code>, lalu mendapat unhandled rejection.
+</p>
+
+<p class="note">
+  Satu aturan EF Core lagi: "EF Core doesn't support multiple parallel operations being run on the same context instance", jadi selalu <code>await</code> setiap operasi
+  sebelum memulai yang berikutnya. Jangan <code>Task.WhenAll</code> dua query di atas DbContext yang sama.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/async">[4]</a></sup>
+</p>
+
+<h2>3. Deferred execution: membuat query ≠ menjalankan query</h2>
+<p>
+  "In LINQ, the execution of the query is distinct from the query itself. In other words, you don't retrieve any data by creating a query variable."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/introduction-to-linq-queries#three-parts-of-a-query-operation">[7]</a></sup>
+  Operator yang mengembalikan sequence (<code>Where</code>, <code>Select</code>, <code>OrderBy</code>, <code>Skip</code>, <code>Take</code>) bersifat deferred.
+  Operator yang mengembalikan satu nilai (<code>Count</code>, <code>First</code>, <code>Single</code>, <code>Any</code>, <code>Max</code>) serta <code>ToList</code>/<code>ToArray</code> langsung mengeksekusi.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/introduction-to-linq-queries#classification-of-standard-query-operators-by-manner-of-execution">[7]</a></sup>
+</p>
+
+<p>
+  Untuk EF Core: "When you call LINQ operators, you're simply building up an in-memory representation of the query. The query is only sent to the database when the results are consumed."
+  Pemicu yang paling umum: iterasi dengan <code>foreach</code>, atau "an operator such as <code>ToList</code>, <code>ToArray</code>, <code>Single</code>, <code>Count</code>, or the equivalent async overloads".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/how-query-works#when-queries-are-executed">[8]</a></sup>
+</p>
+
+<pre><code>var q = _db.Products                    // IQueryable&lt;Product&gt;: belum ada SQL
+    .Where(p =&gt; p.Stock &gt; 0)
+    .OrderBy(p =&gt; p.Name);              // masih belum ada SQL
+
+var list = await q.ToListAsync();       // ⬅ SQL dikirim DI SINI
+var ada  = await q.AnyAsync();          // ⬅ SQL kedua (query dijalankan ulang)</code></pre>
+
+<p>
+  Itu juga sebabnya tidak ada <code>WhereAsync</code>: <code>Where</code> dan <code>OrderBy</code> "only build up the LINQ expression tree and don't cause the query to be executed in the database.
+  Only operators which cause query execution have async counterparts."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/async#async-linq-operators">[4]</a></sup>
+  Padanan Node: query builder seperti Knex atau Prisma yang belum mengirim apa-apa sampai Anda <code>await</code>, atau generator JS yang baru jalan saat <code>next()</code>.
+</p>
+
+<h2>4. <code>IEnumerable&lt;T&gt;</code> vs <code>IQueryable&lt;T&gt;</code></h2>
+<p>
+  <code>IQueryable&lt;T&gt;</code> mewarisi <code>IEnumerable&lt;T&gt;</code>.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/introduction-to-linq-queries#the-data-source">[7]</a></sup>
+  Bedanya ada pada apa yang disimpan: query <code>IQueryable</code> "is represented as an expression tree", dan provider-nya menerjemahkan tree itu,
+  misalnya "translating the expression tree to a query language appropriate for an underlying data source".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.iqueryable-1?view=net-8.0#remarks">[9]</a></sup>
+  Lambda pada <code>IEnumerable</code> menjadi delegate biasa yang jalan di memori; lambda pada <code>IQueryable</code> menjadi expression tree yang EF Core terjemahkan ke SQL.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/advanced-topics/expression-trees/">[10]</a></sup>
+</p>
+
+<table>
+  <thead><tr><th></th><th><code>IEnumerable&lt;T&gt;</code></th><th><code>IQueryable&lt;T&gt;</code></th></tr></thead>
+  <tbody>
+    <tr><td>Lambda menjadi</td><td>delegate (<code>Func&lt;T,bool&gt;</code>)</td><td>expression tree (<code>Expression&lt;Func&lt;T,bool&gt;&gt;</code>)</td></tr>
+    <tr><td>Dijalankan di</td><td>memori .NET (LINQ to Objects)</td><td>sumber data, lewat provider (SQL Server)</td></tr>
+    <tr><td>Deferred?</td><td>Ya</td><td>Ya</td></tr>
+    <tr><td>Contoh</td><td><code>List&lt;T&gt;</code>, array, hasil <code>ToList()</code></td><td><code>DbSet&lt;Product&gt;</code>, <code>_db.Products.Where(...)</code></td></tr>
+    <tr><td>Padanan Node</td><td><code>array.filter(...)</code></td><td><code>prisma.product.findMany({ where })</code></td></tr>
+  </tbody>
+</table>
+
+<p class="note">
+  Jebakan yang sering ditanyakan: begitu query menjadi <code>IEnumerable</code>, misalnya lewat <code>AsEnumerable()</code>, <code>ToList()</code>, atau Repository yang mengembalikan <code>IEnumerable&lt;Product&gt;</code>,
+  operator berikutnya jalan di .NET, bukan di database. EF Core menyebut <code>AsEnumerable</code>/<code>ToList</code> sebagai cara "explicitly opt into client evaluation",
+  dan memperingatkan bahwa "all the data needs to be pulled into memory".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval#explicit-client-evaluation">[11]</a></sup>
+  Aturan praktis: <code>Where</code>, <code>Select</code>, dan paging selagi masih <code>IQueryable</code>, lalu baru <code>ToListAsync()</code>.
+  Microsoft: "<strong>Do</strong> filter and aggregate LINQ queries [...] so that the filtering is performed by the database."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0#optimize-data-access-and-io">[6]</a></sup>
+</p>
+
+<pre><code>// ❌ SELECT * FROM Products, lalu filter di memori
+IEnumerable&lt;Product&gt; semua = _db.Products;
+var mahal = semua.Where(p =&gt; p.Price &gt; 100).ToList();
+
+// ✅ SELECT ... WHERE Price &gt; 100
+var mahal = await _db.Products.Where(p =&gt; p.Price &gt; 100).ToListAsync();</code></pre>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Kapan jalan, apa yang terjadi?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review campuran 0007.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0007-review-hari-1.html">review campuran 0007</a>.</p>
+  <div class="quiz" data-bank-lesson="0003" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 60 detik dan jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Kenapa query EF Core di Service Anda ditulis <code>await _db.Products.Where(...).ToListAsync()</code>, bukan <code>.ToList()</code> atau <code>.ToListAsync().Result</code>?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "<code>Where</code> belum menjalankan apa-apa: ia hanya membangun <code>IQueryable</code>, yaitu expression tree. Itu deferred execution, mirip query builder yang baru jalan saat di-<code>await</code> di Node.
+      Query baru dikirim ke database saat hasilnya dikonsumsi, misalnya lewat <code>ToList</code>, <code>Single</code>, <code>Count</code>, <code>foreach</code>, atau versi async-nya.
+      Karena masih <code>IQueryable</code>, EF Core menerjemahkan filter ke <code>WHERE</code> di SQL.
+      <code>ToListAsync</code> dipakai karena I/O database tidak memblokir thread; selama menunggu, thread bisa melayani request lain.
+      <code>.Result</code> atau <code>.Wait()</code> memblokir thread, dan di ASP.NET Core itu bisa menyebabkan thread pool starvation.
+      Jadi seluruh call stack saya buat async, dari Controller sampai Repository, mirip <code>async</code>/<code>await</code> di Express."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li><code>Where</code> hanya membangun <code>IQueryable</code>/expression tree, belum mengeksekusi (deferred execution)?</li>
+      <li>query dikirim saat hasil dikonsumsi: <code>ToList</code>/<code>Single</code>/<code>Count</code>/<code>foreach</code> (atau versi async)?</li>
+      <li>karena <code>IQueryable</code>, filter diterjemahkan ke SQL dan dijalankan di database?</li>
+      <li><code>ToListAsync</code> + <code>await</code> tidak memblokir thread selama I/O database?</li>
+      <li><code>.Result</code>/<code>.Wait()</code> memblokir thread dan bisa menyebabkan thread pool starvation?</li>
+      <li>seluruh call stack async (Controller sampai Repository), dengan padanan Promise/await di Node?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kalau kurang, ulangi besok pagi sebelum lesson berikutnya (spacing).
+      Review 0007 juga bisa menanyakan "IEnumerable vs IQueryable" dan "Task vs Promise, <code>.Result</code>, <code>async void</code>" secara lisan, dengan checklist yang sama gayanya.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/how-query-works">Microsoft Learn: How Queries Work (EF Core)</a> bagian "When queries are executed",
+  lalu <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0#avoid-blocking-calls">ASP.NET Core Best Practices</a> bagian "Avoid blocking calls".
+  Kalau masih ada waktu, contoh sarapan di <a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/">Asynchronous programming with async and await</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/async-dan-linq.html">Reference: async/Task dan LINQ</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa bedanya <code>Task.WhenAll</code> dengan menjalankan dua query di DbContext yang sama?" atau "kalau Repository saya mengembalikan <code>IQueryable</code>, apa untung-ruginya?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/">[1] Asynchronous programming (C#)</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise">[2] MDN: Promise</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/standard/asynchronous-programming-patterns/task-based-asynchronous-pattern-tap">[3] Task-based Asynchronous Pattern</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/miscellaneous/async">[4] EF Core: Asynchronous Programming</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-return-types">[5] Async return types</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/best-practices?view=aspnetcore-8.0">[6] ASP.NET Core Best Practices</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/linq/get-started/introduction-to-linq-queries">[7] Introduction to LINQ Queries</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/how-query-works">[8] EF Core: How Queries Work</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/api/system.linq.iqueryable-1?view=net-8.0">[9] IQueryable&lt;T&gt;</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/advanced-topics/expression-trees/">[10] Expression Trees</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/client-eval">[11] EF Core: Client vs. Server Evaluation</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0002-csharp-untuk-dev-ts.html">← 0002 · C# untuk developer TS</a>
+  <a href="0004-service-lifetime.html">0004 · Service Lifetime →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

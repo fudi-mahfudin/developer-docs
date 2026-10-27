@@ -26,7 +26,7 @@
 <p class="note">
   Versi yang dipakai: <strong>SMART App Launch IG v2.2.0 (STU 2.2)</strong>, versi terbit saat ini, berbasis FHIR R4 (4.0.1). <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/">[0]</a></sup>
   Dasar OAuth2/JWT, 401 vs 403, CORS, dan <code>localStorage</code> vs cookie <code>HttpOnly</code> tidak diulang di sini; kalau perlu penyegaran, lihat
-  <a href="../../lessons/0017-fullstack-auth-cors-error.html">lesson 0017 (track .NET)</a>. Fokus lesson ini hanya yang khas SMART.
+  <a href="../../dotnet/lessons/0017-fullstack-auth-cors-error.html">lesson 0017 (track .NET)</a>. Fokus lesson ini hanya yang khas SMART.
 </p>
 
 <h2>1. Peta besar: SMART = OAuth 2.0 yang diprofilkan untuk FHIR</h2>
@@ -286,7 +286,7 @@ export function Vitals() {
 <ul>
   <li><strong>Penyimpanan token.</strong> App SHALL NOT menyimpan bearer token di cookie yang dikirim sebagai clear text, dan SHOULD menyimpan token di storage khusus app, bukan lokasi yang bisa ditemukan sistem. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#app-protection">[1]</a></sup>
     <code>fhirclient</code> di browser menyimpan state-nya (termasuk token response) di <code>sessionStorage</code>. <sup class="cite"><a href="https://github.com/smart-on-fhir/client-js/blob/master/src/storage/BrowserStorage.ts">[11]</a></sup>
-    Itu hilang saat tab ditutup, tapi tetap terbaca oleh script hasil XSS, sama seperti <code>localStorage</code> (lihat <a href="../../lessons/0017-fullstack-auth-cors-error.html">0017</a>).</li>
+    Itu hilang saat tab ditutup, tapi tetap terbaca oleh script hasil XSS, sama seperti <code>localStorage</code> (lihat <a href="../../dotnet/lessons/0017-fullstack-auth-cors-error.html">0017</a>).</li>
   <li><strong>Public vs confidential.</strong> Data di backend memberi binding refresh token yang lebih kuat, tapi kebocoran server bisa mengenai banyak user; app murni di perangkat lebih rentan per device. Pilih berdasarkan konteks. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/best-practices.html">[12]</a></sup>
     Dalam interview, sebut opsi backend-for-frontend (React → backend Node sebagai confidential client) bila butuh akses panjang.</li>
   <li><strong>Jangan bocorkan token.</strong> Jangan ikuti <code>reference</code> ke server lain sambil membawa access token; abaikan atau minta akses baru. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#access-fhir-api">[1]</a></sup>

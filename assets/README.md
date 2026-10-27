@@ -6,17 +6,17 @@ Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetc
 |---|---|
 | `style.css` | Stylesheet bersama untuk lesson, reference, dan indeks (termasuk aturan cetak). |
 | `quiz.js` | Kuis pilihan ganda dari markup `.quiz > .q` (skor + tombol Ulangi). Tidak berubah. |
-| `bank.js` | Bank soal bersama: global `QuestionBank` (logic murni, diuji di `tests/bank.test.js`). |
-| `questions/NNNN.js` | **Satu file per lesson** yang mendaftarkan soal lesson itu ke bank. |
+| `bank.js` | Bank soal bersama: global `QuestionBank` (logic murni, diuji di `tests/shared/bank.test.js`). |
+| `<track>/assets/questions/NNNN.js` | **Satu file per lesson** yang mendaftarkan soal lesson itu ke bank. Ada di folder track (`dotnet/`, `fhir/`), bukan di sini. |
 | `bank-quiz.js` | Merender soal kuis dari bank ke markup `quiz.js` di halaman lesson. |
 | `review.js` | Review campuran: tarik + acak soal dari beberapa lesson/topik, ringkasan per topik. |
-| `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/order.test.js`. |
+| `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/shared/order.test.js`. |
 | `hands-on.js` | Komponen hands-on lesson database (0019+): blok skrip `.sql` dengan tombol copy, dan latihan tulis query dengan jawaban di balik tombol "Lihat jawaban". Contoh: `assets/examples/hands-on-example.html`. |
-| `timer.js` | Timer bersegmen untuk latihan dibatasi waktu: `<div class="timer" data-segments="Konsep:20,Live coding:25,STAR:15">`. Mulai/Jeda/Reset, segmen berganti otomatis, tersembunyi saat dicetak. Logic diuji di `tests/timer.test.js`. Contoh: lesson 0018. |
+| `timer.js` | Timer bersegmen untuk latihan dibatasi waktu: `<div class="timer" data-segments="Konsep:20,Live coding:25,STAR:15">`. Mulai/Jeda/Reset, segmen berganti otomatis, tersembunyi saat dicetak. Logic diuji di `tests/shared/timer.test.js`. Contoh: lesson 0018. |
 
-## Format soal (`assets/questions/NNNN.js`)
+## Format soal (`<track>/assets/questions/NNNN.js`)
 
-Setiap lesson membuat file sendiri, bernama nomor lesson-nya (mis. `assets/questions/0004.js`). Jangan mengedit file lesson lain, supaya branch paralel tidak bentrok.
+Setiap lesson membuat file sendiri, bernama nomor lesson-nya (mis. `dotnet/assets/questions/0004.js`). Jangan mengedit file lesson lain, supaya branch paralel tidak bentrok.
 
 ```js
 QuestionBank.labelTopics({ "di-lifetime": "Service Lifetime" }); // slug topik -> label tampilan
@@ -45,17 +45,17 @@ QuestionBank.register([
 
 ## Halaman lesson: kuis dari bank
 
-Tulis soal sekali di `questions/NNNN.js`, lalu render di lesson (urutan sesuai registrasi):
+Tulis soal sekali di `<track>/assets/questions/NNNN.js`, lalu render di lesson (urutan sesuai registrasi):
 
 ```html
 <div class="quiz" data-bank-lesson="0004"></div>
 <div class="quiz" data-bank-lesson="0004" data-bank-topic="di-captive" data-stack></div> <!-- filter topik, opsi vertikal -->
 <div class="quiz" data-bank-lesson="0015" data-bank-topic="rx-subject,rx-unsubscribe"></div> <!-- beberapa topik, dipisah koma -->
 
-<script src="../assets/bank.js"></script>
+<script src="../../assets/bank.js"></script>
 <script src="../assets/questions/0004.js"></script>
-<script src="../assets/bank-quiz.js"></script>
-<script src="../assets/quiz.js"></script>   <!-- harus setelah bank-quiz.js -->
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>   <!-- harus setelah bank-quiz.js -->
 ```
 
 Soal `oral` tidak dirender oleh `bank-quiz.js`; latihan lisan di lesson tetap ditulis sebagai `<details>` + checklist seperti 0001, tapi daftarkan juga ke bank supaya bisa ditarik review.
@@ -72,17 +72,17 @@ Tulis item dalam urutan **benar**; komponen mengacaknya saat halaman dibuka (tid
   </ol>
   <p class="explain">Muncul setelah urutan benar atau setelah "Lihat jawaban".</p>
 </div>
-<script src="../assets/order.js"></script>
+<script src="../../assets/order.js"></script>
 ```
 
 Latihan urutan tidak masuk bank soal (bank hanya `mc`/`oral`); ubah materinya menjadi soal `mc` kalau perlu ditarik review.
 
 ## Hands-on database (`hands-on.js`, lesson 0019+)
 
-Skrip lab ada di `lab/` (root): `lab/00-setup-product-catalog-lab.sql` (setup/reset `ProductCatalogLab`) dan `lab/NNNN-*.sql` per lesson. **File `.sql` adalah sumber kebenaran**: lesson menampilkan isinya sama persis (HTML-escaped: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`). `data-file` ditulis relatif ke root repo.
+Skrip lab ada di `dotnet/lab/`: `dotnet/lab/00-setup-product-catalog-lab.sql` (setup/reset `ProductCatalogLab`) dan `dotnet/lab/NNNN-*.sql` per lesson. **File `.sql` adalah sumber kebenaran**: lesson menampilkan isinya sama persis (HTML-escaped: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`). `data-file` ditulis relatif ke root repo.
 
 ```html
-<pre class="script" data-file="lab/0019-sql-dasar.sql"><code>SELECT …</code></pre>
+<pre class="script" data-file="dotnet/lab/0019-sql-dasar.sql"><code>SELECT …</code></pre>
 
 <div class="sql-exercise">
   <p class="prompt">Tulis query untuk 3 Product termahal per Category.</p>
@@ -91,10 +91,10 @@ Skrip lab ada di `lab/` (root): `lab/00-setup-product-catalog-lab.sql` (setup/re
   </details>
 </div>
 
-<script src="../assets/hands-on.js"></script>
+<script src="../../assets/hands-on.js"></script>
 ```
 
-Latihan tulis query tidak dinilai otomatis dan tidak masuk bank soal. Test lesson memeriksa blok skrip lewat `assertScriptsMatchFiles("lessons/0019-….html", { min: 1 })` dari `tests/helpers.js` (contoh: `tests/hands-on.test.js`).
+Latihan tulis query tidak dinilai otomatis dan tidak masuk bank soal. Test lesson memeriksa blok skrip lewat `assertScriptsMatchFiles("dotnet/lessons/0019-….html", { min: 1 })` dari `tests/helpers.js` (contoh: `tests/shared/hands-on.test.js`).
 
 ## Halaman review (0007, 0012, 0018)
 
@@ -102,10 +102,10 @@ Latihan tulis query tidak dinilai otomatis dan tidak masuk bank soal. Test lesso
 <div class="review" data-title="Review 0007" data-lessons="0001,0002,0003,0004,0005,0006"
      data-topics="" data-mc="12" data-oral="3"></div>
 
-<script src="../assets/bank.js"></script>
+<script src="../../assets/bank.js"></script>
 <script src="../assets/questions/0001.js"></script>
 <!-- … satu <script> per lesson sumber (juga lesson asal topik di data-topics) … -->
-<script src="../assets/review.js"></script>
+<script src="../../assets/review.js"></script>
 ```
 
 - `data-lessons`: lesson sumber. `data-topics`: topik tambahan (mis. topik lemah dari review sebelumnya, untuk pengulangan berjarak). Soal diambil kalau lesson **atau** topiknya cocok.
@@ -113,14 +113,14 @@ Latihan tulis query tidak dinilai otomatis dan tidak masuk bank soal. Test lesso
 - Seed tampil di halaman. `?seed=123` di URL mengulang set yang sama. Tombol "Acak ulang" membuat set baru.
 - Setelah semua soal dijawab, tampil tabel skor per topik dan teks siap salin (`Topik lemah: …`) untuk ditempel ke agent. Status per topik (`QuestionBank.STATUS`): **Lemah** = ada soal yang salah atau lisan di bawah 2/3 checklist; **Lulus** = semua kuis topik itu benar **dan** ada soal lisan yang lulus; **Kuis lulus, lisan belum diuji** = kuis benar tapi tidak ada soal lisan topik itu yang ditarik (bukan bukti lulus, ditulis di baris tersendiri di teks salin).
 
-## Indeks (`index.html` di root)
+## Indeks (`<track>/index.html`)
 
 Satu baris `<li>` per lesson. Saat lesson selesai, ganti hanya baris lesson itu dari `class="segera"` + `<span class="title">` menjadi `class="tersedia"` + `<a class="title" href="lessons/NNNN-slug.html">`. Biarkan baris kosong di antara `<li>` (supaya merge paralel tidak bentrok).
 
 ## Test
 
 ```sh
-node --test      # dari root repo; menjalankan tests/*.test.js, tanpa npm
+node --test      # dari root repo; menjalankan semua *.test.js di tests/{shared,dotnet,fhir}/, tanpa npm
 ```
 
-Test bank soal per lesson (`tests/questions-NNNN.test.js`) dan review (`tests/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal ke bank baru, `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`), dan untuk lesson database `scriptBlocks(html)` / `assertScriptsMatchFiles(html, { min })` (blok skrip identik dengan file `.sql`-nya). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.
+Test bank soal per lesson (`tests/<track>/questions-NNNN.test.js`) dan review (`tests/<track>/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal track .NET ke bank baru (`forTrack("fhir")` untuk track lain), `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`), dan untuk lesson database `scriptBlocks(html)` / `assertScriptsMatchFiles(html, { min })` (blok skrip identik dengan file `.sql`-nya). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.

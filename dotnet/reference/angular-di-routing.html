@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Angular 16 Service, DI, routing, dan guard</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Frontend · Angular 16</div>
+<h1>Angular 16: Service, DI, routing, dan guard</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0014-angular-di-routing.html">Lesson 0014</a>. Lanjutan dari <a href="angular-dasar.html">Angular dasar</a>.</p>
+
+<h2>Angular Service + inject</h2>
+<pre><code>@Injectable({ providedIn: 'root' })
+export class ProductService { constructor(private http: HttpClient) {} }
+
+constructor(private products: ProductService) {}   // inject lewat tipe
+private products = inject(ProductService);          // atau fungsi inject()</code></pre>
+
+<h2>Di mana provider ditulis</h2>
+<table>
+  <thead><tr><th>Tempat</th><th>Instance</th><th>Padanan</th></tr></thead>
+  <tbody>
+    <tr><td><code>providedIn: 'root'</code></td><td>satu, bersama; tree-shakable (pilihan default)</td><td>Provider di <code>&lt;App/&gt;</code>; Singleton .NET</td></tr>
+    <tr><td><code>@NgModule providers</code></td><td>satu per <code>ModuleInjector</code> (modul lazy = injector anak)</td><td>gaya sebelum v6</td></tr>
+    <tr><td><code>@Component providers</code></td><td>satu per instance component, mati bersamanya</td><td><code>&lt;Ctx.Provider&gt;</code> di component itu</td></tr>
+  </tbody>
+</table>
+
+<h2>Resolusi (DI hierarkis)</h2>
+<p><code>ElementInjector</code> component → parent → … → <code>ModuleInjector</code> (root) → platform → <code>NullInjector</code> (error, kecuali <code>@Optional()</code>). Provider pertama yang ditemukan menang, seperti <code>useContext</code> membaca Provider terdekat. Modifier: <code>@Optional</code>, <code>@Self</code>, <code>@SkipSelf</code>, <code>@Host</code>.</p>
+
+<h2>Routing</h2>
+<pre><code>const routes: Routes = [
+  { path: 'products', component: ProductListComponent },
+  { path: 'products/:id', component: ProductDetailComponent },
+  { path: 'admin', canMatch: [authGuard], canActivate: [authGuard],
+    loadChildren: () =&gt; import('./admin/admin.module').then(m =&gt; m.AdminModule) },
+  { path: '', redirectTo: 'products', pathMatch: 'full' },
+  { path: '**', component: PageNotFoundComponent },   // terakhir: first-match wins
+];
+imports: [RouterModule.forRoot(routes)]   // root;  modul fitur: RouterModule.forChild(routes)</code></pre>
+<table>
+  <thead><tr><th>Angular</th><th>React Router</th></tr></thead>
+  <tbody>
+    <tr><td><code>routerLink="/products"</code></td><td><code>&lt;Link to&gt;</code></td></tr>
+    <tr><td><code>&lt;router-outlet&gt;</code></td><td><code>&lt;Outlet /&gt;</code></td></tr>
+    <tr><td><code>ActivatedRoute.snapshot.paramMap.get('id')</code> / <code>paramMap.pipe(...)</code></td><td><code>useParams()</code></td></tr>
+    <tr><td><code>router.navigate(['/products', id])</code></td><td><code>navigate()</code></td></tr>
+    <tr><td><code>loadChildren</code> + <code>import()</code></td><td><code>React.lazy</code></td></tr>
+  </tbody>
+</table>
+<p>Lazy loading: hapus modul dari <code>imports</code> <code>AppModule</code>, kalau tidak ia ikut bundle awal.</p>
+
+<h2>Guard</h2>
+<pre><code>export const authGuard: CanActivateFn = () =&gt; {
+  const auth = inject(AuthService), router = inject(Router);
+  return auth.isLoggedIn ? true : router.parseUrl('/login');
+};</code></pre>
+<table>
+  <thead><tr><th>Return</th><th>Efek</th></tr></thead>
+  <tbody>
+    <tr><td><code>true</code></td><td>navigasi lanjut</td></tr>
+    <tr><td><code>false</code></td><td>berhenti, user tetap di tempat</td></tr>
+    <tr><td><code>UrlTree</code></td><td>batal + navigasi baru (redirect)</td></tr>
+    <tr><td><code>Observable</code> / <code>Promise</code></td><td>router menunggu nilai pertama</td></tr>
+  </tbody>
+</table>
+<p><code>canActivate</code> masuk route · <code>canActivateChild</code> masuk child · <code>canDeactivate</code> keluar route · <code>resolve</code> ambil data sebelum aktif · <code>canMatch</code> route dipakai atau tidak (dicek sebelum modul lazy dimuat; <code>canLoad</code> deprecated).</p>
+
+<h2>Jebakan interview</h2>
+<ol>
+  <li>Service di <code>providers</code> module yang juga di-import modul lazy → dua instance. Pakai <code>providedIn: 'root'</code>.</li>
+  <li><code>RouterModule.forRoot</code> di modul fitur → seharusnya <code>forChild</code> (hanya boleh satu <code>Router</code>).</li>
+  <li>Wildcard <code>**</code> di atas route lain → route lain tidak pernah cocok.</li>
+  <li>Menulis guard baru sebagai <code>class … implements CanActivate</code> → deprecated di v16; pakai <code>CanActivateFn</code>.</li>
+  <li>Hanya <code>canActivate</code> di route lazy → bundle tetap terunduh; tambah <code>canMatch</code>.</li>
+  <li>Guard dianggap keamanan → guard hanya navigasi di browser; otorisasi tetap di API.</li>
+</ol>
+
+<p class="note">Sumber: <a href="https://v16.angular.io/guide/dependency-injection">Understanding DI</a> · <a href="https://v16.angular.io/guide/hierarchical-dependency-injection">Hierarchical injectors</a> · <a href="https://v16.angular.io/guide/singleton-services">Singleton services</a> · <a href="https://v16.angular.io/guide/router">Common routing tasks</a> · <a href="https://v16.angular.io/guide/lazy-loading-ngmodules">Lazy loading</a> · <a href="https://v16.angular.io/guide/router-tutorial-toh#milestone-5-route-guards">Route guards</a> · <a href="https://v16.angular.io/api/router/CanActivate">CanActivate (deprecated)</a> (dokumentasi Angular v16)</p>
+</main>
+</body>
+</html>

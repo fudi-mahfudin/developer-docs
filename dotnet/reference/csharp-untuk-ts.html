@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · C# untuk developer TypeScript</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Fondasi C#</div>
+<h1>C# untuk developer TypeScript</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0002-csharp-untuk-dev-ts.html">Lesson 0002</a>.</p>
+
+<h2>Memilih jenis tipe <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/#choose-which-kind-of-type">[1]</a></sup></h2>
+<table>
+  <thead><tr><th>Deklarasi</th><th>Semantik</th><th><code>==</code> membandingkan</th><th>Pakai untuk</th><th>Padanan TS</th></tr></thead>
+  <tbody>
+    <tr><td><code>class</code></td><td>reference</td><td>referensi</td><td>Perilaku, state berubah, <strong>Entity</strong>, Service, Controller</td><td><code>class</code> / object</td></tr>
+    <tr><td><code>struct</code></td><td>value (disalin)</td><td>tidak ada <code>==</code> bawaan</td><td>Data kecil (±64 byte)</td><td>seperti <code>number</code></td></tr>
+    <tr><td><code>record</code></td><td>reference</td><td>nilai properti</td><td><strong>DTO</strong>, data immutable</td><td><code>Readonly&lt;type&gt;</code> + spread</td></tr>
+    <tr><td><code>record struct</code></td><td>value</td><td>nilai properti</td><td>Data kecil + equality + <code>with</code></td><td>—</td></tr>
+    <tr><td><code>interface</code></td><td>kontrak</td><td>—</td><td>Kontrak antar layer, DI, mock</td><td><code>interface</code> (tapi nominal)</td></tr>
+  </tbody>
+</table>
+
+<h2>Value vs reference <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/#value-types-and-reference-types">[1]</a></sup></h2>
+<pre><code>var b = a;  // struct: salin data, b.X = 9 tidak mengubah a
+            // class : salin referensi, b.X = 9 juga mengubah a
+// Value: struct, enum, int, decimal, bool.  Reference: class, array, string, delegate.</code></pre>
+
+<h2>Record <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record">[3]</a></sup></h2>
+<pre><code>public record ProductResponse(int Id, string Name, decimal Price); // properti init-only
+a == b                      // True kalau semua properti sama
+var c = a with { Price = 3m };  // salinan dangkal (shallow copy) dengan perubahan
+// Entity EF Core: JANGAN record, karena EF Core butuh reference equality.</code></pre>
+
+<h2>Nullable reference types <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/null-safety/nullable-reference-types">[4]</a></sup></h2>
+<table>
+  <thead><tr><th>C# (<code>&lt;Nullable&gt;enable&lt;/Nullable&gt;</code>)</th><th>TypeScript (<code>strictNullChecks</code>)</th></tr></thead>
+  <tbody>
+    <tr><td><code>string Name</code></td><td><code>name: string</code></td></tr>
+    <tr><td><code>string? Description</code></td><td><code>description: string | null</code></td></tr>
+    <tr><td><code>x?.Length</code>, <code>x ?? "-"</code></td><td><code>x?.length</code>, <code>x ?? "-"</code></td></tr>
+    <tr><td><code>x!.Length</code> (null-forgiving, seperlunya)</td><td><code>x!.length</code></td></tr>
+  </tbody>
+</table>
+<p>Hanya warning compiler. Perilaku runtime tidak berubah, jadi input dari luar tetap divalidasi.</p>
+
+<h2>Interface vs abstract class <sup class="cite"><a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/interfaces#interfaces-vs-abstract-classes">[5]</a></sup></h2>
+<ul>
+  <li><strong>Interface:</strong> kontrak tanpa instance field/constructor. Satu class boleh banyak interface. Contoh: <code>IProductRepository</code>.</li>
+  <li><strong>Abstract class:</strong> tidak bisa di-<code>new</code>; boleh punya field, constructor, method jadi. Hanya satu base class per class. Contoh: <code>RepositoryBase&lt;T&gt;</code>.</li>
+</ul>
+
+<h2>Jawaban 60 detik</h2>
+<p>
+  class = reference type, struct = value type (disalin, untuk data kecil). record = modifier di atas keduanya yang memberi value equality,
+  <code>ToString</code>, dan <code>with</code>; positional record class immutable. DTO adalah data murni, jadi ditulis sebagai record.
+  Entity EF Core tetap class karena EF Core butuh reference equality.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/">[1] The C# type system</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/records">[2] C# record types</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record">[3] Records (C# reference)</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/null-safety/nullable-reference-types">[4] Nullable reference types</a> ·
+  <a href="https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/interfaces">[5] Interfaces</a></p>
+</main>
+</body>
+</html>

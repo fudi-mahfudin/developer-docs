@@ -13,7 +13,7 @@
  *   <script src="../assets/order.js"></script>
  *
  * Pengguna memindah item dengan tombol ↑/↓, lalu "Periksa": setiap posisi ditandai benar/salah.
- * Pure logic (checkOrder, scramble) diuji di tests/order.test.js lewat require().
+ * Pure logic (checkOrder, scramble) diuji di tests/shared/order.test.js lewat require().
  */
 (function (root) {
   function checkOrder(expected, given) {

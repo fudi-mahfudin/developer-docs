@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0017 · JWT, authentication vs authorization, CORS, error handling</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0017 · Fullstack · ±15 menit</div>
+  <h1>JWT, authentication vs authorization, CORS, dan error handling</h1>
+  <p class="subtitle">Satu cerita login dari form Angular sampai API, termasuk saat token ditolak atau server error</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Jelaskan alur login aplikasi Anda, dari form Angular sampai API, termasuk apa yang terjadi saat token tidak valid atau terjadi error."</em>
+  dalam 90 detik, tanpa melompat-lompat antara frontend dan backend.
+</div>
+
+<h2>1. Peta alurnya</h2>
+<p>Semua bagian lesson ini adalah satu langkah dari peta berikut. Hafalkan petanya dulu, detailnya menyusul.</p>
+<table>
+  <thead><tr><th>#</th><th>Langkah</th><th>Di mana</th><th>Padanan Node/React</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Form login (Reactive Forms) → <code>AuthService</code> → <code>POST /api/auth/login</code></td><td>Angular (lesson 0016)</td><td><code>axios.post('/login')</code></td></tr>
+    <tr><td>2</td><td>Browser cek CORS: beda origin, jadi kirim preflight <code>OPTIONS</code> dulu</td><td>Browser ↔ <code>UseCors</code></td><td>package <code>cors</code> di Express</td></tr>
+    <tr><td>3</td><td>API memeriksa kredensial, menerbitkan JWT</td><td>Controller → Service</td><td><code>jsonwebtoken.sign()</code></td></tr>
+    <tr><td>4</td><td>Angular menyimpan token; HTTP Interceptor menambah <code>Authorization: Bearer …</code></td><td>Angular</td><td>interceptor Axios</td></tr>
+    <tr><td>5</td><td><code>UseAuthentication</code>: validasi token → <code>HttpContext.User</code></td><td>Middleware</td><td>passport-jwt → <code>req.user</code></td></tr>
+    <tr><td>6</td><td><code>UseAuthorization</code>: cek <code>[Authorize]</code> / role → lolos, 401, atau 403</td><td>Middleware + atribut</td><td>middleware cek role</td></tr>
+    <tr><td>7</td><td>Exception di mana pun → <code>IExceptionHandler</code> → ProblemDetails; interceptor menangani 401</td><td>API + Angular</td><td>error middleware <code>(err, req, res, next)</code></td></tr>
+  </tbody>
+</table>
+
+<h2>2. Authentication vs authorization (401 vs 403)</h2>
+<p>
+  "Authentication is the process of determining a user's identity. Authorization is the process of determining whether a user has access to a resource."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-8.0">[1]</a></sup>
+  Keduanya terpisah, "However, authorization relies on an authentication mechanism"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authorization/introduction?view=aspnetcore-8.0">[2]</a></sup>.
+  Itulah alasan urutan <code>UseAuthentication</code> → <code>UseAuthorization</code> di <a href="0005-middleware-options.html">lesson 0005</a>.
+</p>
+<p>Saat gagal, handler JWT bearer menjawab dengan dua kode yang berbeda:</p>
+<ul>
+  <li><strong>Challenge → 401.</strong> User belum terautentikasi (token tidak ada, signature salah, kedaluwarsa): "A JWT bearer scheme returning a 401 result with a <code>www-authenticate: bearer</code> header." <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-8.0#challenge">[1]</a></sup></li>
+  <li><strong>Forbid → 403.</strong> User sudah dikenal tapi tidak berhak: "A JWT bearer scheme returning a 403 result." <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-8.0#forbid">[1]</a></sup></li>
+</ul>
+<pre><code>[ApiController, Route("api/products")]
+public class ProductsController : ControllerBase
+{
+    [HttpGet]                                   // publik
+    public Task&lt;IActionResult&gt; GetAll() =&gt; ...
+
+    [HttpPost, Authorize]                       // harus login (selain itu 401)
+    public Task&lt;IActionResult&gt; Create(CreateProductDto dto) =&gt; ...
+
+    [HttpDelete("{id}"), Authorize(Roles = "Admin")]   // login + role Admin (selain itu 403)
+    public Task&lt;IActionResult&gt; Delete(int id) =&gt; ...
+}</code></pre>
+<p class="note">
+  Role adalah bentuk sederhana; aturan yang sama bisa ditulis sebagai policy: <code>AddPolicy("RequireAdminRole", policy =&gt; policy.RequireRole("Admin"))</code>, lalu <code>[Authorize(Policy = "RequireAdminRole")]</code>
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authorization/roles?view=aspnetcore-8.0">[3]</a></sup>.
+  Ingat juga: "Configuring authentication doesn't automatically restrict access to endpoints." Tanpa <code>[Authorize]</code> (atau fallback policy), endpoint tetap terbuka <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-8.0">[1]</a></sup>.
+</p>
+
+<h2>3. JWT: apa isinya dan apa yang divalidasi</h2>
+<p>
+  "JSON Web Token (JWT) is a compact, URL-safe means of representing claims to be transferred between two parties."
+  Bentuknya "a sequence of URL-safe parts separated by period ('.') characters. Each part contains a base64url-encoded value"
+  <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7519">[4]</a></sup>, yaitu <code>header.payload.signature</code>.
+  Base64url bukan enkripsi: "The payload is only base64url encoded, not encrypted, so anyone who obtains the token can read every claim"
+  <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_Cheat_Sheet.html">[5]</a></sup>.
+  Signature hanya menjamin token tidak diubah.
+</p>
+<p>
+  Di API, "The <code>JwtBearerHandler</code> validates the token and extracts the user's identity from its claims."
+  Yang harus divalidasi: "Signature, for trust and integrity", "Issuer claim", "Audience claim", dan "Token expiration";
+  kalau ada yang salah, "the API should return a 401 response"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication?view=aspnetcore-8.0">[6]</a></sup>.
+</p>
+<pre><code>// Program.cs — JwtSettings dibaca lewat Options Pattern (lesson 0005), Key dari User Secrets
+var jwt = builder.Configuration.GetSection("JwtSettings").Get&lt;JwtSettings&gt;()!;
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(o =&gt; o.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,           ValidIssuer   = jwt.Issuer,
+        ValidateAudience = true,         ValidAudience = jwt.Audience,
+        ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.Key)),
+        ValidateLifetime = true,         // exp
+    });
+builder.Services.AddAuthorization();</code></pre>
+<p class="note">
+  Jujur saat interview: endpoint login sederhana yang menerbitkan JWT sendiri cukup untuk mini project, tapi Microsoft menulis
+  "Don't generate your own access tokens or ID tokens, except for testing purposes" dan menyarankan OpenID Connect / OAuth untuk production
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication?view=aspnetcore-8.0#token-types">[6]</a></sup>.
+  Menyebut ini menunjukkan Anda tahu batasnya.
+</p>
+
+<h2>4. CORS: kenapa Angular di port 4200 "diblokir"</h2>
+<p>
+  "Browser security prevents a web page from making requests to a different domain than the one that served the web page. This restriction is called the <em>same-origin policy</em>."
+  CORS adalah cara server melonggarkannya, dan CORS "is <strong>not</strong> a security feature, CORS relaxes security"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0">[7]</a></sup>.
+  Beda port saja sudah beda origin. Yang memblokir adalah browser, jadi Postman dan curl tidak pernah terkena CORS.
+</p>
+<p>
+  <strong>Preflight.</strong> "For some CORS requests, the browser sends an additional OPTIONS request before making the actual request."
+  Browser hanya boleh melewatinya kalau header yang di-set terbatas pada <code>Accept</code>, <code>Accept-Language</code>, <code>Content-Language</code>, <code>Content-Type</code>, atau <code>Last-Event-ID</code>,
+  dan <code>Content-Type</code> hanya form/text <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0#preflight-requests">[7]</a></sup>.
+  Request Angular dengan <code>Authorization: Bearer</code> dan body JSON tidak memenuhi syarat itu, jadi selalu ada preflight.
+</p>
+<pre><code>builder.Services.AddCors(o =&gt; o.AddPolicy("angular", p =&gt; p
+    .WithOrigins("http://localhost:4200")     // tanpa "/" di akhir
+    .AllowAnyHeader()                          // termasuk Authorization
+    .AllowAnyMethod()));
+
+app.UseExceptionHandler();
+app.UseHttpsRedirection();
+app.UseRouting();
+app.UseCors("angular");          // sesudah routing, sebelum auth (lesson 0005)
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();</code></pre>
+<p>
+  Dua jebakan dari dokumentasi: URL origin "must <strong>not</strong> contain a trailing slash", dan
+  "Specifying <code>AllowAnyOrigin</code> and <code>AllowCredentials</code> is an insecure configuration and can result in cross-site request forgery"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0">[7]</a></sup>.
+  Padanan Express: <code>app.use(cors({ origin: 'http://localhost:4200' }))</code>, middleware yang "sets CORS response headers"
+  <sup class="cite"><a href="https://expressjs.com/en/resources/middleware/cors.html">[8]</a></sup>.
+</p>
+
+<h2>5. Global error handling: exception → ProblemDetails</h2>
+<p>
+  <code>IExceptionHandler</code> "gives the developer a callback for handling known exceptions in a central location".
+  Implementasinya didaftarkan dengan <code>AddExceptionHandler&lt;T&gt;</code>, lifetime-nya Singleton, dan return <code>true</code> dari <code>TryHandleAsync</code> berarti exception sudah ditangani
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling?view=aspnetcore-8.0#iexceptionhandler">[9]</a></sup>.
+  Format response-nya ProblemDetails, standar untuk membawa "machine-readable details of errors in HTTP response content"
+  <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9457">[10]</a></sup> (RFC 9457, pengganti RFC 7807).
+  Dengan <code>AddProblemDetails()</code>, <code>UseExceptionHandler</code> juga menghasilkan ProblemDetails untuk exception yang tidak ditangani handler Anda
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling-api?view=aspnetcore-8.0#problem-details">[11]</a></sup>.
+</p>
+<pre><code>public class GlobalExceptionHandler(ILogger&lt;GlobalExceptionHandler&gt; logger) : IExceptionHandler
+{
+    public async ValueTask&lt;bool&gt; TryHandleAsync(HttpContext ctx, Exception ex, CancellationToken ct)
+    {
+        var (status, title) = ex switch
+        {
+            ValidationException =&gt; (400, "Validation failed"),
+            NotFoundException   =&gt; (404, "Not found"),
+            _                   =&gt; (500, "Server error"),
+        };
+        if (status == 500) logger.LogError(ex, "Unhandled exception");
+        ctx.Response.StatusCode = status;
+        await ctx.Response.WriteAsJsonAsync(new ProblemDetails
+            { Status = status, Title = title, Detail = status == 500 ? null : ex.Message }, ct);
+        return true;
+    }
+}
+// Program.cs
+builder.Services.AddExceptionHandler&lt;GlobalExceptionHandler&gt;();
+builder.Services.AddProblemDetails();
+app.UseExceptionHandler();      // paling awal di pipeline
+
+// Response yang diterima Angular (contoh)
+{ "status": 400, "title": "Validation failed", "detail": "Price must be greater than 0." }</code></pre>
+<p>
+  Di Angular, body ProblemDetails ada di <code>HttpErrorResponse.error</code>, jadi interceptor dari <a href="0016-forms-http-interceptor.html">lesson 0016</a> bisa
+  mengarahkan 401 ke <code>/login</code> dan menampilkan <code>error.title</code> untuk status lain.
+  Jangan kirim stack trace ke client di production: "Don't share detailed exception information publicly when the app runs in production"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling-api?view=aspnetcore-8.0">[11]</a></sup>.
+  Padanan Express: error middleware empat argumen <code>(err, req, res, next)</code> yang dipasang paling akhir
+  <sup class="cite"><a href="https://expressjs.com/en/guide/error-handling.html">[12]</a></sup>; di .NET justru paling awal, karena membungkus pipeline.
+</p>
+
+<h2>6. Menyimpan JWT: localStorage vs httpOnly cookie</h2>
+<table>
+  <thead><tr><th></th><th><code>localStorage</code> + header Bearer</th><th>Cookie <code>HttpOnly</code> + <code>Secure</code> + <code>SameSite</code></th></tr></thead>
+  <tbody>
+    <tr><td>Dibaca JavaScript?</td><td>Ya. "Do not store session identifiers in local storage as the data is always accessible by JavaScript." <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#local-storage">[13]</a></sup></td><td>Tidak. "Cookies can mitigate this risk using the <code>httpOnly</code> flag." <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#local-storage">[13]</a></sup></td></tr>
+    <tr><td>Risiko utama</td><td>XSS mencuri token</td><td>CSRF: "browser requests automatically include all cookies" <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">[14]</a></sup></td></tr>
+    <tr><td>Mitigasi</td><td>cegah XSS, token berumur pendek</td><td><code>SameSite</code> + token anti-CSRF; Angular <code>HttpClient</code> mengirim <code>X-XSRF-TOKEN</code> dari cookie <code>XSRF-TOKEN</code>, tapi "supports only the client half" <sup class="cite"><a href="https://v16.angular.io/guide/http-security-xsrf-protection">[15]</a></sup></td></tr>
+    <tr><td>Dikirim lewat</td><td>HTTP Interceptor</td><td>browser otomatis (perlu <code>withCredentials</code> lintas origin)</td></tr>
+  </tbody>
+</table>
+<p>
+  Tidak ada pilihan yang bebas risiko; "Cross-Site Scripting (XSS) can defeat all CSRF mitigation techniques!" <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">[14]</a></sup>.
+  Microsoft cenderung ke cookie: "storing access tokens directly in the browser by using local storage, session storage, or web workers" adalah contoh penyimpanan yang rentan,
+  dan untuk web app yang aman "Only a secure HTTP only cookie is shared on the client browser" (pola backend-for-frontend)
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication?view=aspnetcore-8.0#recommended-approaches-to-create-a-jwt">[6]</a></sup>.
+  Jawaban interview yang baik: sebut trade-off keduanya, lalu sebut pilihan Anda beserta alasannya.
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Susun alur login</h2>
+  <p>Susun langkahnya dari klik "Login" sampai request berikutnya diproses. Ucapkan setiap langkah dengan suara keras saat memindahkannya.</p>
+  <div class="order">
+    <ol>
+      <li>Form login Angular memanggil <code>AuthService</code> → <code>POST /api/auth/login</code></li>
+      <li>Browser mengirim preflight <code>OPTIONS</code>; <code>UseCors</code> mengizinkan origin Angular</li>
+      <li>API memeriksa kredensial lalu menerbitkan JWT</li>
+      <li>Angular menyimpan token; interceptor menambah <code>Authorization: Bearer</code> ke request berikutnya</li>
+      <li><code>UseAuthentication</code> memvalidasi token dan mengisi <code>HttpContext.User</code></li>
+      <li><code>UseAuthorization</code> memeriksa <code>[Authorize]</code>: lolos, 401, atau 403</li>
+      <li>Exception di Service → <code>IExceptionHandler</code> → ProblemDetails ke Angular</li>
+    </ol>
+    <p class="explain">
+      CORS terjadi sebelum request apa pun sampai ke Controller, termasuk request login. Token baru ada setelah login, jadi interceptor baru berguna untuk request berikutnya.
+      Authentication selalu sebelum authorization, dan exception handler membungkus semuanya, jadi error dari langkah mana pun berakhir sebagai ProblemDetails.
+    </p>
+  </div>
+</section>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — JWT, 401, dan 403</h2>
+  <p>Jawab tanpa scroll ke atas; kalau ragu, tebak dulu, lalu baca penjelasannya.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0018-star-mock-interview.html">mock interview 0018</a>.</p>
+  <div class="quiz" data-bank-lesson="0017" data-bank-topic="fs-authn-authz,fs-jwt" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — CORS, ProblemDetails, dan penyimpanan token</h2>
+  <p>Sebelum mengklik, ucapkan alasannya dalam satu kalimat.</p>
+  <div class="quiz" data-bank-lesson="0017" data-bank-topic="fs-cors,fs-problem-details,fs-token-storage" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 4 ============ -->
+<section class="exercise">
+  <h2>Latihan 4 — "Jelaskan alur login aplikasi Anda"</h2>
+  <p>
+    Pasang timer 90 detik. Jawab dengan suara keras, seolah sedang interview. Mulai dari frontend, selesaikan di backend, lalu ceritakan jalur error.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Jelaskan alur login aplikasi Anda, dari form Angular sampai API, termasuk apa yang terjadi saat token tidak valid atau terjadi error."</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "User mengisi form login Reactive Forms; <code>AuthService</code> mengirim <code>POST /api/auth/login</code> lewat <code>HttpClient</code>.
+      Karena Angular di port 4200 dan API di port lain, browser menerapkan same-origin policy, jadi API mengaktifkan CORS untuk origin Angular saja.
+      API memeriksa kredensial dan menerbitkan JWT: header.payload.signature, berisi claims seperti <code>sub</code>, role, dan <code>exp</code>, ditandatangani key yang disimpan di User Secrets.
+      Di Angular, <code>AuthInterceptor</code> meng-<code>clone</code> setiap request dan menambahkan <code>Authorization: Bearer</code>.
+      Di API, <code>UseAuthentication</code> memvalidasi signature, issuer, audience, dan expiry lalu mengisi <code>HttpContext.User</code>;
+      <code>UseAuthorization</code> memeriksa <code>[Authorize]</code> atau <code>[Authorize(Roles = "Admin")]</code>.
+      Token tidak valid atau kedaluwarsa menghasilkan 401, dan interceptor mengarahkan ke /login; sudah login tapi tidak berhak menghasilkan 403.
+      Exception lain ditangkap <code>IExceptionHandler</code> dan dikembalikan sebagai ProblemDetails, misalnya <code>ValidationException</code> jadi 400 dan <code>NotFoundException</code> jadi 404, tanpa stack trace di production."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>frontend: form login → <code>AuthService</code> → <code>HttpClient</code> <code>POST /api/auth/login</code>?</li>
+      <li>API menerbitkan JWT (header.payload.signature, claims + <code>exp</code>), key di User Secrets?</li>
+      <li>HTTP Interceptor Angular: <code>clone</code> request + header <code>Authorization: Bearer</code>?</li>
+      <li>backend: <code>UseAuthentication</code> memvalidasi token (signature, issuer, audience, expiry) → <code>HttpContext.User</code>; <code>UseAuthorization</code> + <code>[Authorize]</code>/role?</li>
+      <li>401 (token tidak valid, interceptor → /login) vs 403 (login tapi tidak berhak)?</li>
+      <li>error global: <code>IExceptionHandler</code> + <code>AddProblemDetails</code> → ProblemDetails (400/404/500), dan CORS hanya untuk origin Angular?</li>
+    </ul>
+    <p class="note">Kalau kurang dari 4 poin, ulangi setelah membaca ulang bagian 1. Soal ini akan muncul lagi di mock interview 0018.</p>
+  </details>
+</section>
+
+<!-- ============ EXERCISE 5 ============ -->
+<section class="exercise">
+  <h2>Latihan 5 — CORS dan tempat menyimpan JWT</h2>
+  <p>Timer 60 detik. Dua pertanyaan ini sering ditanyakan berurutan.</p>
+  <blockquote>"Apa itu CORS, kenapa API Anda perlu mengonfigurasinya, dan di mana Anda menyimpan JWT di frontend?"</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Browser menerapkan same-origin policy: halaman dari <code>localhost:4200</code> tidak boleh membaca response dari origin lain.
+      CORS adalah cara server melonggarkannya dengan header seperti <code>Access-Control-Allow-Origin</code>; untuk request dengan header <code>Authorization</code> atau JSON, browser mengirim preflight <code>OPTIONS</code> dulu.
+      Jadi CORS bukan fitur keamanan, justru melonggarkan keamanan. Di .NET saya pakai <code>WithOrigins</code> untuk origin Angular saja, <code>UseCors</code> sesudah <code>UseRouting</code> dan sebelum auth,
+      dan tidak pernah <code>AllowAnyOrigin</code> + <code>AllowCredentials</code>. Padanan Express-nya package <code>cors</code>.
+      Untuk JWT: <code>localStorage</code> mudah dan cocok dengan interceptor, tapi bisa dibaca script hasil XSS.
+      Cookie <code>HttpOnly</code> + <code>Secure</code> + <code>SameSite</code> tidak bisa dibaca JavaScript, tapi otomatis terkirim sehingga perlu proteksi CSRF; Angular membantu lewat <code>XSRF-TOKEN</code>.
+      Microsoft menyarankan pola backend-for-frontend dengan cookie HttpOnly untuk production; di mini project saya pakai localStorage dengan token berumur pendek dan sadar trade-off-nya."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>same-origin policy ditegakkan browser; beda port = beda origin; Postman tidak terkena?</li>
+      <li>CORS = server melonggarkan lewat header <code>Access-Control-*</code>; bukan fitur keamanan?</li>
+      <li>preflight <code>OPTIONS</code> untuk header <code>Authorization</code> / JSON; policy harus mengizinkan header itu?</li>
+      <li>konfigurasi .NET: <code>WithOrigins</code> spesifik, <code>UseCors</code> sesudah <code>UseRouting</code> sebelum auth, jangan <code>AllowAnyOrigin</code> + <code>AllowCredentials</code>?</li>
+      <li><code>localStorage</code>: mudah + cocok interceptor, tapi terbaca oleh XSS?</li>
+      <li>httpOnly cookie: aman dari pembacaan JS, tapi perlu proteksi CSRF (<code>SameSite</code>, <code>XSRF-TOKEN</code>); lalu pilihan Anda + alasannya?</li>
+    </ul>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication?view=aspnetcore-8.0">Microsoft Learn: Configure JWT bearer authentication in ASP.NET Core</a>, terutama bagian 401 vs 403, validasi token, dan "Recommended approaches".
+  Kalau masih ada waktu, baca bagian "Preflight requests" di <a href="https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0">Enable CORS in ASP.NET Core</a>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/auth-cors-error.html">Reference: JWT, authn/authz, CORS, dan error handling</a> · Pipeline: <a href="../reference/middleware-dan-options.html">Reference: Middleware dan Options</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana refresh token bekerja bersama access token yang berumur pendek?" atau "bagaimana menulis integration test untuk endpoint <code>[Authorize]</code> dengan <code>WebApplicationFactory</code>?"</p>
+
+<nav class="lesson-nav">
+  <a href="0016-forms-http-interceptor.html">← 0016 · Reactive Forms, HttpClient, dan HTTP Interceptor</a>
+  <a href="0018-star-mock-interview.html">0018 · STAR + mock interview final →</a>
+</nav>
+
+<p class="note">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/?view=aspnetcore-8.0">[1] Overview of ASP.NET Core Authentication</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/authorization/introduction?view=aspnetcore-8.0">[2] Introduction to authorization</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/authorization/roles?view=aspnetcore-8.0">[3] Role-based authorization</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc7519">[4] RFC 7519 JWT</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_Cheat_Sheet.html">[5] OWASP JWT Cheat Sheet</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication?view=aspnetcore-8.0">[6] Configure JWT bearer authentication</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0">[7] Enable CORS in ASP.NET Core</a> ·
+  <a href="https://expressjs.com/en/resources/middleware/cors.html">[8] Express cors middleware</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling?view=aspnetcore-8.0">[9] Handle errors in ASP.NET Core</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9457">[10] RFC 9457 Problem Details</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling-api?view=aspnetcore-8.0">[11] Handle errors in ASP.NET Core APIs</a> ·
+  <a href="https://expressjs.com/en/guide/error-handling.html">[12] Express error handling</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html">[13] OWASP HTML5 Security Cheat Sheet</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">[14] OWASP CSRF Prevention Cheat Sheet</a> ·
+  <a href="https://v16.angular.io/guide/http-security-xsrf-protection">[15] Angular v16: XSRF protection</a>
+</p>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

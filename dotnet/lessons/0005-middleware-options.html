@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0005 · Middleware pipeline dan Options Pattern</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0005 · Backend · ±15 menit</div>
+  <h1>Middleware pipeline, urutannya, dan Options Pattern</h1>
+  <p class="subtitle">Jalur yang dilewati setiap request, kenapa satu baris yang tertukar bisa membuka celah keamanan, dan cara Service membaca konfigurasi tanpa menyentuh secret</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan interview
+  <em>"Jelaskan apa yang terjadi pada sebuah request di ASP.NET Core dari masuk sampai response keluar, dan kenapa urutan middleware penting"</em>
+  dalam 60–90 detik, lalu menyambungnya ke "di mana secret disimpan".
+</div>
+
+<h2>1. Pipeline: rangkaian middleware yang membungkus endpoint</h2>
+<p>
+  Di <a href="0001-layer-dan-alur-request.html">lesson 0001</a> request "masuk" ke Controller. Sebenarnya sebelum sampai ke sana, request melewati <strong>Middleware</strong>.
+  Microsoft: "Middleware is software that's assembled into an app pipeline to handle requests and responses. Each middleware:
+  Chooses whether to pass the request to the next middleware in the pipeline. Can perform work before and after the next middleware in the pipeline."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0">[1]</a></sup>
+</p>
+
+<div class="flow">
+  <span class="box">request</span><span class="arrow">→</span>
+  <span class="box">A (sebelum next)</span><span class="arrow">→</span>
+  <span class="box">B (sebelum next)</span><span class="arrow">→</span>
+  <span class="box">endpoint / Controller</span><span class="arrow">→</span>
+  <span class="box">B (sesudah next)</span><span class="arrow">→</span>
+  <span class="box">A (sesudah next)</span><span class="arrow">→</span>
+  <span class="box">response</span>
+</div>
+<p>
+  "The order that middleware appears in the app's <code>Program</code> file defines the order in which middleware are invoked on a request with the reverse order for the response."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#middleware-order">[1]</a></sup>
+  Bayangkan bawang: masuk lapis demi lapis, keluar lewat lapis yang sama dengan urutan terbalik.
+</p>
+
+<pre><code>app.Use(async (context, next) =&gt;
+{
+    var sw = Stopwatch.StartNew();          // sebelum: request masuk
+    await next(context);                    // teruskan ke middleware berikutnya
+    logger.LogInformation("{Path} {Ms}ms",  // sesudah: response kembali
+        context.Request.Path, sw.ElapsedMilliseconds);
+});</code></pre>
+
+<table>
+  <thead><tr><th>ASP.NET Core</th><th>Artinya</th><th>Padanan Express</th></tr></thead>
+  <tbody>
+    <tr><td><code>app.Use((context, next) =&gt; …)</code></td><td>middleware biasa, boleh memanggil <code>next</code></td><td><code>app.use((req, res, next) =&gt; …)</code></td></tr>
+    <tr><td><strong>short-circuit</strong>: tidak memanggil <code>next</code></td><td>pipeline berhenti di sini; middleware ini menjadi <em>terminal middleware</em> <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0">[1]</a></sup></td><td><code>res.status(401).send()</code> tanpa <code>next()</code></td></tr>
+    <tr><td><code>app.Run(context =&gt; …)</code></td><td>terminal: tidak menerima <code>next</code>; <code>Use</code> sesudahnya "never executes" <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#create-a-middleware-pipeline-with-webapplication">[1]</a></sup></td><td>handler terakhir yang selalu mengirim response</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Express juga mendefinisikan middleware sebagai fungsi dengan akses ke <code>req</code>, <code>res</code>, dan <code>next</code>, dan "If a middleware function does not end the request-response cycle, it must call <code>next()</code>".
+  <sup class="cite"><a href="https://expressjs.com/en/guide/using-middleware.html">[7]</a></sup>
+  Bedanya di ASP.NET Core: <code>await next(context)</code> menunggu seluruh sisa pipeline selesai, jadi kode sesudahnya bisa membaca status response.
+</p>
+
+<!-- ============ EXERCISE 1 ============ -->
+<section class="exercise">
+  <h2>Latihan 1 — Cara kerja pipeline</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama muncul lagi, diacak, di review campuran 0007.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil di <a href="0007-review-hari-1.html">review campuran 0007</a>.</p>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="mw-pipeline" data-stack></div>
+</section>
+
+<h2>2. Urutan yang dipakai API Product Catalog</h2>
+<p>
+  "The order of middleware can be critical for security, performance, and functionality."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#middleware-order">[1]</a></sup>
+  Untuk Web API yang dipanggil Angular, urutan dari dokumentasi menjadi:
+</p>
+<pre><code>var app = builder.Build();
+
+app.UseExceptionHandler("/error");   // 1. paling luar: membungkus semuanya
+app.UseHttpsRedirection();           // 2. http → https
+app.UseRouting();                    // 3. pilih endpoint
+app.UseCors("angular");              // 4. header CORS + preflight
+app.UseAuthentication();             // 5. SIAPA user ini? (isi HttpContext.User)
+app.UseAuthorization();              // 6. BOLEH atau tidak?
+app.MapControllers();                // 7. endpoint: Controller → Service → Repository
+app.Run();</code></pre>
+
+<ul>
+  <li><strong>Exception handler paling awal.</strong> "Exception-handling delegates should be called early in the pipeline, so they can catch exceptions that occur in later stages of the pipeline."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#create-a-middleware-pipeline-with-webapplication">[1]</a></sup>
+    Jebakan bagi developer Express: di Express "You define error-handling middleware last, after other <code>app.use()</code> and routes calls".
+    <sup class="cite"><a href="https://expressjs.com/en/guide/error-handling.html">[8]</a></sup>
+    Di ASP.NET Core exception handler <em>membungkus</em>, jadi ia harus di luar. (Detail global error handling: lesson 0017.)</li>
+  <li><strong>CORS → Authentication → Authorization.</strong> Ketiganya "must appear in the order shown".
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#middleware-order">[1]</a></sup>
+    "The call to <code>UseCors</code> must be placed after <code>UseRouting</code>, but before <code>UseAuthorization</code>."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0">[6]</a></sup>
+    Authorization butuh tahu siapa user-nya, jadi authentication harus jalan dulu.</li>
+  <li><strong>CORS sebelum response caching</strong>, "to add CORS headers on every request, including cached responses."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#middleware-order">[1]</a></sup></li>
+</ul>
+<p class="note">
+  Detail .NET 8 yang jarang diketahui: <code>WebApplication</code> menambahkan <code>UseRouting</code>, <code>UseAuthentication</code>, dan <code>UseAuthorization</code> otomatis bila Anda tidak memanggilnya.
+  Tapi kalau Anda memakai CORS, "The app needs to call <code>UseAuthentication</code> and <code>UseAuthorization</code> if <code>UseCors</code> is called", karena yang otomatis itu diletakkan tepat sesudah <code>UseRouting</code>, yaitu sebelum <code>UseCors</code> Anda.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#middleware-added-automatically-by-webapplication">[1]</a></sup>
+</p>
+
+<!-- ============ EXERCISE 2 ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Susun ulang pipeline</h2>
+  <p>Baris <code>Program.cs</code> di bawah sudah diacak. Pindahkan dengan ↑/↓ sampai urutannya benar, lalu tekan <em>Periksa</em>. Coba dari ingatan dulu.</p>
+  <div class="order">
+    <ol>
+      <li><code>app.UseExceptionHandler("/error")</code></li>
+      <li><code>app.UseHttpsRedirection()</code></li>
+      <li><code>app.UseRouting()</code></li>
+      <li><code>app.UseCors("angular")</code></li>
+      <li><code>app.UseAuthentication()</code></li>
+      <li><code>app.UseAuthorization()</code></li>
+      <li><code>app.MapControllers()</code></li>
+    </ol>
+    <p class="explain">
+      Exception handler paling luar supaya menangkap exception dari semua yang sesudahnya. Routing memilih endpoint, CORS harus sesudah routing dan sebelum authorization,
+      authentication mengisi <code>HttpContext.User</code> sebelum authorization memutuskan, dan endpoint (Controller) paling dalam.
+    </p>
+  </div>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="mw-order" data-stack></div>
+</section>
+
+<h2>3. Service Scoped di dalam middleware</h2>
+<p>
+  Di <a href="0004-service-lifetime.html">lesson 0004</a> Anda belajar captive dependency. Middleware adalah contoh nyatanya:
+  "Middleware is constructed at app startup and therefore has application life time."
+  Jadi service Scoped tidak boleh diterima lewat constructor. "To share a <em>scoped</em> service between middleware and other types, add these services to the <code>InvokeAsync</code> method's signature."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/write?view=aspnetcore-8.0#per-request-middleware-dependencies">[2]</a></sup>
+</p>
+<pre><code>public class RequestAuditMiddleware(RequestDelegate next, ILogger&lt;RequestAuditMiddleware&gt; logger)
+{   // constructor: hanya dependensi berumur panjang (Singleton)
+
+    public async Task InvokeAsync(HttpContext context, AppDbContext db)  // Scoped: per request
+    {
+        await next(context);
+        db.AuditLogs.Add(new AuditLog(context.Request.Path, context.Response.StatusCode));
+        await db.SaveChangesAsync();
+    }
+}
+
+// Program.cs
+app.UseMiddleware&lt;RequestAuditMiddleware&gt;();</code></pre>
+<p class="note">
+  Syarat middleware class: "A public constructor with a parameter of type <code>RequestDelegate</code>" dan "A public method named <code>Invoke</code> or <code>InvokeAsync</code>" yang mengembalikan <code>Task</code> dengan parameter pertama <code>HttpContext</code>.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/write?view=aspnetcore-8.0#middleware-class">[2]</a></sup>
+  Padanan Express: fungsi middleware dibuat sekali saat <code>app.use(...)</code>, sedangkan objek per request Anda ambil dari <code>req</code>.
+</p>
+
+<!-- ============ EXERCISE 3 ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Scoped di middleware</h2>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="mw-scoped" data-stack></div>
+</section>
+
+<h2>4. Konfigurasi berlapis: siapa menimpa siapa</h2>
+<p>
+  <code>WebApplication.CreateBuilder</code> menggabungkan beberapa sumber. Dari prioritas <strong>tertinggi</strong> ke terendah:
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0#default-app-configuration-sources">[3]</a></sup>
+</p>
+<ol>
+  <li>argumen command-line</li>
+  <li>environment variable (yang tidak berawalan <code>ASPNETCORE_</code> / <code>DOTNET_</code>)</li>
+  <li><strong>User Secrets</strong>, "when the app runs in the <code>Development</code> environment"</li>
+  <li><code>appsettings.{Environment}.json</code> (mis. <code>appsettings.Production.json</code>)</li>
+  <li><code>appsettings.json</code></li>
+</ol>
+<p>
+  Sumber yang dibaca belakangan menimpa yang sebelumnya: "key values read from the environment override values read from <code>appsettings.json</code>, <code>appsettings.{ENVIRONMENT}.json</code>, and user secrets."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0#environment-variables-configuration-provider">[3]</a></sup>
+  Di environment variable, hierarki ditulis dengan double underscore: <code>Jwt__Key</code> menjadi <code>Jwt:Key</code>, karena "The colon (<code>:</code>) separator doesn't work with environment variable hierarchical keys on all platforms."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0#environment-variables-configuration-provider">[3]</a></sup>
+</p>
+
+<h3>Di mana secret disimpan?</h3>
+<ul>
+  <li><strong>Jangan</strong> di kode atau appsettings: "Never store passwords or other sensitive data in source code or configuration files."
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-8.0">[5]</a></sup></li>
+  <li><strong>Development:</strong> <code>dotnet user-secrets init</code> lalu <code>dotnet user-secrets set "Jwt:Key" "…"</code>. File-nya di profil user (<code>~/.microsoft/usersecrets/&lt;id&gt;/secrets.json</code>), "separate location from the project tree", dan "aren't checked into source control".
+    Tapi Secret Manager "doesn't encrypt the stored secrets" dan "is for development purposes only".
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-8.0#use-the-secret-manager-tool">[5]</a></sup></li>
+  <li><strong>Production:</strong> environment variable, atau "a controlled means like Azure Key Vault".
+    <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-8.0">[5]</a></sup></li>
+</ul>
+<p class="note">
+  Padanan Node: <code>appsettings.json</code> ≈ default di modul <code>config/</code>; User Secrets ≈ file <code>.env</code> yang masuk <code>.gitignore</code>, bedanya ia disimpan di luar folder project; environment variable sama-sama <code>process.env</code>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 4 — Susun prioritas konfigurasi</h2>
+  <p>Urutkan dari prioritas <strong>terendah</strong> (paling mudah ditimpa) ke <strong>tertinggi</strong>, untuk app yang jalan di Development.</p>
+  <div class="order">
+    <ol>
+      <li><code>appsettings.json</code></li>
+      <li><code>appsettings.Development.json</code></li>
+      <li>User Secrets</li>
+      <li>Environment variable</li>
+      <li>Argumen command-line</li>
+    </ol>
+    <p class="explain">
+      Setiap sumber menimpa sumber di atasnya. User Secrets terdaftar sesudah file appsettings, sehingga "user secrets keys take precedence over keys in <code>appsettings.json</code> and <code>appsettings.{ENVIRONMENT}.json</code>."
+      Command-line paling akhir, jadi paling kuat.
+    </p>
+  </div>
+</section>
+
+<h2>5. Options Pattern: Service membaca class, bukan string</h2>
+<p>
+  "The options pattern uses classes to provide strongly typed access to groups of related settings." Dua prinsip yang terpenuhi:
+  <em>Encapsulation</em> ("Classes that depend on configuration settings depend only on the configuration settings that they use") dan <em>Separation of Concerns</em>.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0">[4]</a></sup>
+</p>
+<pre><code>// appsettings.json: { "Jwt": { "Issuer": "catalog-api", "Key": "" } }   ← Key diisi dari User Secrets / env
+public class JwtOptions
+{
+    public const string Section = "Jwt";        // field: tidak di-bind
+    [Required] public string Issuer { get; set; } = "";
+    [Required] public string Key { get; set; } = "";
+}
+
+// Program.cs (composition root)
+builder.Services.AddOptions&lt;JwtOptions&gt;()
+    .Bind(builder.Configuration.GetSection(JwtOptions.Section))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();                         // gagal saat start, bukan saat request pertama
+
+// Service
+public class TokenService(IOptions&lt;JwtOptions&gt; options)
+{
+    private readonly JwtOptions _jwt = options.Value;
+}</code></pre>
+<p class="note">
+  Bentuk singkatnya, tanpa validasi: <code>builder.Services.Configure&lt;JwtOptions&gt;(builder.Configuration.GetSection("Jwt"));</code>
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0#bind-options-to-the-dependency-injection-service-container">[4]</a></sup>
+  Tanpa <code>ValidateOnStart</code>, "Options validation runs the first time a <code>TOption</code> instance is created".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0#options-validation">[4]</a></sup>
+</p>
+
+<table>
+  <thead><tr><th>Interface</th><th>Lifetime</th><th>Membaca perubahan setelah start?</th><th>Pakai untuk</th></tr></thead>
+  <tbody>
+    <tr><td><code>IOptions&lt;T&gt;</code></td><td>Singleton</td><td>tidak: "Does not support: Reading of configuration data after the app has started"</td><td>default; setting yang tetap</td></tr>
+    <tr><td><code>IOptionsSnapshot&lt;T&gt;</code></td><td>Scoped: "so it can't be injected into a singleton service"</td><td>ya, dihitung ulang per request</td><td>Service Scoped yang butuh nilai terbaru per request</td></tr>
+    <tr><td><code>IOptionsMonitor&lt;T&gt;</code></td><td>Singleton</td><td>ya: "Reloadable configuration", change notification</td><td>Singleton / BackgroundService yang butuh nilai terbaru</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0#options-interfaces">[4] Options interfaces</a>. Perhatikan <code>IOptionsSnapshot</code> + Singleton = captive dependency lagi.</p>
+
+<!-- ============ EXERCISE 5 ============ -->
+<section class="exercise">
+  <h2>Latihan 5 — Konfigurasi dan Options</h2>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="config-layers" data-stack></div>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="options-pattern" data-stack></div>
+</section>
+
+<!-- ============ EXERCISE 6 ============ -->
+<section class="exercise">
+  <h2>Latihan 6 — Ucapkan dengan suara keras</h2>
+  <p>
+    Pasang timer 90 detik dan jawab dengan suara keras, seolah sedang interview.
+    Jangan buka jawaban contoh sebelum selesai.
+  </p>
+  <blockquote>"Jelaskan apa yang terjadi pada sebuah request di ASP.NET Core dari masuk sampai response keluar, dan kenapa urutan middleware penting."</blockquote>
+
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Request masuk ke pipeline middleware yang disusun di <code>Program.cs</code>. Setiap middleware bisa mengerjakan sesuatu sebelum memanggil <code>next</code>,
+      lalu sesudahnya saat response kembali, jadi urutannya seperti bawang: masuk A-B-C, keluar C-B-A. Middleware juga bisa short-circuit,
+      misalnya langsung mengembalikan 401 tanpa memanggil <code>next</code>. Karena itu urutan menentukan perilaku: exception handler dipasang paling awal
+      supaya membungkus semua yang sesudahnya, kebalikan dari Express di mana error handler ditaruh paling akhir. Lalu HTTPS redirection, routing, CORS,
+      authentication, authorization, baru endpoint seperti <code>MapControllers</code>. Authentication harus sebelum authorization karena kita harus tahu siapa
+      user-nya dulu sebelum memutuskan boleh atau tidak, dan CORS sebelum keduanya. Middleware dibuat sekali seumur aplikasi, jadi service Scoped seperti
+      DbContext diterima lewat parameter <code>InvokeAsync</code>, bukan constructor."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>pipeline = rangkaian middleware yang disusun di <code>Program.cs</code>, dijalankan berurutan?</li>
+      <li>setiap middleware bisa bekerja sebelum dan sesudah <code>next</code> (masuk A-B-C, keluar C-B-A)?</li>
+      <li>middleware bisa short-circuit (tidak memanggil <code>next</code>), contoh 401?</li>
+      <li>exception handler paling awal supaya menangkap exception dari middleware sesudahnya (beda dengan Express)?</li>
+      <li>urutan inti: routing → CORS → authentication → authorization → endpoint?</li>
+      <li>middleware dibuat sekali, jadi service Scoped diterima di parameter <code>InvokeAsync</code>?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kalau kurang, ulangi besok pagi sebelum lesson berikutnya (spacing).</p>
+  </details>
+
+  <h3>Bonus 60 detik</h3>
+  <blockquote>"Di mana Anda menyimpan connection string dan secret, dan bagaimana Service membacanya?"</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Konfigurasi di ASP.NET Core berlapis. Paling bawah <code>appsettings.json</code>, lalu ditimpa <code>appsettings.Development.json</code> atau
+      <code>appsettings.Production.json</code> sesuai environment, lalu User Secrets kalau di Development, lalu environment variable, dan paling atas argumen command-line.
+      Secret tidak pernah saya taruh di appsettings yang di-commit. Saat development saya pakai <code>dotnet user-secrets</code>, yang disimpan di profil user di luar repo
+      tapi tidak dienkripsi. Di production pakai environment variable, misalnya <code>ConnectionStrings__Default</code> dengan double underscore, atau Key Vault.
+      Service tidak membaca <code>IConfiguration</code> langsung; saya buat class seperti <code>JwtOptions</code>, daftarkan dengan
+      <code>Configure&lt;JwtOptions&gt;(GetSection("Jwt"))</code>, lalu inject <code>IOptions&lt;JwtOptions&gt;</code>, supaya bertipe kuat dan tiap class hanya tahu
+      setting miliknya. Kalau nilainya bisa berubah saat runtime saya pakai <code>IOptionsMonitor</code>. Padanannya di Node: <code>process.env</code> plus modul
+      <code>config/</code> yang divalidasi."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>lapisan: appsettings.json → appsettings.{Environment}.json → User Secrets → environment variable → command-line?</li>
+      <li>sumber yang belakangan menimpa yang sebelumnya?</li>
+      <li>secret tidak di appsettings yang di-commit; development pakai User Secrets (di luar repo, tidak terenkripsi)?</li>
+      <li>production: environment variable (pakai <code>__</code> untuk hierarki) atau secret store seperti Key Vault?</li>
+      <li>Options Pattern: class bertipe + <code>Configure&lt;T&gt;(GetSection)</code> + inject <code>IOptions&lt;T&gt;</code>?</li>
+      <li><code>IOptions</code> vs <code>IOptionsSnapshot</code> (Scoped, per request) vs <code>IOptionsMonitor</code> (Singleton, reload)?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Kedua pertanyaan ini terdaftar di bank soal dan bisa muncul di review 0007.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±10 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0#middleware-order">Microsoft Learn: ASP.NET Core middleware (.NET 8)</a>,
+  terutama gambar pipeline di awal dan bagian "Middleware order". Untuk konfigurasi, baca bagian
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0#options-interfaces">"Options interfaces"</a>
+  di halaman Options pattern.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/middleware-dan-options.html">Reference: Middleware dan Options Pattern</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kenapa preflight CORS bisa gagal kalau UseCors ditaruh sesudah UseAuthorization?" atau "kapan saya butuh IOptionsSnapshot, bukan IOptions?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/?view=aspnetcore-8.0">[1] ASP.NET Core middleware (.NET 8)</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/middleware/write?view=aspnetcore-8.0">[2] Write custom ASP.NET Core middleware</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/?view=aspnetcore-8.0">[3] Configuration in ASP.NET Core</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/configuration/options?view=aspnetcore-8.0">[4] Options pattern in ASP.NET Core</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-8.0">[5] Safe storage of app secrets in development</a> ·
+  <a href="https://learn.microsoft.com/en-us/aspnet/core/security/cors?view=aspnetcore-8.0">[6] Enable CORS in ASP.NET Core</a> ·
+  <a href="https://expressjs.com/en/guide/using-middleware.html">[7] Express: Using middleware</a> ·
+  <a href="https://expressjs.com/en/guide/error-handling.html">[8] Express: Error handling</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0004-service-lifetime.html">← 0004 · Service Lifetime</a>
+  <a href="0006-ef-core-dan-star.html">0006 · Konsep EF Core →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0005.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

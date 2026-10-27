@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · EF Core: change tracking, Migration, N+1, AsNoTracking</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Backend · EF Core</div>
+<h1>EF Core: change tracking, Migration, N+1, <code>AsNoTracking</code></h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0006-ef-core-dan-star.html">Lesson 0006</a>.</p>
+
+<h2>DbContext dan change tracking <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/change-tracking/">[1]</a></sup></h2>
+<ul>
+  <li>DbContext = sesi ke database, satu unit of work pendek (Scoped, satu per request; lihat <a href="service-lifetime.html">Service Lifetime</a>).</li>
+  <li>Entity hasil query / <code>Add</code> / <code>Remove</code> dilacak. EF Core menyimpan snapshot, lalu <code>SaveChanges</code> membandingkan dan mengirim SQL.</li>
+  <li>Perubahan dilacak per property: UPDATE hanya kolom yang berubah. Tidak perlu <code>Update()</code> untuk Entity yang dilacak.</li>
+</ul>
+<table>
+  <thead><tr><th>State</th><th>Arti</th><th><code>SaveChanges</code></th></tr></thead>
+  <tbody>
+    <tr><td><code>Added</code></td><td>baru (<code>Add</code>)</td><td>INSERT</td></tr>
+    <tr><td><code>Unchanged</code></td><td>hasil query, belum diubah</td><td>—</td></tr>
+    <tr><td><code>Modified</code></td><td>property diubah</td><td>UPDATE</td></tr>
+    <tr><td><code>Deleted</code></td><td>ditandai <code>Remove</code></td><td>DELETE</td></tr>
+    <tr><td><code>Detached</code></td><td>tidak dilacak (mis. hasil <code>AsNoTracking</code>)</td><td>diabaikan</td></tr>
+  </tbody>
+</table>
+
+<h2>Migration (code-first) <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/">[2]</a></sup></h2>
+<pre><code>dotnet ef migrations add AddProductSku       # bandingkan model vs snapshot → file migration (di-commit)
+dotnet ef database update                    # terapkan; dicatat di __EFMigrationsHistory
+dotnet ef migrations script --idempotent     # production: SQL script yang direview</code></pre>
+<ul>
+  <li>Code-first: model sumber kebenaran → Migration. Database-first: database sumber kebenaran → scaffold (reverse engineering). <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/">[3]</a></sup></li>
+  <li><code>database update</code> untuk lokal; production pakai SQL script atau bundle, karena migration bisa men-drop kolom. <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying">[4]</a></sup></li>
+  <li>Padanan Node: <code>prisma migrate dev</code> / <code>prisma migrate deploy</code>.</li>
+</ul>
+
+<h2>N+1 <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying#beware-of-lazy-loading">[5]</a></sup></h2>
+<pre><code>// ✗ lazy loading: 1 query Category + 1 query per Category
+foreach (var c in await db.Categories.ToListAsync())
+    foreach (var p in c.Products) { ... }
+
+// ✓ eager loading, satu query
+await db.Categories.Include(c =&gt; c.Products).ToListAsync();
+// ✓ projection ke DTO, hanya kolom yang perlu (juga tidak dilacak)
+await db.Categories.Select(c =&gt; new CategoryResponse(c.Id, c.Name, c.Products.Select(p =&gt; p.Name).ToList())).ToListAsync();</code></pre>
+<ul>
+  <li>Deteksi: statement logging EF Core → SELECT yang sama berulang dengan parameter berbeda.</li>
+  <li>Penyebab: lazy loading (<code>UseLazyLoadingProxies</code>, opt-in) atau query di dalam loop. Microsoft menyarankan menghindari lazy loading.</li>
+  <li>Padanan Node: Prisma <code>include</code> alih-alih <code>await</code> di dalam loop.</li>
+</ul>
+
+<h2><code>AsNoTracking</code> <sup class="cite"><a href="https://learn.microsoft.com/en-us/ef/core/querying/tracking">[6]</a></sup></h2>
+<ul>
+  <li>Untuk query read-only (GET, laporan): tanpa snapshot dan change tracker, lebih cepat dan hemat memori.</li>
+  <li>Jangan untuk data yang akan diubah: perubahan pada Entity no-tracking <strong>tidak disimpan</strong> oleh <code>SaveChanges</code>, tanpa error.</li>
+  <li>No-tracking tidak melakukan identity resolution: baris yang sama bisa menjadi beberapa instance.</li>
+</ul>
+
+<h2>Jawaban 60–90 detik</h2>
+<p>
+  Lihat log SQL dulu. N+1 = satu query awal + satu query per baris untuk relasinya, biasanya dari lazy loading di dalam loop.
+  Perbaiki dengan <code>Include</code> atau projection <code>Select</code> ke DTO dalam satu roundtrip. Untuk endpoint read-only pakai <code>AsNoTracking</code>
+  (tanpa snapshot/change tracker); endpoint yang mengubah data tetap tracking karena <code>SaveChanges</code> butuh change tracker.
+</p>
+
+<p class="note">Sumber:
+  <a href="https://learn.microsoft.com/en-us/ef/core/change-tracking/">[1] Change Tracking</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/">[2] Migrations Overview</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/">[3] Managing Database Schemas</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying">[4] Applying Migrations</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/performance/efficient-querying">[5] Efficient Querying</a> ·
+  <a href="https://learn.microsoft.com/en-us/ef/core/querying/tracking">[6] Tracking vs. No-Tracking Queries</a></p>
+</main>
+</body>
+</html>

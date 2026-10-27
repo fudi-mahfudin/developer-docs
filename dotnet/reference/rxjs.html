@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · RxJS untuk interview Angular 16</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Frontend · Angular 16 + RxJS</div>
+<h1>RxJS untuk interview Angular 16</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0015-rxjs.html">Lesson 0015</a>.</p>
+
+<h2>Observable vs Promise</h2>
+<table>
+  <thead><tr><th></th><th>Promise</th><th>Observable</th></tr></thead>
+  <tbody>
+    <tr><td>Mulai</td><td>langsung saat dibuat (eager)</td><td>saat <code>subscribe()</code> (lazy)</td></tr>
+    <tr><td>Nilai</td><td>satu</td><td>nol sampai banyak (<code>next</code> / <code>error</code> / <code>complete</code>)</td></tr>
+    <tr><td>Batal</td><td>tidak bisa</td><td><code>unsubscribe()</code></td></tr>
+    <tr><td>Rangkai</td><td><code>.then</code> / <code>.catch</code></td><td><code>.pipe(op, op)</code> lalu <code>.subscribe</code></td></tr>
+  </tbody>
+</table>
+<p><code>HttpClient</code>: cold. Tanpa <code>subscribe</code> tidak ada request; dua kali <code>subscribe</code> = dua request.</p>
+
+<h2>Subject</h2>
+<table>
+  <thead><tr><th>Jenis</th><th>Subscriber baru menerima</th><th>Pakai untuk</th><th>React</th></tr></thead>
+  <tbody>
+    <tr><td><code>Subject</code></td><td>hanya nilai setelah subscribe</td><td>event</td><td>event emitter</td></tr>
+    <tr><td><code>BehaviorSubject(awal)</code></td><td>nilai terakhir, langsung</td><td>state bersama di service</td><td>state di Context / store</td></tr>
+    <tr><td><code>ReplaySubject(n)</code></td><td>n nilai terakhir</td><td>cache beberapa nilai</td><td>–</td></tr>
+  </tbody>
+</table>
+<pre><code>private readonly items = new BehaviorSubject&lt;Product[]&gt;([]);
+readonly items$ = this.items.asObservable();
+add(p: Product) { this.items.next([...this.items.value, p]); }</code></pre>
+
+<h2>Pilih operator</h2>
+<table>
+  <thead><tr><th>Skenario</th><th>Operator</th><th>Kenapa</th></tr></thead>
+  <tbody>
+    <tr><td>Search box / route param</td><td><code>debounceTime</code> → <code>distinctUntilChanged</code> → <code>switchMap</code></td><td>request lama dibatalkan, hasil lama tidak menimpa</td></tr>
+    <tr><td>Beberapa request paralel, tunggu semua</td><td><code>forkJoin</code></td><td>seperti <code>Promise.all</code>; satu error = semua error</td></tr>
+    <tr><td>Hapus/upload massal, semua harus jalan</td><td><code>mergeMap</code> (opsi <code>concurrent</code>)</td><td>paralel, tidak ada yang dibatalkan</td></tr>
+    <tr><td>Simpan berurutan</td><td><code>concatMap</code></td><td>antre; = <code>mergeMap</code> dengan concurrency 1</td></tr>
+    <tr><td>Tombol Simpan/Login diklik berkali-kali</td><td><code>exhaustMap</code></td><td>klik baru diabaikan selama request jalan</td></tr>
+    <tr><td>Ubah bentuk data</td><td><code>map</code></td><td>seperti <code>Array.map</code> per nilai</td></tr>
+    <tr><td>Request gagal → nilai cadangan</td><td><code>catchError(() =&gt; of([]))</code></td><td>seperti <code>.catch</code>; taruh di dalam <code>switchMap</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Mencegah memory leak</h2>
+<ol>
+  <li><strong><code>async</code> pipe</strong> (utama): <code>*ngFor="let p of products$ | async"</code>. Subscribe dan unsubscribe otomatis.</li>
+  <li><strong><code>takeUntil(this.destroy$)</code></strong> di akhir <code>pipe</code>; <code>ngOnDestroy() { this.destroy$.next(); this.destroy$.complete(); }</code></li>
+  <li><code>takeUntilDestroyed()</code> (<code>@angular/core/rxjs-interop</code>): ada di v16 tapi masih developer preview.</li>
+</ol>
+<p>Berbahaya: subscribe manual ke stream yang tidak pernah complete (<code>interval</code>, <code>valueChanges</code>, Subject di service) tanpa cleanup. React: <code>useEffect</code> tanpa cleanup.</p>
+
+<h2>Jebakan interview</h2>
+<ol>
+  <li>Lupa <code>subscribe</code> pada <code>http.get</code> → tidak ada request.</li>
+  <li><code>mergeMap</code> di search box → race condition, hasil lama menimpa.</li>
+  <li><code>catchError</code> di stream luar → search box mati setelah error pertama.</li>
+  <li><code>switchMap</code> untuk DELETE massal → sebagian request dibatalkan.</li>
+</ol>
+
+<p class="note">Sumber: <a href="https://rxjs.dev/guide/observable">RxJS Observable</a> · <a href="https://rxjs.dev/guide/subject">RxJS Subject</a> · <a href="https://rxjs.dev/api/operators/switchMap">switchMap</a> · <a href="https://rxjs.dev/api/operators/mergeMap">mergeMap</a> · <a href="https://rxjs.dev/api/operators/exhaustMap">exhaustMap</a> · <a href="https://rxjs.dev/api/index/function/forkJoin">forkJoin</a> · <a href="https://v16.angular.io/guide/comparing-observables">Angular v16: Observables compared</a> · <a href="https://v16.angular.io/guide/http-request-data-from-server">HttpClient</a> · <a href="https://v16.angular.io/api/common/AsyncPipe">AsyncPipe</a></p>
+</main>
+</body>
+</html>

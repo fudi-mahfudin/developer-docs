@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0022 · Index: clustered, non-clustered, composite, covering</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0022 · Database · ±30 menit (15 konsep + kuis, 15 hands-on) · Hari 4</div>
+  <h1>Index: clustered vs non-clustered, composite, dan covering (<code>INCLUDE</code>)</h1>
+  <p class="subtitle">Pertanyaan database yang hampir pasti muncul, dijawab dengan angka logical reads dari lab sendiri</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Apa beda clustered dan non-clustered index? Query daftar Product per Category lambat: index apa yang Anda buat, dan kapan index justru merugikan?"</em>
+  tanpa catatan: dengan analogi buku, urutan kolom composite index yang benar, <code>INCLUDE</code> untuk menghilangkan key lookup,
+  dan bukti sebelum/sesudah berupa logical reads dan execution plan yang sudah Anda lihat sendiri pada 100.000 Product.
+</div>
+
+<p class="note">
+  Sebelum mulai: setup lab sudah dijalankan (<a href="../ROADMAP.md">ROADMAP</a>, "Hari 4"). Setup sengaja hanya membuat dua index di <code>dbo.Product</code>:
+  <code>PK_Product</code> (clustered, dari PRIMARY KEY) dan <code>UQ_Product_Name</code> (non-clustered, dari UNIQUE). Tidak ada index pada <code>CategoryId</code>,
+  karena FOREIGN KEY tidak membuat index otomatis (lesson <a href="0019-sql-dasar.html">0019</a>).
+  Padanan Node: ini sama dengan <code>@@index([categoryId])</code> di schema Prisma atau <code>CREATE INDEX</code> di migration knex; bedanya, di interview .NET Anda diharapkan bisa menjelaskan apa yang terjadi di dalamnya.
+</p>
+
+<h2>1. Clustered vs non-clustered: analogi buku</h2>
+<p>
+  Microsoft sendiri memakai analogi buku: index adalah "a sorted list of keywords and next to each keyword is a set of page numbers".
+  Index rowstore disimpan sebagai B+ tree. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th>Clustered index</th><th>Non-clustered index</th></tr></thead>
+  <tbody>
+    <tr><td>Analogi</td><td>buku telepon: <strong>isinya sendiri</strong> sudah urut nama</td><td>indeks di belakang buku: kata kunci urut + nomor halaman</td></tr>
+    <tr><td>Isi leaf level</td><td>data pages tabel itu sendiri, semua kolom</td><td>key index + penunjuk ke baris (row locator)</td></tr>
+    <tr><td>Jumlah per tabel</td><td><strong>satu</strong>: "the data rows themselves can be stored in only one order"</td><td>banyak</td></tr>
+    <tr><td>Penunjuk ke baris</td><td>—</td><td>tabel ber-clustered index: <strong>clustered key</strong> (di lab: <code>Id</code>); heap: RID</td></tr>
+    <tr><td>Di lab</td><td><code>PK_Product (Id)</code></td><td><code>UQ_Product_Name (Name)</code></td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described">[2]</a></sup></p>
+<ul>
+  <li>"If a table has no clustered index, its data rows are stored in an unordered structure called a <strong>heap</strong>." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described">[2]</a></sup></li>
+  <li>PRIMARY KEY membuat unique index yang "by default ... is clustered". Clustered key yang ideal: sempit, unik, selalu naik, tidak berubah, NOT NULL; "a single int or bigint not nullable column ... populated by an IDENTITY clause" memenuhi semuanya. GUID acak tidak: 16 byte dan tidak selalu naik. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup></li>
+  <li>Kenapa sempit penting: "The clustered index key is a part of any nonclustered index on the same base table." Clustered key yang lebar membuat <em>semua</em> index ikut gemuk. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Clustered atau non-clustered?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review database 0024.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0024.</p>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="idx-clustered" data-stack></div>
+</section>
+
+<h2>2. Key lookup, dan kenapa index kadang diabaikan</h2>
+<pre><code>CREATE INDEX IX_Product_CategoryId ON dbo.Product (CategoryId);
+
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 6;   -- 20 baris</code></pre>
+<p>
+  Index menemukan 20 entri Category 6 dengan <strong>Index Seek</strong>, tapi entri itu hanya berisi CategoryId dan Id. Name dan Price ada di clustered index,
+  jadi engine "melompat ke halamannya" sekali per baris: <strong>Key Lookup</strong>.
+  "The Key Lookup operator is a bookmark lookup on a table with a clustered index ... Key Lookup is always accompanied by a Nested Loops operator."
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/showplan-logical-and-physical-operators-reference">[3]</a></sup>
+</p>
+<ul>
+  <li>Untuk sedikit baris, itu murah: "A low number of executions is typically not a performance concern." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/showplan-logical-and-physical-operators-reference">[3]</a></sup></li>
+  <li>Untuk ±2.500 baris (Category 2), ribuan lookup lebih mahal daripada membaca seluruh tabel sekali, jadi optimizer memilih <strong>Clustered Index Scan</strong> dan index baru diabaikan:
+    "a table scan could be the most efficient method if ... the result set of the query is a high percentage of rows from the table." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described">[2]</a></sup>
+    Titik peralihan ini sering disebut <em>tipping point</em>. Obatnya bukan hint, tapi index yang tidak butuh lookup (bagian 3).</li>
+  <li>Pada heap, operator yang sama bernama RID Lookup. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/showplan-logical-and-physical-operators-reference">[3]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 2 — Membaca plan</h2>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="idx-key-lookup" data-stack></div>
+</section>
+
+<h2>3. Covering index dengan <code>INCLUDE</code></h2>
+<pre><code>CREATE INDEX IX_Product_CategoryId_Covering
+    ON dbo.Product (CategoryId)          -- key: kolom predikat, diurutkan, bisa di-seek
+    INCLUDE (Name, Price);               -- hanya di leaf: diambil, tidak difilter</code></pre>
+<ul>
+  <li>"A covering index is a nonclustered index that satisfies all data access by a query directly without accessing the base table." Pola resminya: kolom SARGable di key, "non-SARGable columns as included columns". <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup></li>
+  <li>Kapan INCLUDE, kapan key: "If a column must be retrieved by a query, but isn't used in the query predicates, aggregations, and sorts, add it as an included column and not as a key column." Kolom INCLUDE tidak dihitung ke batas key (16 kolom, 900 byte) dan boleh bertipe seperti <code>nvarchar(max)</code>. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup> Sintaksnya: "a subset of non-key columns can be included using the INCLUDE clause". <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-index-transact-sql">[7]</a></sup></li>
+  <li><code>Id</code> tidak perlu ditulis: clustered key "automatically added to each nonunique nonclustered index on the table". <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup></li>
+  <li>Cara membuktikan: plan menjadi Index Seek <em>tanpa</em> Key Lookup, dan logical reads turun. Jangan berlebihan: "Avoid creating a covering index with too many columns", karena storage dan biaya tulis ikut naik. <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 3 — Covering</h2>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="idx-covering" data-stack></div>
+</section>
+
+<h2>4. Composite index: urutan kolom menentukan segalanya</h2>
+<pre><code>-- Query: 10 Product termahal di satu Category
+-- SELECT TOP (10) Name, Price FROM dbo.Product WHERE CategoryId = @c ORDER BY Price DESC;
+CREATE INDEX IX_Product_CategoryId_Price
+    ON dbo.Product (CategoryId, Price DESC)
+    INCLUDE (Name);</code></pre>
+<p>
+  Index composite diurutkan seperti buku telepon: dulu per kolom pertama, lalu per kolom kedua <em>di dalam</em> setiap nilai kolom pertama.
+  Contoh resmi: index (LastName, FirstName) berguna untuk <code>WHERE LastName = 'Smith'</code>, tapi
+  "the query optimizer wouldn't use the index for a query that searched only on WHERE FirstName = 'Jane'".
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Query terhadap <code>(CategoryId, Price DESC)</code></th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td><code>WHERE CategoryId = 2</code></td><td>Seek (kolom pertama)</td></tr>
+    <tr><td><code>WHERE CategoryId = 2 AND Price &gt;= 4900</code></td><td>Seek (kolom pertama + rentang kolom kedua)</td></tr>
+    <tr><td><code>WHERE CategoryId = 2 ORDER BY Price DESC</code></td><td>Seek, <strong>tanpa Sort</strong>: baris sudah urut</td></tr>
+    <tr><td><code>WHERE Price &gt;= 4900</code></td><td><strong>Tidak bisa seek</strong>: kolom kedua tanpa kolom pertama → scan</td></tr>
+  </tbody>
+</table>
+<p>
+  Aturan urutan dari Microsoft: kolom yang dipakai di predikat equality, inequality, BETWEEN, atau join "should be placed first", lalu kolom lain
+  "from the most distinct to the least distinct". <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup>
+  Versi praktis untuk interview: <strong>equality dulu, lalu range atau ORDER BY, lalu kolom yang hanya diambil masuk INCLUDE</strong>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 4 — Urutan kolom</h2>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="idx-composite" data-stack></div>
+</section>
+
+<h2>5. Kapan index merugikan</h2>
+<p>Desain index adalah "a complex balancing act between query speed, index update cost, and storage cost." <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup></p>
+<table>
+  <thead><tr><th>Masalah</th><th>Kenapa</th></tr></thead>
+  <tbody>
+    <tr><td>Biaya tulis</td><td>"A large number of indexes on a table affect the performance of INSERT, UPDATE, DELETE, and MERGE statements because data in indexes might have to change as data in the table changes."</td></tr>
+    <tr><td>Index spekulatif</td><td>"A common design mistake is to create many indexes speculatively to 'give the optimizer choices'." Hasilnya overindexing yang memperlambat perubahan data dan bisa memicu masalah concurrency.</td></tr>
+    <tr><td>Selektivitas rendah</td><td>Kolom dengan sedikit nilai berbeda: "a physical telephone directory sorted alphabetically on family name doesn't expedite locating a person if all people in the city are named Smith or Jones." Di lab: <code>CategoryId = 1</code> cocok dengan 90% baris.</td></tr>
+    <tr><td>Tabel kecil</td><td>Menelusuri index bisa lebih lama "than to perform a base table scan".</td></tr>
+    <tr><td>Index tak terpakai</td><td>"Monitor index usage, and remove unused indexes over time" lewat <code>sys.dm_db_index_usage_stats</code>.</td></tr>
+  </tbody>
+</table>
+<p class="note">Semua kutipan tabel: <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1]</a></sup>. Ingat juga: "Don't always equate index usage with good performance".</p>
+
+<section class="exercise">
+  <h2>Latihan 5 — Index atau bukan?</h2>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="idx-cost" data-stack></div>
+</section>
+
+<!-- ============ HANDS-ON ============ -->
+<h2>6. Hands-on (±15 menit): ukur sebelum dan sesudah</h2>
+<p>
+  Alat ukurnya <code>SET STATISTICS IO, TIME ON</code>. Bandingkan <strong>logical reads</strong> ("Number of pages read from the data cache"
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-io-transact-sql">[4]</a></sup>), bukan waktu:
+  logical reads tidak berubah karena cache atau beban laptop, sedangkan milidetik dari <code>STATISTICS TIME</code>
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-time-transact-sql">[5]</a></sup> naik-turun.
+  Setiap page berukuran 8 KiB <sup class="cite"><a href="https://learn.microsoft.com/en-us/sql/relational-databases/pages-and-extents-architecture-guide">[6]</a></sup>, jadi 800 logical reads ≈ 6,4 MB data yang disentuh.
+</p>
+<ol>
+  <li>Container jalan (<code>docker start sql2022</code>) dan setup lab sudah dijalankan.</li>
+  <li>Buka <code>dotnet/lab/0022-index.sql</code> di Azure Data Studio, VS Code mssql, atau SSMS. Nyalakan actual execution plan.</li>
+  <li>Jalankan <strong>per bagian</strong> (blok sampai <code>GO</code>). Sebelum menjalankan setiap query, tebak dulu operatornya dan apakah logical reads naik atau turun. Catat angkanya di tabel ini:</li>
+</ol>
+<table>
+  <thead><tr><th>Query</th><th>Tanpa index</th><th><code>(CategoryId)</code></th><th>Covering</th><th>Composite</th></tr></thead>
+  <tbody>
+    <tr><td><code>CategoryId = 6</code> (20 baris)</td><td>… reads</td><td>… reads</td><td>… reads</td><td>—</td></tr>
+    <tr><td><code>CategoryId = 2</code> (±2.500 baris)</td><td>… reads</td><td>… reads</td><td>… reads</td><td>—</td></tr>
+    <tr><td><code>TOP (10) … ORDER BY Price DESC</code></td><td>—</td><td>—</td><td>Sort?</td><td>Sort?</td></tr>
+  </tbody>
+</table>
+<p class="note">Lewat <code>sqlcmd</code>: <code>docker cp dotnet/lab/0022-index.sql sql2022:/tmp/0022.sql</code> lalu
+  <code>docker exec sql2022 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Dev_Passw0rd!' -C -i /tmp/0022.sql</code>
+  (logical reads tampil, plan tidak). Skrip menghapus semua index buatannya di bagian 6, jadi lab kembali ke kondisi setup untuk lesson 0023.</p>
+
+<pre class="script" data-file="dotnet/lab/0022-index.sql"><code>-- Lesson 0022 · Index: clustered vs non-clustered, key lookup, covering (INCLUDE), composite, biaya index.
+-- Jalankan setelah dotnet/lab/00-setup-product-catalog-lab.sql. Boleh dijalankan ulang.
+-- Jalankan per bagian (blok sampai GO). Nyalakan "Include Actual Execution Plan"
+-- (Ctrl+M di SSMS, tombol "Explain"/"Actual plan" di Azure Data Studio / VS Code mssql),
+-- lalu bandingkan dua hal untuk setiap query: operator di plan dan "logical reads" di tab Messages.
+-- Angka di komentar adalah perkiraan; yang penting arah perubahannya.
+
+USE ProductCatalogLab;
+SET NOCOUNT ON;
+GO
+
+-- 0. Kondisi awal ---------------------------------------------------------------------------
+-- Hapus sisa index lesson ini kalau skrip pernah dijalankan setengah jalan.
+DROP INDEX IF EXISTS IX_Product_CategoryId ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CategoryId_Covering ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CategoryId_Price ON dbo.Product;
+GO
+
+-- Harus hanya dua: PK_Product (CLUSTERED, dari PRIMARY KEY) dan UQ_Product_Name (NONCLUSTERED, dari UNIQUE).
+-- Perhatikan: FK_Product_Category TIDAK membuat index pada CategoryId.
+SELECT i.name, i.type_desc, i.is_unique, i.is_primary_key
+FROM sys.indexes AS i
+WHERE i.object_id = OBJECT_ID(N'dbo.Product') AND i.index_id &gt; 0
+ORDER BY i.index_id;
+GO
+
+SET STATISTICS IO, TIME ON;
+GO
+
+-- 1. SEBELUM index --------------------------------------------------------------------------
+-- Category 6 = 20 Product, Category 2 = ±2.500 Product, dari 100.000.
+-- Plan: Clustered Index Scan. Logical reads = hampir semua page tabel (ratusan), walau hasilnya 20 baris.
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 6;
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 2;
+GO
+
+-- 2. Non-clustered index biasa: Index Seek + Key Lookup -------------------------------------
+-- Index ini hanya berisi CategoryId (+ Id, clustered key yang otomatis ikut sebagai penunjuk).
+CREATE INDEX IX_Product_CategoryId ON dbo.Product (CategoryId);
+GO
+
+-- Category 6: Index Seek + Nested Loops + Key Lookup. Name dan Price tidak ada di index,
+-- jadi diambil dari clustered index untuk SETIAP baris. Logical reads turun jauh (puluhan).
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 6;
+
+-- Category 2: kemungkinan besar tetap Clustered Index Scan. ±2.500 key lookup (masing-masing
+-- beberapa page) lebih mahal daripada membaca seluruh tabel sekali. Index ada, tapi tidak dipakai.
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 2;
+
+-- Hanya kolom yang ada di index (CategoryId, Id): Index Seek saja, tanpa Key Lookup, juga untuk Category 2.
+SELECT Id FROM dbo.Product WHERE CategoryId = 2;
+GO
+
+-- 3. Covering index dengan INCLUDE ----------------------------------------------------------
+-- Kolom predikat di key, kolom yang hanya diambil di INCLUDE (disimpan di leaf, tidak diurutkan).
+-- Id tidak perlu ditulis: clustered key otomatis ada di setiap non-clustered index.
+DROP INDEX IF EXISTS IX_Product_CategoryId ON dbo.Product;
+CREATE INDEX IX_Product_CategoryId_Covering ON dbo.Product (CategoryId) INCLUDE (Name, Price);
+GO
+
+-- Keduanya sekarang Index Seek saja, tanpa Key Lookup. Category 2 akhirnya memakai index,
+-- dengan logical reads jauh di bawah scan di bagian 1.
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 6;
+SELECT Id, Name, Price FROM dbo.Product WHERE CategoryId = 2;
+
+-- Masih covering, tapi hasilnya belum urut menurut Price: perhatikan operator Sort (atau Top N Sort) di plan.
+SELECT TOP (10) Name, Price FROM dbo.Product WHERE CategoryId = 2 ORDER BY Price DESC;
+GO
+
+-- 4. Composite index dan urutan kolom -------------------------------------------------------
+-- CategoryId di depan (equality), Price kedua supaya baris di dalam satu Category sudah urut harga.
+DROP INDEX IF EXISTS IX_Product_CategoryId_Covering ON dbo.Product;
+CREATE INDEX IX_Product_CategoryId_Price ON dbo.Product (CategoryId, Price DESC) INCLUDE (Name);
+GO
+
+-- Index Seek + Top, TANPA Sort: engine membaca 10 entri pertama Category 2 dan berhenti.
+SELECT TOP (10) Name, Price FROM dbo.Product WHERE CategoryId = 2 ORDER BY Price DESC;
+
+-- Kolom pertama + rentang di kolom kedua: tetap Index Seek.
+SELECT Name, Price FROM dbo.Product WHERE CategoryId = 2 AND Price &gt;= 4900;
+
+-- Hanya kolom kedua: TIDAK bisa seek (leftmost prefix). Plan menjadi scan
+-- (Index Scan atas index ini, atau Clustered Index Scan), logical reads naik lagi.
+SELECT Name, Price FROM dbo.Product WHERE Price &gt;= 4900;
+GO
+
+SET STATISTICS IO, TIME OFF;
+GO
+
+-- 5. Biaya index ----------------------------------------------------------------------------
+-- Storage: setiap index adalah salinan kolomnya sendiri. Bandingkan page index buatan dengan PK_Product.
+SELECT i.name, i.type_desc, ps.used_page_count, ps.row_count
+FROM sys.dm_db_partition_stats AS ps
+JOIN sys.indexes AS i ON i.object_id = ps.object_id AND i.index_id = ps.index_id
+WHERE ps.object_id = OBJECT_ID(N'dbo.Product')
+ORDER BY i.index_id;
+
+-- Biaya tulis: UPDATE Price harus mengubah clustered index DAN IX_Product_CategoryId_Price.
+-- Dibungkus transaction + ROLLBACK supaya data lab tidak berubah (transaction: lesson 0021).
+BEGIN TRANSACTION;
+UPDATE dbo.Product SET Price = Price + 1 WHERE CategoryId = 2;
+ROLLBACK TRANSACTION;
+
+-- Pemakaian index sejak server terakhir start: seek/scan/lookup (dibaca) vs user_updates (ditulis).
+-- Index dengan user_updates tinggi tapi seek/scan nol hanya menambah biaya: kandidat dihapus.
+SELECT i.name, us.user_seeks, us.user_scans, us.user_lookups, us.user_updates
+FROM sys.indexes AS i
+LEFT JOIN sys.dm_db_index_usage_stats AS us
+    ON us.object_id = i.object_id AND us.index_id = i.index_id AND us.database_id = DB_ID()
+WHERE i.object_id = OBJECT_ID(N'dbo.Product') AND i.index_id &gt; 0
+ORDER BY i.index_id;
+GO
+
+-- 6. Kembalikan lab ke kondisi setup --------------------------------------------------------
+DROP INDEX IF EXISTS IX_Product_CategoryId ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CategoryId_Covering ON dbo.Product;
+DROP INDEX IF EXISTS IX_Product_CategoryId_Price ON dbo.Product;
+GO
+
+-- Harus kembali hanya PK_Product dan UQ_Product_Name.
+SELECT i.name, i.type_desc
+FROM sys.indexes AS i
+WHERE i.object_id = OBJECT_ID(N'dbo.Product') AND i.index_id &gt; 0
+ORDER BY i.index_id;
+GO
+</code></pre>
+
+<h2>7. Latihan tulis query</h2>
+<p>Tulis sendiri di editor SQL, jalankan di lab, baru buka jawaban. Tidak dinilai otomatis; bandingkan plan, logical reads, dan bentuk query-nya.</p>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>A.</strong> Endpoint "Product habis per Category" menjalankan
+    <code>SELECT Name, Stock FROM dbo.Product WHERE CategoryId = 5 AND Stock = 0 ORDER BY Name;</code>
+    Ukur dulu, lalu buat <strong>satu</strong> index yang membuat plan-nya Index Seek tanpa Key Lookup. Ukur lagi, lalu hapus index-nya.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>SET STATISTICS IO ON;
+SELECT Name, Stock FROM dbo.Product WHERE CategoryId = 5 AND Stock = 0 ORDER BY Name;
+-- Clustered Index Scan, logical reads = seluruh tabel
+
+CREATE INDEX IX_Product_CategoryId_Stock
+    ON dbo.Product (CategoryId, Stock)
+    INCLUDE (Name);
+
+SELECT Name, Stock FROM dbo.Product WHERE CategoryId = 5 AND Stock = 0 ORDER BY Name;
+-- Index Seek (+ Sort kecil), tanpa Key Lookup, hanya beberapa logical reads
+SET STATISTICS IO OFF;
+
+DROP INDEX IF EXISTS IX_Product_CategoryId_Stock ON dbo.Product;</code></pre>
+    <p>Hasilnya 19 baris (menurut rumus seed). Kedua predikat equality, jadi keduanya di key; Name hanya diambil, jadi INCLUDE dan index tetap covering.
+      Sort untuk 19 baris murah. Kalau ingin tanpa Sort sama sekali, jadikan Name kolom key ketiga: <code>(CategoryId, Stock, Name)</code>; urutan baris di dalam CategoryId dan Stock yang sama lalu sudah urut nama.
+      <code>(Stock, CategoryId)</code> juga bisa seek untuk query ini, tapi tidak membantu query lain yang hanya memfilter CategoryId.</p>
+  </details>
+</div>
+
+<div class="sql-exercise">
+  <p class="prompt"><strong>B.</strong> Tulis query katalog yang menampilkan setiap index di <code>dbo.Product</code> beserta kolomnya: nama index, jenis (CLUSTERED/NONCLUSTERED), nama kolom, posisi di key, dan apakah kolom itu kolom INCLUDE. Jalankan saat index dari latihan A masih ada.</p>
+  <details class="answer"><summary>Lihat jawaban</summary>
+<pre><code>SELECT i.name AS IndexName, i.type_desc, c.name AS ColumnName,
+       ic.key_ordinal, ic.is_descending_key, ic.is_included_column
+FROM sys.indexes AS i
+JOIN sys.index_columns AS ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+WHERE i.object_id = OBJECT_ID(N'dbo.Product')
+ORDER BY i.index_id, ic.is_included_column, ic.key_ordinal;</code></pre>
+    <p>Kolom INCLUDE punya <code>key_ordinal = 0</code> dan <code>is_included_column = 1</code>. Perhatikan bahwa <code>Id</code> tidak muncul di baris index non-clustered walau secara fisik ikut tersimpan sebagai row locator: katalog hanya mencatat kolom yang Anda tulis.</p>
+  </details>
+</div>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 6 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Apa beda clustered dan non-clustered index? Jelaskan dengan analogi." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Clustered index adalah tabelnya sendiri: baris data disimpan urut menurut key-nya, seperti buku telepon yang isinya sudah urut nama.
+      Karena data hanya bisa diurutkan satu cara, satu tabel cuma punya satu clustered index, dan secara default itu dibuat dari primary key, misalnya Id IDENTITY yang sempit dan selalu naik.
+      Non-clustered index adalah struktur terpisah, seperti indeks di belakang buku: berisi key yang diurutkan plus penunjuk ke baris, yaitu clustered key. Boleh ada banyak.
+      Kalau query butuh kolom yang tidak ada di index, engine harus melompat ke clustered index untuk setiap baris, itu key lookup.
+      Keduanya B+ tree, dan setiap index menambah biaya tulis."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>clustered = data tabel itu sendiri, disimpan urut menurut key (leaf = data pages)?</li>
+      <li>hanya satu clustered index per tabel karena data hanya bisa diurutkan satu cara?</li>
+      <li>PRIMARY KEY default menjadi clustered; key ideal sempit, unik, selalu naik (IDENTITY)?</li>
+      <li>non-clustered = struktur terpisah berisi key + penunjuk (clustered key), boleh banyak?</li>
+      <li>kolom di luar index diambil lewat key lookup ke clustered index?</li>
+      <li>analogi buku: isi yang urut vs indeks di belakang buku yang menunjuk halaman?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Endpoint daftar Product per Category lambat. Query-nya <code>SELECT Name, Price FROM dbo.Product WHERE CategoryId = @c ORDER BY Price DESC</code>. Index apa yang Anda buat, bagaimana membuktikannya, dan apa risikonya?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Pertama saya ukur dulu dengan <code>SET STATISTICS IO ON</code> dan execution plan: tanpa index, plan-nya Clustered Index Scan dan logical reads-nya sebanyak seluruh tabel.
+      Saya buat <code>CREATE INDEX IX_Product_CategoryId_Price ON dbo.Product (CategoryId, Price DESC) INCLUDE (Name)</code>.
+      CategoryId di depan karena itu predikat equality, Price kedua supaya hasilnya sudah urut dan tidak perlu Sort, dan Name di INCLUDE karena hanya diambil, tidak difilter.
+      Index ini covering, jadi tidak ada key lookup. Lalu saya bandingkan lagi: plan menjadi Index Seek tanpa Key Lookup dan logical reads turun jauh.
+      Risikonya, setiap INSERT dan UPDATE pada kolom itu sekarang juga memperbarui index ini, dan index makan storage, jadi saya tidak menambah index spekulatif dan memantau pemakaiannya."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>mengukur dulu: <code>SET STATISTICS IO</code> (logical reads) dan execution plan, sebelum dan sesudah?</li>
+      <li>CategoryId di depan sebagai kolom equality (leftmost prefix)?</li>
+      <li>Price sebagai kolom key kedua supaya ORDER BY tidak butuh Sort?</li>
+      <li>Name di INCLUDE karena hanya diambil: covering, tanpa key lookup?</li>
+      <li>bukti: Clustered Index Scan berubah menjadi Index Seek, logical reads turun?</li>
+      <li>risiko: biaya tulis dan storage, jangan menambah index spekulatif, pantau pemakaian?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review 0024 akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (±15 menit)</span>
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">Microsoft Learn: Index architecture and design guide</a>.
+  Baca "Index basics", "Column considerations" (urutan kolom), dan "Use included columns in nonclustered indexes".
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/sql-index.html">Reference: Index</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Database (SQL Server)")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kenapa GUID buruk sebagai clustered key?", "apa itu filtered index dan kapan dipakai?", atau "bagaimana EF Core membuat index lewat <code>HasIndex</code> dan <code>IncludeProperties</code>?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/sql-server-index-design-guide">[1] Index architecture and design guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/indexes/clustered-and-nonclustered-indexes-described">[2] Clustered and nonclustered indexes described</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/showplan-logical-and-physical-operators-reference">[3] Showplan logical and physical operators reference</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-io-transact-sql">[4] SET STATISTICS IO</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/set-statistics-time-transact-sql">[5] SET STATISTICS TIME</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/relational-databases/pages-and-extents-architecture-guide">[6] Pages and extents architecture guide</a> ·
+  <a href="https://learn.microsoft.com/en-us/sql/t-sql/statements/create-index-transact-sql">[7] CREATE INDEX</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0021-transaction-locking.html">← 0021 · Transaction, isolation level, locking</a>
+  <a href="0023-optimasi-query.html">0023 · Optimasi query →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0022.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/hands-on.js"></script>
+</body>
+</html>

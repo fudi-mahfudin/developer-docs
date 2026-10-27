@@ -7,15 +7,16 @@ const vm = require("node:vm");
 const { createBank } = require("../assets/bank.js");
 
 const ROOT = path.join(__dirname, "..");
+const DEFAULT_TRACK = "dotnet";
 
-// Question files of a track: the .NET track keeps them in assets/questions/, other tracks in
-// <track>/assets/questions/ (e.g. forTrack("fhir") for fhir/assets/questions/NNNN.js).
-const questionFile = (n, track = "") => path.join(ROOT, track, "assets", "questions", `${n}.js`);
+// Question files of a track live in <track>/assets/questions/NNNN.js. The plain loaders use the
+// .NET track (dotnet/); forTrack("fhir") binds them to fhir/assets/questions/.
+const questionFile = (n, track = DEFAULT_TRACK) => path.join(ROOT, track, "assets", "questions", `${n}.js`);
 
-// Load assets/questions/NNNN.js files into one fresh bank, as the browser does with <script> tags.
+// Load dotnet/assets/questions/NNNN.js files into one fresh bank, as the browser does with <script> tags.
 // loadLesson("0004") for one lesson, loadLesson(...DAY1) for a review.
 function loadLesson(...nums) {
-  return loadTrackLesson("", nums);
+  return loadTrackLesson(DEFAULT_TRACK, nums);
 }
 
 function loadTrackLesson(track, nums) {
@@ -35,7 +36,7 @@ function loadTrackLesson(track, nums) {
 
 // Run bank.js and the question files as plain browser scripts in one shared global scope
 // (catches top-level name clashes that require() would hide). Returns the page's QuestionBank.
-function runAsBrowserScripts(nums, track = "") {
+function runAsBrowserScripts(nums, track = DEFAULT_TRACK) {
   const ctx = vm.createContext({});
   ctx.window = ctx;
   vm.runInContext(fs.readFileSync(path.join(ROOT, "assets", "bank.js"), "utf8"), ctx);
@@ -47,7 +48,7 @@ function runAsBrowserScripts(nums, track = "") {
 }
 
 // Questions of one lesson, split by type.
-function lessonQuestions(num, track = "") {
+function lessonQuestions(num, track = DEFAULT_TRACK) {
   const bank = loadTrackLesson(track, [num]);
   const qs = bank.select({ lessons: [num] });
   return { bank, qs, mc: qs.filter(q => q.type === "mc"), oral: qs.filter(q => q.type === "oral") };
