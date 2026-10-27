@@ -327,3 +327,35 @@ _Avoid_: mapping table (tanpa arah/konteks), StructureMap
 **Equivalence (ConceptMap)**:
 Tingkat kecocokan satu mapping di R4: `equivalent`, `equal`, `wider`, `subsumes`, `narrower`, `specializes`, `inexact`, `relatedto`, `unmatched`, `disjoint`. Untuk `narrower` dan `inexact`, alasannya SHALL ditulis di `comment`.
 _Avoid_: confidence score
+
+## Pelindungan data pribadi (PDP)
+
+Istilah dari lesson 0007. Pasal dibaca dari PDF resmi peraturan.bpk.go.id, diakses 2026-10-27.
+
+**UU PDP (UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi)**:
+Undang-undang pelindungan data pribadi Indonesia; masa penyesuaian 2 tahun sejak diundangkan 17 Oktober 2022 (Pasal 74). Nama resminya "Pelindungan", bukan "Perlindungan".
+_Avoid_: GDPR Indonesia, UU Perlindungan Data
+
+**Data pribadi spesifik**:
+Kategori data pribadi yang dampaknya lebih besar bila bocor; meliputi data dan informasi kesehatan, biometrik, genetika, catatan kejahatan, data anak, dan keuangan pribadi (UU PDP Pasal 4 ayat (2)). Lawannya: data pribadi umum (nama lengkap, jenis kelamin, agama, …).
+_Avoid_: data sensitif (tidak dipakai UU), PHI (istilah AS)
+
+**Pengendali / Prosesor Data Pribadi**:
+Pengendali menentukan tujuan dan mengendalikan pemrosesan (mis. rumah sakit); prosesor memproses atas nama pengendali (mis. vendor SIMRS). Kewajiban keamanan dan kerahasiaan berlaku juga untuk prosesor (Pasal 52).
+_Avoid_: data owner, data processor (boleh sebagai padanan, tapi pakai istilah UU)
+
+**Kegagalan Pelindungan Data Pribadi**:
+Istilah UU PDP untuk insiden kebocoran; wajib diberitahukan tertulis paling lambat 3×24 jam kepada subjek data dan lembaga (Pasal 46).
+_Avoid_: data breach (boleh sebagai padanan)
+
+**Redaksi (redaction)**:
+Membuang atau menyensor data dari log/telemetri sebelum disimpan. Di track ini: allowlist di sumber (hanya field yang diizinkan yang keluar), bukan denylist.
+_Avoid_: masking (masking = mengganti sebagian nilai)
+
+**Pseudonimisasi (HMAC)**:
+Mengganti ID dengan nilai turunan yang konsisten supaya log bisa dikorelasikan tanpa ID asli. Pakai HMAC dengan secret, bukan hash polos (bisa dibalik kalau ruang nilainya kecil). Hasilnya tetap diperlakukan sebagai data pribadi (tafsiran; UU PDP tidak memakai istilah pseudonim).
+_Avoid_: anonimisasi, enkripsi
+
+**Log operasional vs audit trail**:
+Log operasional menjawab "kenapa lambat/error", tanpa identitas. Audit trail (mis. `AuditEvent`) menjawab "siapa mengakses pasien mana", berisi identitas, append-only, akses terbatas.
+_Avoid_: menyebut keduanya "log" tanpa pembeda

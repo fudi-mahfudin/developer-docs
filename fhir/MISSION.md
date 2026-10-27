@@ -10,6 +10,7 @@ Melamar posisi fullstack mid-level (backend Node.js + frontend React) yang beker
 - Bisa menjelaskan alur Bulk Data `$export` (kick-off → 202 → polling → NDJSON) dan cara memproses NDJSON besar di Node dengan streaming tanpa kehabisan memori
 - Bisa menjelaskan SMART on FHIR: OAuth2 + PKCE, scopes, EHR launch vs standalone launch, backend services, dan cara React app memakai `fhirclient`
 - Bisa menjelaskan posisi SATUSEHAT (Kemenkes) dan cara memetakan data legacy ke FHIR
+- Bisa menjawab "data apa saja yang tidak boleh muncul di log/monitoring?" dalam ±90 detik: dasar UU PDP dan Permenkes Rekam Medis, field FHIR yang disembunyikan, saluran bocor, dan audit trail terpisah
 - Punya 4 cerita STAR yang sudah di-reframe ke konteks health-tech
 
 ## Constraints

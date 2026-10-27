@@ -63,8 +63,8 @@ test("0006 uses the same pass criterion as the root seams and explains how to re
   assert.match(html, /learning record/);
 });
 
-test("0006 navigation links back to 0005 and forward to the FHIR index", () => {
+test("0006 navigation links back to 0005 and forward to 0007", () => {
   const nav = (html.match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
   assert.match(nav, /href="0005-smart-on-fhir\.html"/);
-  assert.match(nav, /href="\.\.\/index\.html"/);
+  assert.match(nav, /href="0007-pdp-data-di-monitoring\.html"/);
 });

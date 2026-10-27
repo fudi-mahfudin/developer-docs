@@ -14,4 +14,6 @@
 | 14.30–15.45 | 0005 SMART on FHIR & frontend | OAuth2 + PKCE, scopes, launch, backend services, `fhirclient` di React |
 | 16.00–17.30 | 0006 SATUSEHAT + review | SATUSEHAT, mapping data legacy, review campuran (seam), STAR health-tech |
 
-Malam sebelum interview: baca ulang dua reference di `reference/` dan ulangi soal lisan yang lemah dari review 0006.
+| Malam (±50 menit) | 0007 PDP & monitoring | UU PDP, UU Kesehatan, Permenkes Rekam Medis; field FHIR/SATUSEHAT yang di-drop, di-HMAC, atau aman; enam saluran bocor; audit vs log |
+
+Malam sebelum interview: kerjakan 0007, baca ulang tiga reference di `reference/`, dan ulangi soal lisan yang lemah dari review 0006.

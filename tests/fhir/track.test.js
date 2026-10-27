@@ -15,10 +15,11 @@ const questionNums = fs.readdirSync(path.join(ROOT, "fhir", "assets", "questions
 const index = read("index.html");
 const lessons = [...index.matchAll(/<li class="tersedia[^"]*"><span class="num">(\d{4})<\/span><a class="title" href="(lessons\/[\w-]+\.html)">/g)]
   .map(m => ({ num: m[1], href: m[2] }));
+const LAST = "0007";
 
-test("fhir index lists six lessons with 0006 as the seam", () => {
+test("fhir index lists seven lessons with 0006 as the seam", () => {
   const nums = [...index.matchAll(/<span class="num">(\d{4})<\/span>/g)].map(m => m[1]);
-  assert.deepEqual(nums, ["0001", "0002", "0003", "0004", "0005", "0006"]);
+  assert.deepEqual(nums, ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
   assert.match(index, /<li class="[a-z]+ seam"><span class="num">0006<\/span>/);
 });
 
@@ -54,6 +55,6 @@ lessons.forEach(({ num, href }) => {
     const prev = String(Number(num) - 1).padStart(4, "0");
     const next = String(Number(num) + 1).padStart(4, "0");
     if (num !== "0001") assert.match(nav, new RegExp(`href="${prev}-[\\w-]+\\.html"`), `nav belum menautkan ${prev}`);
-    if (num !== "0006") assert.match(nav, new RegExp(`href="${next}-[\\w-]+\\.html"`), `nav belum menautkan ${next}`);
+    if (num !== LAST) assert.match(nav, new RegExp(`href="${next}-[\\w-]+\\.html"`), `nav belum menautkan ${next}`);
   });
 });

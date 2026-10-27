@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · PDP: data yang disembunyikan di log dan monitoring</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · FHIR R4 · SATUSEHAT · Pelindungan Data Pribadi</div>
+<h1>PDP dan monitoring</h1>
+<p class="subtitle">Ringkasan satu halaman. Dari <a href="../lessons/0007-pdp-data-di-monitoring.html">Lesson 0007</a>. Pasal dibaca dari PDF resmi peraturan.bpk.go.id, diakses 2026-10-27.</p>
+
+<h2>Jawaban 90 detik: kenapa → apa → di mana → bagaimana</h2>
+<ol>
+  <li><strong>Kenapa.</strong> Data kesehatan = data pribadi spesifik (UU 27/2022 Pasal 4 ayat (2) huruf a). Isi rekam medis rahasia, bahkan setelah pasien meninggal (Permenkes 24/2022 Pasal 32). Bocor → beri tahu subjek + lembaga ≤ 3×24 jam (UU PDP Pasal 46). <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1]</a></sup> <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/301563/Permenkes%20Nomor%2024%20Tahun%202022.pdf">[3]</a></sup></li>
+  <li><strong>Apa.</strong> Identitas, isi klinis, kredensial → drop. ID korelasi → HMAC.</li>
+  <li><strong>Di mana.</strong> Query search di URL, <code>diagnostics</code>, trace, Sentry, label metrik, frontend.</li>
+  <li><strong>Bagaimana.</strong> Allowlist di sumber · HMAC · audit trail (<code>AuditEvent</code>) terpisah dari log.</li>
+</ol>
+
+<h2>Tiga warna</h2>
+<table>
+  <thead><tr><th></th><th>Kelompok</th><th>Field</th></tr></thead>
+  <tbody>
+    <tr><td>🔴</td><td>Identitas</td><td><code>identifier</code> NIK/KK/paspor/No. RM · <code>name</code> · <code>telecom</code> · <code>address</code> (+ <code>administrativeCode</code>) · <code>birthDate</code> · <code>photo</code> · NIK nakes</td></tr>
+    <tr><td>🔴</td><td>Isi klinis</td><td><code>Condition.code</code> ICD-10 · <code>Observation.code</code>/<code>value[x]</code> · obat KFA · <code>note</code> · <code>text.div</code> · lampiran</td></tr>
+    <tr><td>🔴</td><td>Kredensial</td><td><code>client_secret</code> · <code>Authorization: Bearer</code> · body respons token</td></tr>
+    <tr><td>🟡</td><td>Korelasi (HMAC)</td><td>logical id · nomor IHS · user/practitioner id</td></tr>
+    <tr><td>🟢</td><td>Aman</td><td><code>resourceType</code> · interaksi · route template · status · latensi · jumlah entry · <code>issue.severity</code>/<code>issue.code</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Jebakan</h2>
+<ul>
+  <li><code>GET /Patient?identifier=…/id/nik|…</code>: URL = data pasien. "HTTP logs, including those that only contain the URL itself, should be regarded as being as sensitive as the resources themselves." <sup class="cite"><a href="https://hl7.org/fhir/R4/security.html">[4]</a></sup></li>
+  <li><code>OperationOutcome.issue.diagnostics</code>: teks bebas, bisa mengutip nilai input. <sup class="cite"><a href="https://hl7.org/fhir/R4/operationoutcome-definitions.html">[5]</a></sup></li>
+  <li><code>text.div</code>: narrative yang merangkum isi resource. <sup class="cite"><a href="https://hl7.org/fhir/R4/domainresource-definitions.html">[6]</a></sup></li>
+  <li>Kode diagnosis sensitif (HIV, kesehatan jiwa) bocor walaupun nama dibuang. <sup class="cite"><a href="https://hl7.org/fhir/R4/security-labels.html">[7]</a></sup></li>
+</ul>
+
+<h2>Enam saluran</h2>
+<table>
+  <thead><tr><th>Saluran</th><th>Periksa</th></tr></thead>
+  <tbody>
+    <tr><td>Log aplikasi</td><td>body, <code>diagnostics</code>, string pesan. pino <code>redact</code> = path kunci saja, case-sensitive. <sup class="cite"><a href="https://github.com/pinojs/pino/blob/main/docs/redaction.md">[8]</a></sup></td></tr>
+    <tr><td>URL / access log / proxy</td><td>query string</td></tr>
+    <tr><td>Trace OTel</td><td><code>url.full</code>, <code>url.query</code>: default hanya menyensor kunci tanda tangan. <sup class="cite"><a href="https://opentelemetry.io/docs/specs/semconv/registry/attributes/url/">[9]</a></sup></td></tr>
+    <tr><td>Metrik</td><td>tidak ada label ID pasien/user. <sup class="cite"><a href="https://prometheus.io/docs/practices/naming/#labels">[10]</a></sup></td></tr>
+    <tr><td>Sentry</td><td>body request/response terkirim secara default; denylist tidak kenal field medis → <code>httpBodies: []</code>, <code>beforeSend</code>. <sup class="cite"><a href="https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/">[11]</a></sup></td></tr>
+    <tr><td>Frontend</td><td><code>console.log</code>, analytics, URL halaman, session replay</td></tr>
+  </tbody>
+</table>
+
+<h2>Teknik</h2>
+<table>
+  <thead><tr><th>Teknik</th><th>Untuk</th><th>Ingat</th></tr></thead>
+  <tbody>
+    <tr><td>Drop</td><td>🔴</td><td>default; allowlist, bukan denylist</td></tr>
+    <tr><td>HMAC</td><td>🟡</td><td>hash polos bisa dibalik kalau ruang nilainya kecil <sup class="cite"><a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[12]</a></sup>; secret di secret manager</td></tr>
+    <tr><td>Potong</td><td>tanggal, IP</td><td>tahun/bulan saja; buang oktet terakhir IPv4 <sup class="cite"><a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[12]</a></sup></td></tr>
+  </tbody>
+</table>
+<p>Hasil HMAC tetap diperlakukan sebagai data pribadi (tafsiran UU PDP Pasal 1 angka 1; UU tidak menyebut pseudonim).</p>
+
+<h2>Audit ≠ log</h2>
+<table>
+  <thead><tr><th></th><th>Log operasional</th><th>Audit trail</th></tr></thead>
+  <tbody>
+    <tr><td>Identitas</td><td>tidak (HMAC)</td><td>ya</td></tr>
+    <tr><td>Bentuk</td><td>pino / OTel / Sentry</td><td><code>AuditEvent</code>, append-only, akses terbatas <sup class="cite"><a href="https://hl7.org/fhir/R4/auditevent.html">[13]</a></sup></td></tr>
+    <tr><td>Dasar</td><td>—</td><td>UU PDP Pasal 31 · UU 17/2023 Pasal 347 <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/314883/UU%20Nomor%2017%20Tahun%202023.pdf">[2]</a></sup></td></tr>
+  </tbody>
+</table>
+
+<p class="note"><strong>Belum terverifikasi (2026-10-27):</strong> PP 33/2026 (pelaksana UU PDP), Kepmenkes HK.01.07/Menkes/721/2026 (pedoman PDP Kemenkes), status lembaga PDP. Jawab "per yang terakhir saya baca".</p>
+
+<p class="note sources">
+  <a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1] UU 27/2022</a> ·
+  <a href="https://peraturan.bpk.go.id/Download/314883/UU%20Nomor%2017%20Tahun%202023.pdf">[2] UU 17/2023</a> ·
+  <a href="https://peraturan.bpk.go.id/Download/301563/Permenkes%20Nomor%2024%20Tahun%202022.pdf">[3] Permenkes 24/2022</a> ·
+  <a href="https://hl7.org/fhir/R4/security.html">[4] FHIR R4 Security</a> ·
+  <a href="https://hl7.org/fhir/R4/operationoutcome-definitions.html">[5] OperationOutcome</a> ·
+  <a href="https://hl7.org/fhir/R4/domainresource-definitions.html">[6] DomainResource</a> ·
+  <a href="https://hl7.org/fhir/R4/security-labels.html">[7] Security Labels</a> ·
+  <a href="https://github.com/pinojs/pino/blob/main/docs/redaction.md">[8] pino redaction</a> ·
+  <a href="https://opentelemetry.io/docs/specs/semconv/registry/attributes/url/">[9] OTel url</a> ·
+  <a href="https://prometheus.io/docs/practices/naming/#labels">[10] Prometheus labels</a> ·
+  <a href="https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/">[11] Sentry options</a> ·
+  <a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[12] OTel sensitive data</a> ·
+  <a href="https://hl7.org/fhir/R4/auditevent.html">[13] AuditEvent</a>
+</p>
+</main>
+</body>
+</html>

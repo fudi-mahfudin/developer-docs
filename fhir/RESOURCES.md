@@ -71,6 +71,21 @@
 - [FHIR R4 CapabilityStatement](https://hl7.org/fhir/R4/capabilitystatement.html)
   Isi dokumen kemampuan server yang dikembalikan `GET [base]/metadata`. Use for: discovery sebelum integrasi.
 
+- [UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (PDF, BPK)](https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf)
+  Teks resmi beserta Penjelasan (hasil pindaian; beberapa kata hilang di lapisan OCR). Use for: data spesifik (Pasal 4), pengendali/prosesor (Pasal 1, 51–52), keamanan (35–39), perekaman pemrosesan (31), notifikasi 3×24 jam (46), sanksi (57, 67–70). Riset lengkap: `.scratch/materi-fhir/research-pdp.md`.
+- [UU No. 17 Tahun 2023 tentang Kesehatan (PDF, BPK)](https://peraturan.bpk.go.id/Download/314883/UU%20Nomor%2017%20Tahun%202023.pdf) dan [Permenkes No. 24 Tahun 2022 tentang Rekam Medis (PDF, BPK)](https://peraturan.bpk.go.id/Download/301563/Permenkes%20Nomor%2024%20Tahun%202022.pdf)
+  Use for: hak kerahasiaan dan kewajiban Sistem Informasi Kesehatan (UU 17/2023 Pasal 4, 347, 351); kerahasiaan rekam medis walau pasien meninggal (Permenkes Pasal 32), retensi 25 tahun (Pasal 39), wajib terhubung ke platform Kemenkes (Pasal 21).
+- [FHIR R4 Security and Privacy Module](https://hl7.org/fhir/R4/secpriv-module.html) dan [Security Labels](https://hl7.org/fhir/R4/security-labels.html)
+  De-identification ("a process, not an algorithm"), direct/indirect identifier per elemen, kode kerahasiaan `meta.security`. Use for: field mana yang mengidentifikasi.
+- [OWASP Logging Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)
+  Daftar "Data to exclude" dari log (token, secret, data kesehatan, identifier pemerintah). Use for: argumen umum apa yang tidak di-log.
+- [OpenTelemetry: Handling sensitive data](https://opentelemetry.io/docs/security/handling-sensitive-data/) dan [semantic conventions `url.*`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/url/)
+  Minimisasi, processor Collector (attribute/filter/redaction/transform), peringatan hash bisa dibalik; redaksi default `url.query` hanya kunci tanda tangan. Use for: trace dan telemetri.
+- [Sentry JS: options](https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/) dan [scrubbing sensitive data](https://docs.sentry.io/platforms/javascript/guides/node/data-management/sensitive-data/)
+  `dataCollection` (sejak 10.57.0, menggantikan `sendDefaultPii`), denylist bawaan, `beforeSend*`. Use for: error tracking.
+- [pino: redaction](https://github.com/pinojs/pino/blob/main/docs/redaction.md) dan [Prometheus: metric and label naming](https://prometheus.io/docs/practices/naming/#labels)
+  `redact` berbasis path kunci (case-sensitive); larangan label berkardinalitas tinggi seperti user ID. Use for: log aplikasi Node dan metrik.
+
 - [FHIR R4 Home](https://hl7.org/fhir/R4/index.html), [Summary](https://hl7.org/fhir/R4/summary.html), dan [Overview](https://hl7.org/fhir/R4/overview.html)
   Halaman depan R4 (versi 4.0.1, koreksi teknis Okt 2019), ringkasan "next generation standards framework", dan overview umum. Use for: lesson 0001 (definisi FHIR, Resource).
 - [FHIR R4 ImplementationGuide](https://hl7.org/fhir/R4/implementationguide.html), [extension patient-birthPlace](https://hl7.org/fhir/R4/extension-patient-birthplace.html), dan [US Core Patient](https://hl7.org/fhir/us/core/StructureDefinition-us-core-patient.html)
