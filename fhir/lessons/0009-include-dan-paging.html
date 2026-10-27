@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0009 · Chaining, _include, _revinclude; paging dan Bundle searchset</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0009 · FHIR · Modul REST · ±25 menit</div>
+  <h1>Chaining, <code>_include</code>, <code>_revinclude</code>; paging dan Bundle <code>searchset</code></h1>
+  <p class="subtitle">Filter lewat referensi, sertakan resource yang dirujuk, lalu ikuti halaman hasilnya</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Bagaimana mengambil semua Observation milik satu pasien beserta Patient-nya dalam satu request? Bagaimana kalau hasilnya ribuan?"</em>
+  tanpa catatan: chaining vs <code>_include</code>/<code>_revinclude</code>, <code>entry.search.mode</code>, dan paging lewat link <code>next</code>.
+</div>
+
+<p class="note">
+  Sebelumnya, di lesson <a href="0008-crud-dan-search.html">0008</a>, Anda menyusun query search: tipe parameter, modifier, prefix, AND/OR.
+  Lesson ini menjawab dua pertanyaan berikutnya: bagaimana membawa resource yang dirujuk dalam request yang sama, dan bagaimana membaca hasil yang dibagi per halaman.
+</p>
+
+<!-- ============ 3. CHAINING / INCLUDE ============ -->
+<h2>1. Chaining, <code>_include</code>, dan <code>_revinclude</code></h2>
+<p>Dua hal yang sering tertukar: <strong>chaining memfilter</strong> lewat referensi, <strong><code>_include</code> menambah</strong> resource yang dirujuk ke hasil.</p>
+<table>
+  <thead><tr><th></th><th>Contoh resmi</th><th>Artinya</th></tr></thead>
+  <tbody>
+    <tr><td>Chaining</td><td><code>DiagnosticReport?subject:Patient.name=peter</code></td><td>"all the lab reports that have a subject which is a patient, whose name includes "peter"". Hasilnya tetap DiagnosticReport saja.</td></tr>
+    <tr><td><code>_include</code></td><td><code>MedicationRequest?_include=MedicationRequest:patient</code></td><td>sertakan "any patient that the medication prescriptions in the result set refer to" (arah maju: hasil → yang dirujuk)</td></tr>
+    <tr><td><code>_revinclude</code></td><td><code>MedicationRequest?_revinclude=Provenance:target</code></td><td>sertakan "all the provenance resources that refer to them" (arah balik: yang merujuk → hasil)</td></tr>
+  </tbody>
+</table>
+<p class="note">Semua: <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup>. Nilai <code>_include</code>/<code>_revinclude</code> berbentuk <code>[tipe sumber]:[search parameter]</code> (opsional <code>:[tipe target]</code>); include berantai hanya terjadi dengan modifier <code>:iterate</code>. Chaining terbalik (<code>_has</code>) ada, tapi dukungannya "limited".</p>
+
+<p>Jawaban untuk pertanyaan target, dari dua arah:</p>
+<pre><code>// Dari Observation: hasil = Observation, Patient ikut sebagai include
+GET [base]/Observation?patient=123&amp;code=http://loinc.org|29463-7&amp;_include=Observation:patient
+
+// Dari Patient: hasil = Patient 123, Observation yang merujuknya ikut sebagai include
+GET [base]/Patient?_id=123&amp;_revinclude=Observation:patient</code></pre>
+<p class="note">
+  Padanan JS: <code>_include</code> mirip <code>include</code> di Prisma (<code>prisma.observation.findMany({ where: …, include: { patient: true } })</code>), tapi hasilnya tidak bersarang:
+  Patient muncul sebagai entry terpisah di Bundle (bagian 2), dan bisa muncul lagi di halaman berikutnya bila dirujuk Observation di halaman itu. <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup> Kode LOINC 29463-7 (Body Weight) diambil dari contoh Observation resmi R4.
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/observation-example.json.html">[4]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Filter atau sertakan?</h2>
+  <div class="quiz" data-bank-lesson="0009" data-bank-topic="rest-include" data-stack></div>
+</section>
+
+<!-- ============ 4. PAGING ============ -->
+<h2>2. Paging dan Bundle <code>searchset</code></h2>
+<p>Hasil search selalu Bundle dengan <code>type: "searchset"</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup> Bentuk ringkasnya:</p>
+<pre><code>{
+  "resourceType": "Bundle",
+  "type": "searchset",
+  "total": 5000,                                   // jumlah match di SEMUA halaman (include tidak dihitung)
+  "link": [
+    { "relation": "self", "url": "https://fhir.example.org/Observation?patient=123&amp;_include=Observation:patient&amp;_count=50" },
+    { "relation": "next", "url": "https://fhir.example.org/Observation?_getpages=a1b2c3&amp;_offset=50" }
+  ],
+  "entry": [
+    { "fullUrl": "https://fhir.example.org/Observation/obs-1",
+      "resource": { "resourceType": "Observation", "id": "obs-1", "...": "..." },
+      "search": { "mode": "match" } },
+    { "fullUrl": "https://fhir.example.org/Patient/123",
+      "resource": { "resourceType": "Patient", "id": "123", "...": "..." },
+      "search": { "mode": "include" } }
+  ]
+}</code></pre>
+<ul>
+  <li><code>Bundle.total</code>: "the total number of entries of type 'match' across all pages in the search". <code>entry.search.mode</code>: <code>match | include | outcome</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/bundle.html">[3]</a></sup> Server "SHALL populate the entry.search.mode element ... so that the client can pick apart matches and includes". <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup></li>
+  <li><code>_count</code> = berapa resource per halaman (permintaan, bukan janji). <code>_summary=count</code> = hanya jumlah, tanpa resource. <code>_sort</code> = urutan. <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup></li>
+  <li>Link halaman (<code>first</code>, <code>previous</code>, <code>next</code>, <code>last</code>) "are opaque to the client, have no dictated structure, and only the server understands them"; "The client must use the server supplied links in order to traverse the pages." <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup> Format URL <code>next</code> di contoh atas hanya ilustrasi.</li>
+</ul>
+<pre><code>// Node 18+ / browser: ikuti link "next" sampai habis, tanpa menyusun URL halaman sendiri
+async function* searchAll(url: string): AsyncGenerator&lt;any&gt; {
+  let next: string | undefined = url;
+  while (next) {
+    const res = await fetch(next, { headers: { Accept: "application/fhir+json" } });
+    if (!res.ok) throw new Error(JSON.stringify(await res.json()));   // body = OperationOutcome (lesson 0011)
+    const bundle = await res.json();
+    for (const entry of bundle.entry ?? []) yield entry;              // cek entry.search.mode
+    next = bundle.link?.find((l: any) =&gt; l.relation === "next")?.url;
+  }
+}</code></pre>
+<p class="note">Untuk jutaan resource, paging search bukan alat yang tepat; itu tugas Bulk Data <code>$export</code> di lesson <a href="0013-export-dan-alur-async.html">0013</a>.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Membaca Bundle hasil search</h2>
+  <div class="quiz" data-bank-lesson="0009" data-bank-topic="rest-paging" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras (±5 menit)</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Bagaimana Anda mengambil semua Observation berat badan milik satu pasien, beserta Patient-nya, dalam satu request? Bagaimana kalau hasilnya ribuan?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saya search Observation: <code>GET [base]/Observation?patient=123&amp;code=http://loinc.org|29463-7&amp;_include=Observation:patient&amp;_count=50</code>.
+      <code>code</code> itu token, jadi saya tulis <code>system|code</code> supaya tidak tertukar dengan sistem kode lain; kalau perlu rentang waktu, tambah
+      <code>date=ge2024-01-01&amp;date=le2024-12-31</code>, parameter yang diulang berarti AND. <code>_include</code> membuat server ikut mengirim Patient yang dirujuk,
+      dan di Bundle <code>searchset</code> saya bedakan lewat <code>entry.search.mode</code>: <code>match</code> untuk Observation, <code>include</code> untuk Patient.
+      Alternatifnya dari sisi Patient: <code>Patient?_id=123&amp;_revinclude=Observation:patient</code>. Kalau ribuan, server mem-page hasilnya; saya ikuti
+      <code>Bundle.link</code> dengan relation <code>next</code> sampai habis, tidak menyusun URL halaman sendiri karena link itu opaque. Jumlah total ada di
+      <code>Bundle.total</code>, yang hanya menghitung match. Di Prisma, padanannya <code>findMany</code> dengan <code>include</code> plus cursor pagination."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>search Observation dengan <code>patient=123</code> (atau <code>subject=Patient/123</code>)?</li>
+      <li><code>code</code> sebagai token <code>http://loinc.org|29463-7</code> (system|code)?</li>
+      <li><code>_include=Observation:patient</code>, atau <code>_revinclude</code> dari sisi Patient?</li>
+      <li>hasil Bundle <code>searchset</code>; <code>entry.search.mode</code> membedakan match dan include?</li>
+      <li>paging: <code>_count</code> dan mengikuti link <code>next</code> yang opaque, bukan menyusun URL sendiri?</li>
+      <li>filter tanggal dengan prefix <code>ge</code>/<code>le</code>, parameter diulang = AND, koma = OR?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/rest-search-bundle.html">Reference: REST, search, Bundle</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "REST API")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana <code>_include=...:iterate</code> bekerja?"</p>
+
+<p class="note sources">
+  Sumber (semua FHIR R4 4.0.1, diakses 2026-10-26):
+  <a href="https://hl7.org/fhir/R4/http.html">[1] RESTful API</a> ·
+  <a href="https://hl7.org/fhir/R4/search.html">[2] Search</a> ·
+  <a href="https://hl7.org/fhir/R4/bundle.html">[3] Bundle</a> ·
+  <a href="https://hl7.org/fhir/R4/observation-example.json.html">[4] Observation example (Body Weight)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0008-crud-dan-search.html">← 0008 · Interaksi REST dan search</a>
+  <a href="0010-bundle-dan-versioning.html">0010 · Bundle transaction/batch dan versioning →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0009.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

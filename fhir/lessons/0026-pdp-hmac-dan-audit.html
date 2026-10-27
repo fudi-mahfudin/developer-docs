@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0026 · PDP: allowlist + HMAC, audit trail ≠ log operasional</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0026 · FHIR · Modul PDP · ±17 menit</div>
+  <h1>PDP: allowlist + HMAC, audit trail ≠ log operasional</h1>
+  <p class="subtitle">Cara membersihkan log sistem yang terhubung ke SATUSEHAT, dan cara tetap bisa menjawab siapa mengakses data pasien</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan <strong>bagaimana</strong> log dibersihkan (allowlist di sumber, HMAC untuk ID korelasi, potong tanggal/IP)
+  dan kenapa audit trail (<code>AuditEvent</code>) dipisah dari log operasional, lalu merangkai seluruh modul PDP dalam jawaban ±90 detik:
+  kenapa → apa → di mana bocornya → bagaimana.
+</div>
+
+<p>Di <a href="0024-pdp-hukum-dan-tiga-warna.html">lesson 0024</a> dan <a href="0025-pdp-jebakan-dan-saluran.html">0025</a> Anda sudah tahu field mana yang 🔴, 🟡, 🟢 dan di mana biasanya bocor. Lesson ini menjawab <strong>bagaimana</strong> mencegahnya, lalu menutup modul dengan jawaban lisan 90 detik.</p>
+
+<h2>4. Bagaimana: allowlist di sumber, HMAC untuk korelasi (±6 menit)</h2>
+<table>
+  <thead><tr><th>Teknik</th><th>Kapan</th><th>Catatan</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Drop</strong> (default)</td><td>semua 🔴</td><td>OWASP: "Never log data unless it is legally sanctioned." <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">[1]</a></sup></td></tr>
+    <tr><td><strong>HMAC</strong></td><td>🟡 ID untuk korelasi</td><td>Bukan hash polos: hash ID "reversible in practice if the input space is small and predictable". <sup class="cite"><a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[2]</a></sup> Secret HMAC di secret manager, terpisah dari log.</td></tr>
+    <tr><td><strong>Potong</strong></td><td>tanggal, IP</td><td>OTel: simpan hanya tahun atau tahun-bulan; buang oktet terakhir IPv4. <sup class="cite"><a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[2]</a></sup></td></tr>
+  </tbody>
+</table>
+<p>
+  Dua prinsip. <strong>Allowlist, bukan denylist:</strong> resource FHIR bisa mendapat extension atau field baru kapan saja; denylist meloloskan apa pun yang belum pernah Anda bayangkan.
+  Redaction processor di OTel Collector bekerja dengan cara ini: menghapus atribut "that don't match a list of allowed attributes". <sup class="cite"><a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[2]</a></sup>
+  <strong>Di sumber, bukan hanya di collector:</strong> data yang sudah keluar dari proses Node sudah melewati jaringan, buffer, dan mungkin vendor pihak ketiga.
+</p>
+<pre><code>// Hanya untuk dibaca: log handler FHIR dengan allowlist + HMAC (pino)
+import pino from "pino";
+import { createHmac } from "node:crypto";
+
+const pseudo = (id: string) =&gt;                       // 🟡 ID korelasi, bukan nomor IHS mentah
+  createHmac("sha256", process.env.LOG_HMAC_KEY!).update(id).digest("hex").slice(0, 16);
+
+const logger = pino({
+  redact: { paths: ["req.headers.authorization", "req.headers.cookie"], remove: true }, // jaring pengaman
+});
+
+// allowlist: HANYA field ini yang boleh keluar dari handler
+logger.info({
+  route: "GET /Patient",                 // template, tanpa query string
+  resourceType: "Patient",
+  status: res.status,
+  durationMs,
+  patientRef: patientId ? pseudo(patientId) : undefined,
+  issueCodes: outcome?.issue?.map(i =&gt; i.code),   // bukan diagnostics
+}, "fhir request");
+
+// ❌ logger.info(`search pasien ${nik}`)  : redact tidak menyentuh isi string</code></pre>
+
+<section class="exercise">
+  <h2>Latihan 5 — Teknik</h2>
+  <div class="quiz" data-bank-lesson="0026" data-bank-topic="pdp-teknik" data-stack></div>
+</section>
+
+<h2>5. Audit trail ≠ log operasional (±4 menit)</h2>
+<p>
+  Pertanyaan lanjutan yang hampir pasti datang: <em>"Kalau log bersih, bagaimana tahu siapa membuka data pasien X?"</em>
+  Jawabannya dua jalur dengan tujuan berbeda.
+</p>
+<table>
+  <thead><tr><th></th><th>Log operasional</th><th>Audit trail</th></tr></thead>
+  <tbody>
+    <tr><td>Menjawab</td><td>kenapa lambat, kenapa error</td><td>siapa mengakses pasien mana, kapan, aksi apa</td></tr>
+    <tr><td>Identitas</td><td>tidak ada; ID hanya HMAC</td><td><strong>ada</strong>, memang wajib</td></tr>
+    <tr><td>Bentuk</td><td>pino / OTel / Sentry</td><td><code>AuditEvent</code> FHIR atau store setara</td></tr>
+    <tr><td>Proteksi</td><td>akses tim engineering, retensi pendek</td><td>append-only, akses terbatas</td></tr>
+  </tbody>
+</table>
+<p>
+  <code>AuditEvent</code> ditujukan untuk "maintenance of security audit log information". Server umumnya tidak menerima update atau delete atasnya, dan aksesnya "typically be limited to security, privacy, or other system administration purposes". <sup class="cite"><a href="https://hl7.org/fhir/R4/auditevent.html">[3]</a></sup>
+  Dasar hukumnya: UU PDP Pasal 31 mewajibkan "perekaman terhadap seluruh kegiatan pemrosesan Data Pribadi" <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[4]</a></sup>, dan UU Kesehatan Pasal 347 ayat (2) menyebut kebijakan hak akses dan audit berkala untuk Sistem Informasi Kesehatan. <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/314883/UU%20Nomor%2017%20Tahun%202023.pdf">[5]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 6 — Audit vs log</h2>
+  <div class="quiz" data-bank-lesson="0026" data-bank-topic="pdp-audit" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 7 — Jawab lisan (±7 menit)</h2>
+  <p>Pasang timer, jawab dengan suara keras seolah sedang interview, baru buka jawaban contoh. Soal terakhir adalah jawaban penutup modul PDP yang merangkai lesson 0024–0026; ulangi sampai lancar.</p>
+
+  <blockquote>"Kalau log tidak boleh berisi identitas pasien, bagaimana Anda tahu siapa yang mengakses data pasien X?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Itu dua kebutuhan berbeda, jadi dua jalur. Log operasional untuk debugging dan performa: tanpa identitas, ID pasien hanya dalam bentuk HMAC, retensi pendek, aksesnya tim engineering.
+      Audit trail untuk akuntabilitas: setiap akses ke data pasien dicatat sebagai <code>AuditEvent</code>, yaitu siapa, pasien mana, aksi apa, kapan, dari mana.
+      Store-nya append-only, tidak bisa di-update atau di-delete, dan hanya bisa dibaca tim keamanan atau privasi.
+      UU PDP Pasal 31 memang mewajibkan perekaman seluruh kegiatan pemrosesan, dan UU Kesehatan Pasal 347 menyebut audit berkala.
+      Jadi audit justru berisi identitas, tapi dilindungi seketat rekam medisnya. Kalau saya perlu menelusuri error untuk pasien X, saya hitung HMAC dari ID-nya lalu cari di log operasional."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>dua kebutuhan berbeda: operasional vs akuntabilitas?</li>
+      <li>log operasional: tanpa identitas, HMAC, retensi pendek?</li>
+      <li>audit: <code>AuditEvent</code> berisi siapa, pasien mana, aksi, kapan?</li>
+      <li>audit append-only (tidak bisa update/delete), akses terbatas?</li>
+      <li>dasar: UU PDP Pasal 31 (rekam kegiatan pemrosesan)?</li>
+      <li>menelusuri pasien di log lewat HMAC dari ID-nya?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Data apa saja yang tidak boleh muncul di log atau monitoring sistem yang terhubung ke SATUSEHAT?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Kenapa dulu: data kesehatan adalah data pribadi <em>spesifik</em> menurut UU PDP Pasal 4, isi rekam medis wajib dirahasiakan menurut Permenkes 24/2022, bahkan setelah pasien meninggal,
+      dan kalau bocor kami wajib memberi tahu pasien dan lembaga dalam 3×24 jam. Yang saya drop ada tiga kelompok.
+      Satu, identitas: NIK, KK, paspor, nomor rekam medis, nama, telepon, alamat, tanggal lahir lengkap.
+      Dua, isi klinis: diagnosis ICD-10 di <code>Condition</code>, hasil lab di <code>Observation.value</code>, obat KFA, catatan, dan narrative <code>text.div</code>.
+      Tiga, kredensial: <code>client_secret</code> dan bearer token SATUSEHAT. Logical id dan nomor IHS boleh masuk sebagai HMAC untuk korelasi.
+      Yang aman: <code>resourceType</code>, interaksi, status, latensi, <code>issue.code</code>.
+      Bocornya sering bukan dari body, tapi dari query search di URL, <code>OperationOutcome.diagnostics</code>, atribut trace, dan Sentry.
+      Caranya: allowlist di sumber, bukan denylist; dan siapa-mengakses-siapa dicatat di audit trail terpisah, bukan di log biasa."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>kenapa: data kesehatan = data spesifik (UU PDP Pasal 4) + rahasia rekam medis (Permenkes 24/2022)?</li>
+      <li>identitas: NIK/KK/paspor, No. RM, nama, telecom, alamat, tanggal lahir?</li>
+      <li>isi klinis: diagnosis, hasil lab, obat, narrative <code>text.div</code>?</li>
+      <li>kredensial: <code>client_secret</code> dan bearer token?</li>
+      <li>di mana bocor: query search, <code>diagnostics</code>, trace/Sentry?</li>
+      <li>bagaimana: allowlist + HMAC untuk ID korelasi, audit trail terpisah?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://hl7.org/fhir/R4/security.html">FHIR R4: Security</a>, bagian "Communications" dan "Audit Logging".
+  Lalu <a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">UU 27/2022 (PDF BPK)</a>: baca Pasal 4 beserta Penjelasannya, Pasal 35–39, dan Pasal 46.
+  Cheat sheet satu halaman: <a href="../reference/pdp-monitoring.html">PDP dan monitoring</a>.
+</div>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Pelindungan data pribadi") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda pengendali dan prosesor kalau perusahaan saya vendor SIMRS?", "bagaimana mengonfigurasi OTel Collector supaya <code>url.query</code> dibuang?", atau "kalau pasien minta datanya dihapus, apakah log juga harus dihapus?"</p>
+
+<p class="note sources">
+  Sumber (semua diakses 2026-10-27):
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">[1] OWASP Logging Cheat Sheet</a> ·
+  <a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[2] OpenTelemetry: Handling sensitive data</a> ·
+  <a href="https://hl7.org/fhir/R4/auditevent.html">[3] FHIR R4 AuditEvent</a> ·
+  <a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[4] UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (PDF, BPK)</a> ·
+  <a href="https://peraturan.bpk.go.id/Download/314883/UU%20Nomor%2017%20Tahun%202023.pdf">[5] UU No. 17 Tahun 2023 tentang Kesehatan (PDF, BPK)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0025-pdp-jebakan-dan-saluran.html">← 0025 · PDP: empat jebakan, enam saluran</a>
+  <a href="0027-review-smart-satusehat-pdp.html">0027 · Review 3: SMART + SATUSEHAT + PDP →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0026.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

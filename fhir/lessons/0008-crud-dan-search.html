@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0008 · Interaksi REST dan search: tipe parameter, modifier, prefix</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0008 · FHIR · Modul REST · ±25 menit</div>
+  <h1>Interaksi REST FHIR dan search: tipe parameter, modifier, prefix</h1>
+  <p class="subtitle">REST yang sudah Anda kenal, ditambah aturan khas FHIR yang ditanyakan di interview</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Apa beda 404 dan 410? Apa yang dikembalikan create? Bagaimana menulis query Observation berat badan satu pasien dalam rentang tanggal?"</em>
+  tanpa catatan: tabel interaksi dan status, token <code>system|code</code>, prefix tanggal, parameter diulang = AND, koma = OR.
+</div>
+
+<p>Modul Resource selesai di lesson <a href="0007-meta-contained-extension.html">0007</a>: Anda sudah bisa membaca satu resource utuh. Modul REST membahas cara resource itu dibaca, dicari, dan diubah lewat HTTP.</p>
+
+<p class="note">
+  Yang tidak perlu diajar ulang: HTTP verb, status code, JSON, <code>fetch</code>. Fokusnya hal yang khas FHIR.
+  Semua klaim diambil dari spesifikasi R4 (4.0.1); kutipan berbahasa Inggris adalah teks asli spesifikasi.
+  Istilah resource dari modul Resource: <code>id</code> (lesson <a href="0004-kerangka-json-dan-identifier.html">0004</a>), Reference dan CodeableConcept (lesson <a href="0005-reference-dan-codeableconcept.html">0005</a>), <code>meta</code> (lesson <a href="0007-meta-contained-extension.html">0007</a>).
+</p>
+
+<!-- ============ 1. INTERAKSI ============ -->
+<h2>1. Interaksi REST dan status HTTP</h2>
+<p>
+  FHIR menyebut setiap operasi dasar sebagai <em>interaction</em>. Polanya Express-style biasa: tipe resource di path, id logis setelahnya.
+  JSON resmi bertipe <code>application/fhir+json</code> (minta lewat header <code>Accept</code> atau parameter <code>_format</code>). <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Interaction</th><th>Request</th><th>Sukses / catatan</th></tr></thead>
+  <tbody>
+    <tr><td>read</td><td><code>GET [base]/Patient/123</code></td><td>200. Tidak dikenal → <strong>404</strong>; sudah dihapus → <strong>410</strong></td></tr>
+    <tr><td>vread</td><td><code>GET [base]/Patient/123/_history/2</code></td><td>200, satu versi tertentu</td></tr>
+    <tr><td>create</td><td><code>POST [base]/Patient</code></td><td><strong>201</strong> + <code>Location: [base]/Patient/[id]/_history/[vid]</code>; <code>id</code> di body diabaikan</td></tr>
+    <tr><td>update</td><td><code>PUT [base]/Patient/123</code></td><td>200 (diperbarui) atau 201 (dibuat, kalau server mengizinkan id dari client)</td></tr>
+    <tr><td>patch</td><td><code>PATCH [base]/Patient/123</code></td><td>JSON Patch (<code>application/json-patch+json</code>), XML Patch, atau FHIRPath Patch</td></tr>
+    <tr><td>delete</td><td><code>DELETE [base]/Patient/123</code></td><td>200 (ada body) atau 204 (tanpa body)</td></tr>
+    <tr><td>search</td><td><code>GET [base]/Patient?name=peter</code> atau <code>POST [base]/Patient/_search</code></td><td>200 + Bundle <code>searchset</code></td></tr>
+    <tr><td>history</td><td><code>GET [base]/Patient/123/_history</code></td><td>200 + Bundle <code>history</code></td></tr>
+    <tr><td>capabilities</td><td><code>GET [base]/metadata</code></td><td>CapabilityStatement (lesson <a href="0011-operationoutcome-dan-capability.html">0011</a>)</td></tr>
+    <tr><td>batch / transaction</td><td><code>POST [base]</code></td><td>Bundle <code>batch</code>/<code>transaction</code> (lesson <a href="0010-bundle-dan-versioning.html">0010</a>)</td></tr>
+  </tbody>
+</table>
+<p class="note">Semua baris tabel: <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup>. Kutipan kunci: "a GET for a deleted resource returns a 410 status code, whereas a GET for an unknown resource returns 404"; create "SHALL also return a Location header which contains the new Logical Id and Version Id"; "If an id is provided, the server SHALL ignore it."</p>
+<ul>
+  <li><strong>Server menentukan id.</strong> Create memakai POST tanpa id; server mengisi <code>id</code>, <code>meta.versionId</code>, dan <code>meta.lastUpdated</code>. PUT ke id yang belum ada ("update as create") hanya boleh kalau server mendukungnya, diumumkan di <code>CapabilityStatement.rest.resource.updateCreate</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></li>
+  <li><strong>Search lewat POST</strong> (<code>_search</code>, body form-encoded) "has exactly the same semantics as the equivalent GET command"; berguna kalau query panjang atau tidak boleh tampil di log URL. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></li>
+  <li><strong><code>Prefer: return=minimal</code></strong> meminta respons tanpa body, <code>return=representation</code> meminta resource lengkap; "Servers SHOULD honor this header." <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Interaksi dan status</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review campuran <a href="0021-review-rest-bulk.html">0021</a>.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review <a href="0021-review-rest-bulk.html">0021</a>.</p>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="rest-crud" data-stack></div>
+</section>
+
+<!-- ============ 2. SEARCH ============ -->
+<h2>2. Search: tipe parameter, modifier, prefix</h2>
+<p>
+  Setiap resource mendefinisikan search parameter-nya sendiri, dan setiap parameter punya <strong>tipe</strong> yang menentukan sintaks nilainya.
+  Tipe di R4: number, date, string, token, reference, composite, quantity, uri, special. <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup>
+  Empat yang paling sering muncul:
+</p>
+<table>
+  <thead><tr><th>Tipe</th><th>Contoh parameter</th><th>Contoh query</th><th>Perilaku</th></tr></thead>
+  <tbody>
+    <tr><td>string</td><td>Patient <code>name</code>, <code>family</code></td><td><code>Patient?family=sant</code></td><td>"case-insensitive and accent-insensitive. May match just the start of a string." <code>:exact</code> = persis termasuk huruf besar-kecil; <code>:contains</code> = di posisi mana saja</td></tr>
+    <tr><td>token</td><td>Observation <code>code</code>, Patient <code>identifier</code>, <code>gender</code></td><td><code>Observation?code=http://loinc.org|29463-7</code></td><td><code>[system]|[code]</code>, system dicocokkan dengan <code>Coding.system</code> / <code>Identifier.system</code>. <code>:not</code> membalik, <code>:text</code> mencari teks</td></tr>
+    <tr><td>reference</td><td>Observation <code>subject</code>, <code>patient</code>, <code>encounter</code></td><td><code>Observation?patient=123</code></td><td>menunjuk resource lain; dasar chaining dan <code>_include</code> (lesson <a href="0009-include-dan-paging.html">0009</a>)</td></tr>
+    <tr><td>date</td><td>Observation <code>date</code>, Patient <code>birthdate</code></td><td><code>Observation?date=ge2024-01-01</code></td><td>prefix di depan nilai; tanpa prefix = <code>eq</code></td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Perilaku: <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup>. Tipe parameter Observation (<code>code</code> token, <code>date</code> date atas <code>Observation.effective</code>, <code>patient</code> reference ke Patient):
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html#search">[3]</a></sup>; Patient (<code>birthdate</code> date, <code>family</code>/<code>name</code> string, <code>identifier</code>/<code>gender</code> token):
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html#search">[4]</a></sup>.
+</p>
+
+<h3>Prefix (date, number, quantity)</h3>
+<table>
+  <thead><tr><th>Prefix</th><th>Arti</th><th>Prefix</th><th>Arti</th></tr></thead>
+  <tbody>
+    <tr><td><code>eq</code></td><td>sama (default)</td><td><code>ne</code></td><td>tidak sama</td></tr>
+    <tr><td><code>gt</code> / <code>lt</code></td><td>lebih besar / lebih kecil</td><td><code>ge</code> / <code>le</code></td><td>lebih besar atau sama / lebih kecil atau sama</td></tr>
+    <tr><td><code>sa</code> / <code>eb</code></td><td>mulai setelah / berakhir sebelum</td><td><code>ap</code></td><td>kira-kira sama</td></tr>
+  </tbody>
+</table>
+<p class="note">Sumber: <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup>. Contoh resmi rentang 2 tahun: <code>GET [base]/Patient/23/Procedure?date=ge2010-01-01&amp;date=le2011-12-31</code>.</p>
+
+<h3>AND, OR, dan <code>:missing</code></h3>
+<ul>
+  <li><strong>Parameter diulang = AND</strong> (<code>date=ge2010-01-01&amp;date=le2011-12-31</code>). <strong>Nilai dipisah koma = OR</strong> (<code>code=http://loinc.org|29463-7,http://loinc.org|3141-9</code>). <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup></li>
+  <li><code>gender:missing=true</code> → resource yang <em>tidak</em> punya nilai gender; <code>:missing=false</code> → yang punya. <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup></li>
+  <li><strong>Parameter tak dikenal biasanya diam-diam diabaikan</strong>: "servers SHOULD ignore unknown or unsupported parameters". Header <code>Prefer: handling=strict</code> meminta error, <code>handling=lenient</code> meminta diabaikan. Parameter yang benar-benar dipakai server tercatat di link <code>self</code> Bundle hasil, jadi periksa itu kalau hasil terlalu banyak. <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[2]</a></sup></li>
+</ul>
+<p class="note">Jebakan JS: <code>new URLSearchParams({ date: "ge2010-01-01" })</code> tidak bisa memuat dua <code>date</code>; pakai <code>params.append("date", …)</code> dua kali. Dan <code>|</code> di token sebaiknya di-encode (<code>%7C</code>), yang otomatis dilakukan <code>URLSearchParams</code>.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Menyusun query</h2>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="rest-search" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras (±5 menit)</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Jelaskan siklus hidup satu Patient lewat REST API FHIR: request apa yang Anda kirim untuk create, read, update, delete, dan search, dan status apa yang Anda harapkan?" (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Create: <code>POST [base]/Patient</code> tanpa id; server mengisi <code>id</code>, <code>meta.versionId</code>, dan <code>meta.lastUpdated</code>, lalu membalas <code>201</code> dengan header <code>Location: [base]/Patient/[id]/_history/[vid]</code>. Kalau saya mengirim id di body, server mengabaikannya. Read: <code>GET [base]/Patient/123</code> → 200; kalau tidak dikenal 404, kalau sudah dihapus 410. Update: <code>PUT [base]/Patient/123</code> → 200; PUT ke id yang belum ada hanya membuat resource (201) kalau server mengumumkan <code>updateCreate</code> di CapabilityStatement. Perubahan sebagian bisa lewat <code>PATCH</code>, mis. JSON Patch. Delete: <code>DELETE [base]/Patient/123</code> → 200 dengan body atau 204 tanpa body. Search: <code>GET [base]/Patient?name=peter</code>, atau <code>POST [base]/Patient/_search</code> dengan semantik sama, hasilnya 200 + Bundle <code>searchset</code>. Semua dengan <code>application/fhir+json</code>."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>create = <code>POST [base]/Patient</code> → <code>201</code> + header <code>Location</code> berisi id dan versi?</li>
+      <li>server yang menentukan <code>id</code>; id di body create diabaikan?</li>
+      <li>read: 200, tidak dikenal <code>404</code>, sudah dihapus <code>410</code>?</li>
+      <li>update <code>PUT</code> → 200; update-as-create (201) hanya kalau server mendukung <code>updateCreate</code>?</li>
+      <li>delete → 200 (ada body) atau 204 (tanpa body); <code>PATCH</code> untuk perubahan sebagian?</li>
+      <li>search lewat <code>GET</code> atau <code>POST _search</code>, hasil Bundle <code>searchset</code>?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review <a href="0021-review-rest-bulk.html">0021</a> akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/rest-search-bundle.html">Reference: REST, search, Bundle</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "REST API")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda <code>subject</code> dan <code>patient</code> sebagai search parameter Observation?" atau "kapan pakai PATCH dibanding PUT di FHIR?"</p>
+
+<p class="note sources">
+  Sumber (semua FHIR R4 4.0.1, diakses 2026-10-26):
+  <a href="https://hl7.org/fhir/R4/http.html">[1] RESTful API</a> ·
+  <a href="https://hl7.org/fhir/R4/search.html">[2] Search</a> ·
+  <a href="https://hl7.org/fhir/R4/observation.html#search">[3] Observation: search parameters</a> ·
+  <a href="https://hl7.org/fhir/R4/patient.html#search">[4] Patient: search parameters</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0007-meta-contained-extension.html">← 0007 · <code>meta</code>, <code>contained</code>, <code>extension</code></a>
+  <a href="0009-include-dan-paging.html">0009 · <code>_include</code> dan paging →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

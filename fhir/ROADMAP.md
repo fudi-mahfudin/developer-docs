@@ -1,19 +1,22 @@
-# Roadmap 1 Hari — Interview Fullstack (Node.js + React) di Health-Tech dengan FHIR R4
+# Roadmap — Interview Fullstack (Node.js + React) di Health-Tech dengan FHIR R4
 
 **Profil:** kuat di TypeScript / Node.js / React, belum pernah memakai FHIR
 **Format interview yang diantisipasi:** tanya-jawab konsep FHIR + desain integrasi (lisan)
-**Alokasi:** 6–8 jam dalam 1 hari, **tanpa implementasi**: baca, kuis, latihan menjawab lisan
+**Alokasi:** self-paced, tanpa deadline. 29 lesson ±20 menit, **tanpa implementasi**: baca, kuis, latihan menjawab lisan (ADR 0002)
 **Istilah:** [GLOSSARY.md](./GLOSSARY.md) · **Indeks lesson:** [index.html](./index.html)
 
-| Waktu | Lesson | Fokus |
+| Modul | Lesson | Fokus |
 |---|---|---|
-| 08.00–09.00 | 0001 Fondasi FHIR | Apa itu FHIR dan Resource, HL7 v2 → FHIR, R4 vs R5, Profile/Extension/IG |
-| 09.00–10.15 | 0002 Anatomi resource JSON | Patient, Encounter, Observation; Identifier, Reference, CodeableConcept; LOINC/SNOMED CT/ICD-10 |
-| 10.30–12.00 | 0003 FHIR REST API | CRUD, search, Bundle `transaction` vs `batch`, versioning, `OperationOutcome` |
-| 13.00–14.15 | 0004 JSON massal | Bulk Data `$export`, NDJSON, streaming di Node |
-| 14.30–15.45 | 0005 SMART on FHIR & frontend | OAuth2 + PKCE, scopes, launch, backend services, `fhirclient` di React |
-| 16.00–17.30 | 0006 SATUSEHAT + review | SATUSEHAT, mapping data legacy, review campuran (seam), STAR health-tech |
+| Fondasi | 0001–0003 | Apa itu FHIR dan Resource, HL7 v2 → FHIR, R4 vs R5, Profile/Extension/IG |
+| Resource | 0004–0007 | Patient, Encounter, Observation; Identifier, Reference, CodeableConcept; LOINC/SNOMED CT/ICD-10 |
+| REST | 0008–0011 | CRUD, search, Bundle `transaction` vs `batch`, versioning, `OperationOutcome` |
+| **Review 1** | 0012 | Fondasi + Resource (tertunda satu modul) |
+| Bulk Data | 0013–0016 | Bulk Data `$export`, NDJSON, streaming di Node |
+| SMART | 0017–0020 | OAuth2 + PKCE, scopes, launch, backend services, `fhirclient` di React |
+| **Review 2** | 0021 | REST + Bulk Data |
+| SATUSEHAT | 0022–0023 | SATUSEHAT, validasi, mapping data legacy |
+| PDP | 0024–0026 | UU PDP, UU Kesehatan, Permenkes Rekam Medis; field yang di-drop, di-HMAC, atau aman; enam saluran bocor; audit vs log |
+| **Review 3** | 0027 | SMART + SATUSEHAT + PDP + topik lemah Review 1–2 |
+| Penutup | 0028–0029 | Tanya-jawab interview campuran, STAR health-tech |
 
-| Malam (±50 menit) | 0007 PDP & monitoring | UU PDP, UU Kesehatan, Permenkes Rekam Medis; field FHIR/SATUSEHAT yang di-drop, di-HMAC, atau aman; enam saluran bocor; audit vs log |
-
-Malam sebelum interview: kerjakan 0007, baca ulang tiga reference di `reference/`, dan ulangi soal lisan yang lemah dari review 0006.
+Menjelang interview: baca ulang tiga reference di `reference/`, dan ulangi soal lisan topik lemah dari ketiga review.

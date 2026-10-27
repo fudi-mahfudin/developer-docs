@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0022 · SATUSEHAT: platform, token, prasyarat, NIK dan nomor IHS</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0022 · FHIR · Modul SATUSEHAT · ±18 menit</div>
+  <h1>SATUSEHAT: platform, token, prasyarat, NIK dan nomor IHS</h1>
+  <p class="subtitle">Satu materi yang khas Indonesia: apa itu SATUSEHAT, cara service Node Anda mendapat token, langkah persiapan sebelum data klinis, dan bedanya NIK, nomor IHS, dan identifier lokal</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Pernah dengar SATUSEHAT? Bagaimana sistem kami terhubung ke sana?"</em> dalam 60–90 detik
+  (HIE berbasis FHIR R4, Sandbox vs Production, client credentials dari backend, prasyarat, NIK vs nomor IHS).
+</div>
+
+<p>Modul ini membawa R4, REST, dan SMART dari lesson sebelumnya ke konteks Indonesia: SATUSEHAT.</p>
+
+<p class="note">
+  Fakta SATUSEHAT diambil dari dokumentasi resmi Kemenkes, <strong>diakses 2026-10-26</strong>. Dokumentasi ini berubah cepat
+  (halaman Standar Terminologi saja mencatat revisi v11.2 per 30 September 2026), jadi sebut "per dokumentasi terakhir yang saya baca" bila ditanya detail. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/standar-terminologi/">[1]</a></sup>
+  Klaim yang tidak bisa saya verifikasi dari halaman publik ditandai <strong>belum terverifikasi (diakses 2026-10-26)</strong>.
+</p>
+
+<h2>1a. Apa itu SATUSEHAT, dan bagaimana sistem Anda masuk (±8 menit)</h2>
+<p>
+  SATUSEHAT adalah "ekosistem pertukaran data kesehatan (HIE: <em>Health Information Exchange</em>)" yang menghubungkan sistem fasyankes, regulator, penjamin, dan penyedia layanan digital.
+  Latar belakangnya: lebih dari 400 aplikasi kesehatan pemerintah yang belum terintegrasi dan tidak adanya standar format interoperabilitas.
+  Tujuannya antara lain spesifikasi terstandar memakai HL7 FHIR dan HTTPS REST API, supaya developer bisa memakai bahasa apa pun, serta nomor SATUSEHAT sebagai <em>single identifier</em> pasien. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/playbook/introduction/">[2]</a></sup>
+</p>
+<p>
+  Versi FHIR: halaman FHIR di dokumentasi hanya menyebut "HL7 FHIR" tanpa nomor versi <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/">[3]</a></sup>,
+  tetapi base URL-nya memakai path <code>fhir-r4</code> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/postman-workshop/endpoint-information/">[4]</a></sup>
+  dan profile resminya diterbitkan sebagai <em>SATUSEHAT FHIR R4 Implementation Guide</em> di Simplifier, dengan canonical seperti <code>https://fhir.kemkes.go.id/r4/StructureDefinition/Patient</code>. <sup class="cite"><a href="https://simplifier.net/guide/SATUSEHAT-FHIR-R4-Implementation-Guide/Home/FHIRProfiles/Patient.page.md?version=current">[5]</a></sup>
+  Jadi semua yang Anda pelajari di 0001–0020 tentang R4 berlaku di sini; inilah contoh nyata "IG nasional di atas R4" dari <a href="0003-profile-extension-ig.html">lesson 0003</a>.
+</p>
+<table>
+  <thead><tr><th></th><th>Sandbox (Staging)</th><th>Production</th></tr></thead>
+  <tbody>
+    <tr><td>OAuth base URL</td><td><code>https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1</code></td><td><code>https://api-satusehat.kemkes.go.id/oauth2/v1</code></td></tr>
+    <tr><td>FHIR base URL</td><td><code>https://api-satusehat-stg.dto.kemkes.go.id/fhir-r4/v1</code></td><td><code>https://api-satusehat.kemkes.go.id/fhir-r4/v1</code></td></tr>
+    <tr><td>Siapa bisa memakai</td><td>Fasyankes dan partner, termasuk yang belum terverifikasi; ada data pasien dummy khusus Sandbox</td><td>Setelah registrasi (Terdaftar) di SATUSEHAT Platform</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/postman-workshop/endpoint-information/">[4]</a></sup> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-code/access-sandbox/">[6]</a></sup> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[7]</a></sup>
+  Organization ID, Client ID, dan Client Secret dilihat setelah login ke portal SATUSEHAT Platform. Pembatasan resource per "Tipe Kode Akses API" (jenis institusi) ada di dokumen unduhan yang tidak saya baca: <strong>belum terverifikasi (diakses 2026-10-26)</strong>. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-code/access-sandbox/">[6]</a></sup></p>
+
+<p><strong>Autentikasi: OAuth2 client credentials dengan secret.</strong> Ini server-to-server, tanpa user dan tanpa redirect: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[8]</a></sup></p>
+<pre><code>// Hanya untuk dibaca: service Node (bukan React!) mengambil token SATUSEHAT
+const OAUTH = "https://api-satusehat-stg.dto.kemkes.go.id/oauth2/v1";   // sandbox
+
+const res = await fetch(`${OAUTH}/accesstoken?grant_type=client_credentials`, {   // grant_type di query string
+  method: "POST",
+  headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  body: new URLSearchParams({ client_id: process.env.SS_CLIENT_ID!, client_secret: process.env.SS_CLIENT_SECRET! }),
+});
+const { access_token, expires_in } = await res.json();   // contoh di docs: "token_type": "BearerToken", "expires_in": "3599"
+// setiap request FHIR berikutnya: Authorization: Bearer ${access_token}</code></pre>
+<ul>
+  <li><code>client_id</code> dan <code>client_secret</code> diperlakukan seperti username dan password aplikasi; keduanya didapat dari Kemenkes. Respons gagal berupa OperationOutcome. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[8]</a></sup></li>
+  <li>Ada rate limit: "1 request per minute after a failed attempt", dan dokumentasi juga memperingatkan generate token baru yang terlalu sering. Konsekuensi desain: <strong>cache token</strong> di service Node sampai mendekati <code>expires_in</code>, jangan minta token per request. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[8]</a></sup></li>
+  <li>Bandingkan dengan <a href="0019-scopes-dan-backend-services.html">SMART Backend Services</a> (lesson 0019): sama-sama <code>client_credentials</code> tanpa user, tetapi SMART memakai JWT assertion bertanda tangan private key, sedangkan SATUSEHAT memakai <code>client_secret</code>. Karena secret, token <strong>tidak boleh</strong> diminta dari browser: React app memanggil backend Node Anda, backend yang memanggil SATUSEHAT.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Platform dan token</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="ss-platform,ss-auth" data-stack></div>
+</section>
+
+<p>Sekarang Anda tahu ke mana service Node mengirim data dan bagaimana mendapat token. Sebelum data klinis pertama bisa dikirim, ada urutan persiapan dan beberapa identifier yang harus dibedakan.</p>
+
+<h2>1b. Prasyarat, NIK, dan nomor IHS (±7 menit)</h2>
+<p>Sebelum mengirim data pendaftaran pasien dan diagnosis, dokumentasi menetapkan langkah persiapan: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/prerequisites/">[9]</a></sup></p>
+<div class="flow">
+  <span class="box">Autentikasi</span><span class="arrow">→</span>
+  <span class="box">Organization (struktur organisasi)</span><span class="arrow">→</span>
+  <span class="box">Location (struktur lokasi)</span><span class="arrow">→</span>
+  <span class="box">nomor IHS Practitioner</span><span class="arrow">→</span>
+  <span class="box">nomor IHS Patient</span><span class="arrow">→</span>
+  <span class="box">Encounter, Condition, Observation, …</span>
+</div>
+<ul>
+  <li><strong>Nomor IHS pasien</strong> (<code>{patient-ihs-number}</code>) didapat dari <strong>Master Patient Index (MPI)</strong> Kemenkes, yang menyimpan data demografi berskala nasional. Nomor ini boleh disimpan di sistem internal, dan memudahkan pelaporan karena data diri pasien tidak perlu dikirim ulang setiap kali. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[7]</a></sup>
+    Resource klinis lalu merujuk pasien sebagai <code>"Patient/{patient-ihs-number}"</code>. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/">[10]</a></sup></li>
+  <li><strong>Alur pasien ber-NIK:</strong> cari dulu berdasarkan nomor IHS atau NIK. Kalau tidak ketemu, <code>POST</code> Patient dengan NIK sebagai identifier, nama, tanggal lahir, jenis kelamin, alamat, dsb.; data diverifikasi ke DUKCAPIL, dan bila cocok SATUSEHAT membuat nomor IHS baru. Kalau ada elemen yang tidak cocok, API mengembalikan error. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/master-data/master-patient-index/pasien-nik/">[11]</a></sup></li>
+  <li>Ini adalah <code>id</code> vs <code>identifier</code> dari <a href="0004-kerangka-json-dan-identifier.html">lesson 0004</a> dalam versi Indonesia: <strong>NIK</strong> adalah business identifier, <strong>nomor IHS</strong> menjadi logical id di server SATUSEHAT, dan nomor rekam medis lokal adalah identifier lain lagi.</li>
+</ul>
+<pre><code>// Patient.identifier (contoh dari dokumentasi Patient SATUSEHAT, nilai disamarkan)
+[
+  { "use": "official", "system": "https://fhir.kemkes.go.id/id/nik",    "value": "################" },
+  { "use": "official", "system": "https://fhir.kemkes.go.id/id/paspor", "value": "#########" },
+  { "use": "official", "system": "https://fhir.kemkes.go.id/id/kk",     "value": "###############" }
+]
+
+// Encounter.identifier: nomor kunjungan LOKAL, namespace per organisasi
+[ { "system": "http://sys-ids.kemkes.go.id/encounter/{organization-ihs-number}", "use": "official", "value": "REG-2026-0042" } ]</code></pre>
+<p>
+  Sumber kedua potongan: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[7]</a></sup> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[12]</a></sup>
+  <code>{organization-ihs-number}</code> adalah ID organisasi induk dari Master Sarana Index; <code>value</code> adalah ID atau nomor kunjungan lokal di sistem masing-masing organisasi. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[12]</a></sup>
+  Polanya persis "system menjamin keunikan" dari lesson 0004: dua rumah sakit boleh punya nomor <code>REG-2026-0042</code>, tapi <code>system</code>-nya berbeda.
+  Alamat pasien juga memakai extension Indonesia, <code>https://fhir.kemkes.go.id/r4/StructureDefinition/administrativeCode</code>, untuk kode provinsi sampai desa, RT, dan RW. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[7]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Prasyarat dan identifier</h2>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="ss-prasyarat,ss-identifier" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 3 — Jawab lisan</h2>
+  <p>Pasang timer di ponsel, jawab dengan suara keras, baru buka jawaban contoh. Centang hanya poin yang benar-benar Anda sebut.</p>
+
+  <blockquote>"Pernah dengar SATUSEHAT? Bagaimana sistem kami terhubung ke sana?" (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "SATUSEHAT adalah platform pertukaran data kesehatan nasional dari Kemenkes, sebuah Health Information Exchange yang memakai HL7 FHIR lewat HTTPS REST; IG-nya di Simplifier bernama SATUSEHAT FHIR R4 Implementation Guide dan base URL-nya memakai path <code>fhir-r4/v1</code>.
+      Ada Sandbox untuk uji coba dengan pasien dummy, dan Production setelah fasyankes terdaftar. Autentikasinya OAuth2 client credentials: backend kami POST ke <code>/oauth2/v1/accesstoken</code> dengan <code>client_id</code> dan <code>client_secret</code>, lalu memakai <code>Authorization: Bearer</code>; token di-cache karena gagal autentikasi kena rate limit.
+      Sebelum data klinis: Organization dan Location didaftarkan, nomor IHS Practitioner dan Patient diambil; Patient dicari lewat NIK. Setelah itu Encounter, Condition dengan ICD-10, Observation dengan LOINC, sesuai panduan use case. Error datang sebagai OperationOutcome yang kami simpan untuk diperbaiki."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>SATUSEHAT = HIE nasional Kemenkes berbasis HL7 FHIR (R4) + HTTPS REST?</li>
+      <li>Sandbox (pasien dummy) vs Production (setelah terdaftar)?</li>
+      <li>OAuth2 <code>client_credentials</code>: <code>client_id</code> + <code>client_secret</code> → Bearer token, dari backend?</li>
+      <li>prasyarat: Organization, Location, nomor IHS Practitioner dan Patient (MPI, NIK)?</li>
+      <li>resource klinis (Encounter, Condition, Observation) dengan terminologi standar?</li>
+      <li>error 4xx berupa OperationOutcome yang disimpan dan ditindaklanjuti?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0023-satusehat-validasi-dan-mapping.html">lesson 0023</a>: bagaimana data yang Anda kirim divalidasi, dan bagaimana data SIMRS lama dipetakan ke FHIR.</p>
+
+<p class="note sources">
+  Sumber (SATUSEHAT diakses 2026-10-26):
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/standar-terminologi/">[1] Standar Terminologi (riwayat revisi)</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/playbook/introduction/">[2] SATUSEHAT Playbook: Pendahuluan</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/">[3] FHIR di SATUSEHAT</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/postman-workshop/endpoint-information/">[4] Endpoint Information</a> ·
+  <a href="https://simplifier.net/guide/SATUSEHAT-FHIR-R4-Implementation-Guide/Home/FHIRProfiles/Patient.page.md?version=current">[5] SATUSEHAT FHIR R4 Implementation Guide (Simplifier): profile Patient</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/api-code/access-sandbox/">[6] Kode Akses API (Sandbox)</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[7] Resource Patient</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/authentication/apis/token/">[8] Katalog API: Akses Token</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/prerequisites/">[9] Orientasi / Prerequisites</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/">[10] Resource Observation</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/master-data/master-patient-index/pasien-nik/">[11] MPI: Pasien dengan NIK</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[12] Resource Encounter</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0021-review-rest-bulk.html">← 0021 · Review 2: REST + Bulk Data</a>
+  <a href="0023-satusehat-validasi-dan-mapping.html">0023 · SATUSEHAT: validasi profile, mapping data legacy, ConceptMap →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0022.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

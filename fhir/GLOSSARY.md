@@ -61,7 +61,7 @@ _Avoid_: spec lokal, guideline
 ## Resource dan datatype
 
 **Logical id**:
-Elemen `id` sebuah resource: string opaque (maks. 64 karakter) yang ditetapkan server penyimpan, unik per tipe resource di server itu, tidak pernah berubah, dan membentuk URL-nya (`[base]/Patient/123`). Bisa berbeda di server lain (lesson 0002).
+Elemen `id` sebuah resource: string opaque (maks. 64 karakter) yang ditetapkan server penyimpan, unik per tipe resource di server itu, tidak pernah berubah, dan membentuk URL-nya (`[base]/Patient/123`). Bisa berbeda di server lain (lesson 0004–0007).
 Padanan JS: surrogate primary key.
 _Avoid_: ID pasien, resource ID (ambigu dengan Identifier)
 
@@ -147,7 +147,7 @@ Extension di `modifierExtension` untuk data yang mengubah makna resource sehingg
 ## Bulk Data dan JSON skala besar
 
 **Bulk Data `$export`**:
-Operasi FHIR asinkron dari Bulk Data Access IG (lesson 0004 memakai v2.0.0, STU 2) untuk mengekspor banyak resource sekaligus ke file NDJSON, di tiga level: Patient (`[base]/Patient/$export`), Group (`[base]/Group/[id]/$export`), dan system (`[base]/$export`).
+Operasi FHIR asinkron dari Bulk Data Access IG (lesson 0013–0016 memakai v2.0.0, STU 2) untuk mengekspor banyak resource sekaligus ke file NDJSON, di tiga level: Patient (`[base]/Patient/$export`), Group (`[base]/Group/[id]/$export`), dan system (`[base]/$export`).
 Padanan Node: job ekspor di antrean (mis. BullMQ) yang hasilnya diambil lewat URL status.
 _Avoid_: Bulk API, dump (judul IG juga memakai alias "Flat FHIR")
 
@@ -260,7 +260,7 @@ _Avoid_: data medis (terlalu umum)
 
 ## Indonesia (SATUSEHAT)
 
-Istilah dari lesson 0006. Fakta SATUSEHAT dari dokumentasi resmi Kemenkes, diakses 2026-10-26; dokumentasinya sering direvisi.
+Istilah dari lesson 0022–0023. Fakta SATUSEHAT dari dokumentasi resmi Kemenkes, diakses 2026-10-26; dokumentasinya sering direvisi.
 
 **SATUSEHAT**:
 Ekosistem pertukaran data kesehatan nasional (HIE, *Health Information Exchange*) dari Kemenkes yang menghubungkan fasyankes, regulator, penjamin, dan penyedia layanan digital, dengan HL7 FHIR (R4, path `fhir-r4`) lewat HTTPS REST API. Fasyankes tetap memakai SIMRS/RME sendiri dan mengirim data ke SATUSEHAT.
@@ -330,7 +330,7 @@ _Avoid_: confidence score
 
 ## Pelindungan data pribadi (PDP)
 
-Istilah dari lesson 0007. Pasal dibaca dari PDF resmi peraturan.bpk.go.id, diakses 2026-10-27.
+Istilah dari lesson 0024–0026. Pasal dibaca dari PDF resmi peraturan.bpk.go.id, diakses 2026-10-27.
 
 **UU PDP (UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi)**:
 Undang-undang pelindungan data pribadi Indonesia; masa penyesuaian 2 tahun sejak diundangkan 17 Oktober 2022 (Pasal 74). Nama resminya "Pelindungan", bukan "Perlindungan".

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0016 · Bulk Data: jebakan decimal FHIR di JavaScript</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0016 · FHIR · Modul Bulk Data · ±20 menit</div>
+  <h1>Jebakan <code>decimal</code> FHIR di JavaScript</h1>
+  <p class="subtitle">Lesson terakhir modul Bulk Data: kenapa <code>36.50</code> bisa berubah jadi <code>36.5</code>, dan cara mempertahankan presisinya</p>
+</header>
+
+<p>
+  Sebelumnya, di <a href="0015-streaming-dan-backpressure.html">lesson 0015</a>, setiap baris NDJSON di-<code>JSON.parse</code> lalu di-insert per batch.
+  Di <a href="0014-manifest-ndjson-dan-json-parse.html">lesson 0014</a> Anda sudah melihat <code>"value":36.50</code> di contoh Observation; lesson ini menjelaskan apa yang terjadi pada angka itu.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan kenapa <code>JSON.parse</code> mengubah <code>2.00</code> jadi <code>2</code>,
+  kenapa itu masalah untuk <code>decimal</code> FHIR, cara mempertahankan teks asli angka (reviver <code>context.source</code>, kolom <code>NUMERIC</code>),
+  dan cara mengirimnya kembali sebagai JSON number tanpa kehilangan nol (<code>JSON.rawJSON</code>).
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Jebakan khas FHIR: <code>decimal</code> di JavaScript</h2>
+<p>
+  Di FHIR, presisi angka adalah bagian dari data: "0.010 is regarded as different to 0.01, and the original precision should be preserved", dan
+  "Implementations SHALL handle decimal values in ways that preserve and respect the precision of the value as represented for presentation purposes". <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html#decimal">[1]</a></sup>
+  Di JSON, <code>decimal</code> ditulis sebagai JSON number, dan spesifikasi JSON FHIR sendiri memperingatkan:
+  "When using a JavaScript JSON.parse() implementation, note that JavaScript natively supports only one numeric datatype ... trailing 0s after a decimal point will be lost e.g. 2.00 will be converted to 2."
+  Sarannya: "consider using a custom parser and big number library". <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[2]</a></sup>
+</p>
+<pre><code>JSON.parse('{"value":36.50}').value          // 36.5    → "36.50 °C" berubah jadi "36.5 °C" di UI
+JSON.parse('{"value":0.010}').value          // 0.01    → presisi alat ukur hilang
+
+// Node 24: reviver menerima context.source, teks asli nilai primitif
+JSON.parse('{"value":36.50}', (key, value, context) =&gt;
+  key === "value" ? context.source : value)  // { value: "36.50" } → simpan sebagai string / NUMERIC</code></pre>
+<p class="note">
+  Hasil di atas saya jalankan di Node 24.21.0. <code>context.source</code> berisi "The original JSON string representing this value" dan hanya ada untuk nilai primitif;
+  MDN juga mengingatkan bahwa reviver berjalan setelah angka dikonversi, jadi nilainya "may lose precision in the process". <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/parse">[3]</a></sup>
+  Simpan ke database sebagai tipe decimal (mis. <code>NUMERIC</code> di PostgreSQL), bukan <code>float</code>. Kabar baiknya, FHIR sendiri mencatat "large and/or highly precise values are extremely rare in medicine"; masalah yang umum adalah nol di belakang koma. <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html#decimal">[1]</a></sup>
+</p>
+
+<p>Teks asli sudah aman di database. Masalah berikutnya muncul saat resource itu dikirim kembali ke server FHIR.</p>
+
+<h2>2. Kirim kembali tanpa kehilangan nol: <code>JSON.rawJSON</code></h2>
+<p>
+  Representasi JSON untuk <code>decimal</code> adalah "A JSON number". <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html#decimal">[1]</a></sup>
+  Jadi string <code>"36.50"</code> dari reviver tidak boleh langsung di-<code>JSON.stringify</code>: hasilnya JSON string, bukan number.
+  Mengubahnya dulu ke <code>Number</code> juga tidak menolong, karena nol di belakang koma hilang lagi.
+</p>
+<pre><code>JSON.stringify({ value: "36.50" })                 // {"value":"36.50"}  → JSON string, bukan decimal FHIR
+JSON.stringify({ value: Number("36.50") })         // {"value":36.5}     → nol hilang lagi
+JSON.stringify({ value: JSON.rawJSON("36.50") })   // {"value":36.50}    → JSON number, presisi utuh</code></pre>
+<p>
+  <code>JSON.rawJSON()</code> "creates a "raw JSON" object containing a piece of JSON text. When serialized to JSON, the raw JSON object is treated as if it is already a piece of JSON."
+  MDN menyebut kegunaan utamanya: "The most typical use case is the floating point number loss of precision problem."
+  Objek yang dihasilkan "has <code>null</code> prototype and is frozen" dan menyimpan teks aslinya di properti <code>rawJSON</code>; <code>JSON.rawJSON</code> melempar <code>SyntaxError</code> kalau teksnya "not valid JSON, or if it represents an object or array".
+  Status MDN: Baseline 2025. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/rawJSON">[4]</a></sup>
+</p>
+<p>Digabung dengan reviver, satu baris NDJSON bisa dibaca dan ditulis ulang tanpa satu digit pun berubah:</p>
+<pre><code>const obs = JSON.parse(line, (key, value, context) =&gt;
+  typeof value === "number" ? JSON.rawJSON(context.source) : value);
+
+obs.valueQuantity.value.rawJSON     // "36.50"  → simpan ke kolom NUMERIC
+JSON.stringify(obs)                 // ..."value":36.50...  → kirim kembali ke server FHIR</code></pre>
+<p class="note">
+  Semua hasil di atas saya jalankan di Node 24.21.0. <code>context.source</code> dan <code>JSON.rawJSON</code> berasal dari proposal TC39 "JSON.parse source text access", yang "is at stage 4 of the TC39 Process";
+  motivasinya persis masalah ini: "Transformation between ECMAScript values and JSON text is lossy." <sup class="cite"><a href="https://github.com/tc39/proposal-json-parse-with-source">[5]</a></sup>
+  Untuk perhitungan, nilai boleh diubah ke <code>Number</code>: FHIR menulis "Implementations are not required to perform calculations with these numbers differently". Yang wajib dijaga adalah presisi nilai yang disimpan dan ditampilkan. <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html#decimal">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Presisi</h2>
+  <div class="quiz" data-bank-lesson="0016" data-bank-topic="bulk-decimal" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Observation dari server FHIR berisi <code>valueQuantity.value</code> 36.50. Bagaimana Anda menjaga presisinya dari parse, simpan ke database, sampai dikirim kembali?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Di FHIR presisi decimal adalah bagian dari data: 0.010 berbeda dengan 0.01, dan implementasi SHALL mempertahankannya. Masalahnya, <code>JSON.parse</code> mengubah angka JSON jadi Number JavaScript,
+      jadi 36.50 menjadi 36.5 dan 2.00 menjadi 2. Di Node 24 saya pakai reviver dengan <code>context.source</code> untuk mengambil teks asli angkanya, lalu menyimpannya sebagai string atau kolom <code>NUMERIC</code>,
+      bukan float. Saat mengirim kembali, decimal FHIR harus JSON number, jadi saya tidak mengirim string <code>"36.50"</code>; saya bungkus dengan <code>JSON.rawJSON</code> supaya <code>JSON.stringify</code> menulis 36.50 apa adanya.
+      Untuk perhitungan, FHIR tidak mewajibkan aritmetika khusus; yang wajib dijaga adalah nilai yang disimpan dan ditampilkan."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>presisi decimal FHIR bermakna (0.010 ≠ 0.01) dan SHALL dipertahankan?</li>
+      <li><code>JSON.parse</code> mengubah ke Number: 36.50 jadi 36.5, 2.00 jadi 2?</li>
+      <li>reviver <code>context.source</code> (Node 24) untuk mengambil teks asli angka?</li>
+      <li>simpan sebagai string atau <code>NUMERIC</code>, bukan <code>float</code>?</li>
+      <li>kirim kembali sebagai JSON number dengan <code>JSON.rawJSON</code>, bukan JSON string?</li>
+      <li>perhitungan boleh memakai Number; yang wajib utuh adalah nilai tersimpan/tampil?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Modul Bulk Data selesai. Semua topiknya muncul lagi, diacak, di <a href="0021-review-rest-bulk.html">Review 2</a> setelah modul SMART.</p>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html">Bulk Data Access IG v2.0.0 (STU 2): Export</a>.
+  Baca "Bulk Data Kick-off Request" (endpoint, header, tabel parameter: cukup <code>_outputFormat</code>, <code>_since</code>, <code>_type</code>), "Bulk Data Status Request", dan "Response - Complete Status" sampai contoh manifest.
+  Kalau masih ada waktu, panduan Node <a href="https://nodejs.org/en/learn/modules/backpressuring-in-streams">Backpressuring in Streams</a>.
+</div>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Bulk Data dan JSON skala besar") · Indeks: <a href="../index.html">semua lesson FHIR</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda <code>Patient/$export</code> dan <code>Group/[id]/$export</code> untuk use case analitik?", "bagaimana menulis hasil export ke S3 dengan backpressure yang benar?", atau "kapan lebih baik memakai worker thread daripada streaming?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/R4/datatypes.html#decimal">[1] FHIR R4: Data Types (decimal)</a> ·
+  <a href="https://hl7.org/fhir/R4/json.html">[2] FHIR R4: JSON Representation of Resources</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/parse">[3] MDN: JSON.parse()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/rawJSON">[4] MDN: JSON.rawJSON()</a> ·
+  <a href="https://github.com/tc39/proposal-json-parse-with-source">[5] TC39: JSON.parse source text access</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0015-streaming-dan-backpressure.html">← 0015 · Streaming dan backpressure</a>
+  <a href="0017-smart-peta-dan-launch.html">0017 · SMART: peta dan launch →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

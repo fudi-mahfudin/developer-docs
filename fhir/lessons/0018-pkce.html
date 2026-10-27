@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0018 · Authorization code + PKCE: kenapa React SPA tidak punya secret</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0018 · FHIR · Modul SMART · ±24 menit</div>
+  <h1>Authorization code + PKCE: kenapa React SPA tidak punya secret</h1>
+  <p class="subtitle">Public client, PKCE S256, <code>state</code> dan <code>aud</code>, lalu token response dengan launch context</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan kenapa React SPA adalah public client tanpa secret,
+  bagaimana <code>code_verifier</code> dan <code>code_challenge</code> (S256) melindungi authorization code, apa fungsi <code>state</code> dan <code>aud</code>,
+  dan menyusun alur EHR launch dari klik di EHR sampai data tampil.
+</div>
+
+<p>Sebelumnya, di <a href="0017-smart-peta-dan-launch.html">lesson 0017</a>: app diluncurkan (EHR atau standalone) lalu menemukan <code>authorization_endpoint</code> dan <code>token_endpoint</code> lewat discovery. Lesson ini melanjutkan dari titik itu.</p>
+
+<h2>3. Authorization code + PKCE: kenapa React SPA tidak punya secret</h2>
+<p>
+  SMART membedakan <strong>confidential</strong> dan <strong>public</strong> app berdasarkan satu pertanyaan: "is your app able to protect a secret?"
+  HTML5/JS in-browser app, termasuk SPA, adalah public app karena secret apa pun di dalamnya "can potentially be extracted". <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#support-for-public-and-confidential-apps">[1]</a></sup>
+  Sebagai gantinya: "All SMART apps SHALL support Proof Key for Code Exchange (PKCE)", server SHALL mendukung <code>S256</code> dan SHALL NOT mendukung <code>plain</code>. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#considerations-for-pkce-support">[1]</a></sup>
+</p>
+<p>
+  Masalah yang diselesaikan PKCE: public client rentan terhadap <em>authorization code interception</em>; penyerang yang mendapat <code>code</code> bisa menukarnya menjadi access token.
+  Dengan PKCE, app membuat <code>code_verifier</code> acak (43–128 karakter), mengirim <code>code_challenge = BASE64URL(SHA256(code_verifier))</code> saat authorize,
+  dan baru mengirim <code>code_verifier</code> aslinya saat menukar code. Penyerang yang hanya punya code tidak bisa menukarnya. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7636">[2]</a></sup>
+</p>
+<p>
+  Di sisi server: authorization server menyimpan <code>code_challenge</code> dan <code>code_challenge_method</code> bersama authorization code yang diterbitkannya. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7636#section-4.4">[2]</a></sup>
+  Saat token request datang, server menghitung ulang <code>BASE64URL(SHA256(code_verifier))</code> dari verifier yang diterima dan membandingkannya dengan challenge tadi;
+  kalau tidak sama, server menjawab error <code>invalid_grant</code> dan tidak ada token yang terbit. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7636#section-4.6">[2]</a></sup>
+</p>
+<pre><code>// Hanya untuk dibaca: inilah yang dikerjakan fhirclient untuk Anda (Web Crypto, browser)
+const b64url = (b: Uint8Array) =&gt;
+  btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+const verifier  = b64url(crypto.getRandomValues(new Uint8Array(32)));          // 43 karakter (RFC 7636 §4.1)
+const digest    = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+const challenge = b64url(new Uint8Array(digest));                                // dikirim di authorize
+// verifier disimpan sementara di sessionStorage, dikirim nanti ke token endpoint</code></pre>
+<p>Authorize request (browser di-redirect ke <code>authorization_endpoint</code>), contoh dari IG ditambah dua parameter PKCE: <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#obtain-authorization-code">[1]</a></sup></p>
+<pre><code>https://ehr/authorize?
+  response_type=code&amp;
+  client_id=app-client-id&amp;
+  redirect_uri=https%3A%2F%2Fapp%2Fafter-auth&amp;
+  launch=xyz123&amp;                                   // hanya EHR launch
+  scope=launch+patient%2FObservation.rs+patient%2FPatient.rs+openid+fhirUser&amp;
+  state=98wrghuwuogerg97&amp;
+  aud=https://ehr/fhir&amp;                             // FHIR base URL; di EHR launch = iss
+  code_challenge=...&amp;code_challenge_method=S256</code></pre>
+<ul>
+  <li><code>state</code>: wajib, tidak bisa ditebak (≥ 122 bit entropi, mis. UUID acak), mencegah CSRF/session fixation; app SHALL memvalidasinya di <code>redirect_uri</code>. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#obtain-authorization-code">[1]</a></sup></li>
+  <li><code>aud</code>: wajib, URL server FHIR tujuan; mencegah token sah bocor ke resource server palsu. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#obtain-authorization-code">[1]</a></sup></li>
+  <li>Authorization code berumur pendek, "usually expiring within around one minute". <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#obtain-authorization-code">[1]</a></sup></li>
+</ul>
+<p>
+  Lalu app <code>POST</code> ke <code>token_endpoint</code> (form-urlencoded) dengan <code>grant_type=authorization_code</code>, <code>code</code>, <code>redirect_uri</code>, <code>code_verifier</code>,
+  dan <code>client_id</code> (wajib untuk public app; public app tidak melakukan client authentication). <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#obtain-access-token">[1]</a></sup> Responsnya:
+</p>
+<pre><code>{
+  "access_token": "eyJhbG...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "launch patient/Observation.rs patient/Patient.rs openid fhirUser",  // bisa beda dari yang diminta!
+  "id_token": "eyJ0eX...",       // karena openid fhirUser
+  "patient": "123",              // launch context: Patient/123
+  "need_patient_banner": true
+}</code></pre>
+<p>
+  <code>scope</code> di respons "can be different from the scopes requested by the app"; launch context seperti <code>"patient": "123"</code> datang bersama token.
+  Respons token SHALL memakai header <code>Cache-Control: no-store</code>. Access token SHOULD berumur tidak lebih dari satu jam. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#obtain-access-token">[1]</a></sup>
+  Setelah itu setiap request FHIR membawa <code>Authorization: Bearer {{access_token}}</code>; resource server memvalidasi masa berlaku, scope, dan <code>aud</code>. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#access-fhir-api">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Susun alur EHR launch</h2>
+  <p>Susun dari klik di EHR sampai data tampil. Ucapkan setiap langkah dengan suara keras saat memindahkannya.</p>
+  <div class="order">
+    <ol>
+      <li>EHR membuka launch URL app dengan <code>iss</code> dan <code>launch</code></li>
+      <li>App <code>GET [iss]/.well-known/smart-configuration</code></li>
+      <li>App membuat <code>code_verifier</code>, <code>code_challenge</code>, dan <code>state</code></li>
+      <li>Redirect ke <code>authorization_endpoint</code> dengan scope <code>launch patient/Observation.rs</code>, <code>launch</code>, <code>aud</code></li>
+      <li>EHR memutuskan (kebijakan, mungkin bertanya ke user), redirect ke <code>redirect_uri</code> dengan <code>code</code> + <code>state</code></li>
+      <li>App memvalidasi <code>state</code>, lalu <code>POST</code> ke <code>token_endpoint</code> dengan <code>code</code> + <code>code_verifier</code></li>
+      <li>Token response: <code>access_token</code>, <code>scope</code> yang diberikan, <code>patient</code></li>
+      <li><code>GET Observation?patient=123</code> dengan <code>Authorization: Bearer</code></li>
+    </ol>
+    <p class="explain">
+      Discovery harus sebelum authorize karena dari sanalah app tahu URL authorize dan token.
+      PKCE dan <code>state</code> dibuat sebelum redirect karena challenge dikirim di authorize, sedangkan verifier baru dikirim saat menukar code.
+      Konteks pasien baru diketahui app dari token response, bukan dari launch URL (<code>launch</code> hanya handle opaque).
+    </p>
+  </div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 3 — PKCE dan state</h2>
+  <div class="quiz" data-bank-lesson="0018" data-bank-topic="smart-pkce" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras seolah sedang interview, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0027.</p>
+
+  <blockquote>"React SPA kami tidak punya client secret. Bagaimana PKCE tetap melindungi authorization code?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "SPA adalah public client: secret apa pun di bundle JS bisa diekstrak, jadi tidak ada client authentication. Risikonya authorization code interception: siapa pun yang mencegat <code>code</code> bisa menukarnya menjadi token.
+      Dengan PKCE, app membuat <code>code_verifier</code> acak 43–128 karakter dan menyimpannya sementara, lalu mengirim <code>code_challenge</code> = BASE64URL(SHA256(verifier)) dengan <code>code_challenge_method=S256</code> di authorize request; SMART mewajibkan S256 dan melarang <code>plain</code>.
+      Server menyimpan challenge itu bersama code. Saat menukar code di token endpoint, app mengirim verifier aslinya; server menghitung ulang hash-nya dan membandingkan, kalau beda dijawab <code>invalid_grant</code>. Penyerang yang hanya punya code tidak punya verifier.
+      PKCE tidak menggantikan <code>state</code>: <code>state</code> acak tetap dikirim dan divalidasi di <code>redirect_uri</code> untuk mencegah CSRF, dan <code>aud</code> diisi FHIR base URL."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>SPA = public client: secret di bundle JS bisa diekstrak, tanpa client authentication?</li>
+      <li>ancaman: authorization code interception (code dicegat lalu ditukar penyerang)?</li>
+      <li><code>code_verifier</code> acak 43–128 karakter, disimpan sementara di app?</li>
+      <li><code>code_challenge</code> = BASE64URL(SHA256(verifier)), method S256 di authorize; <code>plain</code> tidak didukung?</li>
+      <li>verifier dikirim di token request; server hitung ulang dan bandingkan, beda = <code>invalid_grant</code>?</li>
+      <li><code>state</code> tetap dipakai melawan CSRF dan divalidasi di <code>redirect_uri</code>?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, lesson 0019: token response membawa <code>scope</code> yang diberikan. Apa arti <code>patient/Observation.rs</code>, dan bagaimana job tanpa user mendapat token?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Keamanan dan SMART on FHIR") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/smart-app-launch/app-launch.html">[1] App Launch: Launch and Authorization</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc7636">[2] RFC 7636 PKCE</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0017-smart-peta-dan-launch.html">← 0017 · SMART = OAuth 2.0 untuk FHIR; EHR launch vs standalone, discovery</a>
+  <a href="0019-scopes-dan-backend-services.html">0019 · Scopes patient/, user/, system/; Backend Services untuk job Node →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0018.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

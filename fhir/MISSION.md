@@ -1,7 +1,7 @@
 # Mission: Lolos interview Fullstack Developer (Node/React) di perusahaan health-tech yang memakai FHIR
 
 ## Why
-Melamar posisi fullstack mid-level (backend Node.js + frontend React) yang bekerja dengan data kesehatan berbasis HL7 FHIR. Dalam 1 hari harus bisa menjawab pertanyaan konsep FHIR dan pengolahan JSON skala besar dengan yakin, memakai bahasa dan contoh dari ekosistem JavaScript/TypeScript.
+Melamar posisi fullstack mid-level (backend Node.js + frontend React) yang bekerja dengan data kesehatan berbasis HL7 FHIR. Target: bisa menjawab pertanyaan konsep FHIR dan pengolahan JSON skala besar dengan yakin, memakai bahasa dan contoh dari ekosistem JavaScript/TypeScript.
 
 ## Success looks like
 - Bisa menjelaskan apa itu FHIR, Resource, dan kenapa FHIR R4 dipakai (dibanding HL7 v2) dalam < 1 menit
@@ -14,7 +14,7 @@ Melamar posisi fullstack mid-level (backend Node.js + frontend React) yang beker
 - Punya 4 cerita STAR yang sudah di-reframe ke konteks health-tech
 
 ## Constraints
-- 1 hari (6–8 jam), fokus **konsep untuk interview**, tanpa implementasi: tidak ada lab, tidak ada server FHIR yang dijalankan
+- Self-paced, tanpa deadline; lesson ±20 menit per modul tematik (ADR 0002). Fokus **konsep untuk interview**, tanpa implementasi: tidak ada lab, tidak ada server FHIR yang dijalankan
 - Contoh kode hanya TypeScript/Node/React pendek untuk dibaca
 - Bahasa Indonesia, istilah teknis tetap bahasa Inggris
 - Versi: FHIR R4 (4.0.1); R5 hanya disebut sekilas

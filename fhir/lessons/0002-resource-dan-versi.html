@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0002 · Resource vs datatype; R4 vs R5, Normative, maturity (FMM)</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0002 · FHIR · Modul Fondasi · ±23 menit</div>
+  <h1>Resource vs datatype; R4 vs R5, Normative, maturity (FMM)</h1>
+  <p class="subtitle">Pertanyaan pembuka yang hampir pasti muncul, dijelaskan dengan bahasa developer JavaScript</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Apa itu Resource? Kenapa kami memakai R4?"</em>
+  tanpa catatan, dalam kurang dari satu menit per bagian: identitas URL, versi, dan <code>resourceType</code> sebuah resource,
+  bedanya dengan datatype, serta arti label Normative, Trial Use, dan FMM untuk R4 vs R5.
+</div>
+
+<p class="note">
+  Semua fakta di bawah diambil dari spesifikasi FHIR R4 (v4.0.1) dan dikutip <sup class="cite">[n]</sup>. Contoh JSON dan TypeScript hanya untuk dibaca, tidak perlu dijalankan.
+  REST, HTTP status, JSON, dan OAuth sudah Anda kuasai; lesson ini hanya mengajarkan yang khas FHIR.
+</p>
+
+<p>Sebelumnya, di <a href="0001-v2-ke-fhir-rest-json.html">lesson 0001</a>, Anda melihat FHIR dibanding HL7 v2 dan bagaimana FHIR berdiri di atas REST + JSON, dengan <code>resourceType</code> sebagai penanda jenis. Lesson ini membahas unit dasarnya, Resource, lalu versi FHIR yang dipakai track ini.</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. Resource: definisi, kategori, dan bedanya dengan datatype</h2>
+<p>"The basic building block in FHIR is a Resource." <sup class="cite"><a href="https://hl7.org/fhir/R4/overview.html">[1]</a></sup> Menurut spesifikasi, sebuah resource adalah entitas yang: <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[2]</a></sup></p>
+<ul>
+  <li>"has a known identity (a URL) by which it can be addressed" → <code>[base]/Patient/123</code>;</li>
+  <li>"identifies itself as one of the types of resource defined in this specification" → <code>resourceType</code>;</li>
+  <li>"has an identified version that changes if the contents of the resource change" → <code>meta.versionId</code>.</li>
+</ul>
+<pre><code>{
+  "resourceType": "Patient",
+  "id": "123",
+  "meta": { "versionId": "2", "lastUpdated": "2024-10-26T10:30:00Z" },
+  "identifier": [{ "system": "https://rs.contoh.id/no-rm", "value": "RM-00123" }],
+  "name": [{ "family": "Santoso", "given": ["Budi"] }],
+  "gender": "male",
+  "birthDate": "1980-05-12"
+}</code></pre>
+<p>
+  Semua resource boleh punya <code>id</code> ("the 'logical id' of the resource"), <code>meta</code>, <code>implicitRules</code>, dan <code>language</code>.
+  <code>meta.versionId</code> "Changes each time the content of the resource changes", dan <code>meta.profile</code> adalah "An assertion that the content conforms to a resource profile". <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[2]</a></sup>
+  "Most resources are derived from DomainResource", sehingga juga bisa memuat <code>text</code>, resource <code>contained</code>, dan <code>extension</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[2]</a></sup>
+  Bedakan <code>id</code> (alamat di server ini) dari <code>identifier</code> (nomor bisnis seperti nomor rekam medis); detailnya di <a href="0004-kerangka-json-dan-identifier.html">lesson 0004</a>.
+</p>
+
+<h3>Kategori</h3>
+<p>Indeks resource R4 mengelompokkan resource ke lima level <sup class="cite"><a href="https://hl7.org/fhir/R4/resourcelist.html">[3]</a></sup>:</p>
+<table>
+  <thead><tr><th>Level</th><th>Contoh</th><th>Kapan Anda menyentuhnya</th></tr></thead>
+  <tbody>
+    <tr><td>Foundation</td><td><code>CapabilityStatement</code>, <code>StructureDefinition</code>, <code>ValueSet</code>, <code>Bundle</code></td><td>infrastruktur: kemampuan server, profile, terminologi, paket resource</td></tr>
+    <tr><td>Base</td><td><code>Patient</code>, <code>Practitioner</code>, <code>Organization</code>, <code>Encounter</code></td><td>siapa, di mana, kunjungan apa</td></tr>
+    <tr><td>Clinical</td><td><code>Observation</code>, <code>Condition</code>, <code>MedicationRequest</code>, <code>AllergyIntolerance</code></td><td>data klinis sehari-hari</td></tr>
+    <tr><td>Financial</td><td><code>Coverage</code>, <code>Claim</code>, <code>ExplanationOfBenefit</code></td><td>asuransi dan klaim</td></tr>
+    <tr><td>Specialized</td><td><code>Questionnaire</code>, <code>PlanDefinition</code>, <code>ResearchStudy</code></td><td>kuesioner, riset, kualitas</td></tr>
+  </tbody>
+</table>
+
+<h3>Resource vs datatype</h3>
+<p>
+  Datatype adalah tipe untuk elemen di <em>dalam</em> resource: tipe primitif ("single elements with a primitive value", mis. <code>string</code>, <code>boolean</code>, <code>decimal</code>, <code>dateTime</code>)
+  dan tipe kompleks ("re-usable clusters of elements", mis. <code>Identifier</code>, <code>HumanName</code>, <code>CodeableConcept</code>, <code>Quantity</code>, <code>Period</code>). <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[4]</a></sup>
+  Berbeda dengan resource, datatype tidak punya identitas URL atau versi sendiri: ia selalu hidup di dalam sebuah resource. Kalau satu resource butuh resource lain, ia memakai datatype <code>Reference</code>: "resources are identified and addressed by their URL". <sup class="cite"><a href="https://hl7.org/fhir/R4/references.html">[5]</a></sup>
+  Padanan TypeScript: resource ≈ entity/aggregate dengan endpoint sendiri; datatype ≈ value object (<code>type Address = {...}</code>) yang di-embed.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Resource</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="dasar-resource" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. R4 vs R5, Normative, dan maturity (FMM)</h2>
+<p>
+  Versi FHIR ditulis "publication.major.minor.revision"; yang dipakai track ini adalah "FHIR Release 4 (Technical Correction #1) (v4.0.1)". <sup class="cite"><a href="https://hl7.org/fhir/R4/versions.html">[6]</a></sup>
+  Setiap artefak (resource, halaman, profile) punya status:
+</p>
+<table>
+  <thead><tr><th>Status</th><th>Artinya</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Normative</strong> (tanda N)</td><td>"The content is considered to be stable and has been 'locked', subjecting it to FHIR Inter-version Compatibility Rules." Forward compatibility: "content that is conformant in an old release will remain conformant with future versions."</td></tr>
+    <tr><td><strong>Trial Use</strong></td><td>"considered by the authors to be ready for use in production systems", tetapi "Future versions of FHIR may make significant changes to Trial Use content".</td></tr>
+    <tr><td>FMM 0–5</td><td>tingkat kematangan konten Trial Use. FMM 0: baru di build. FMM 2: diuji interoperabilitasnya oleh "at least three independently developed systems". FMM 5: "implemented in at least 5 independent production systems in more than one country".</td></tr>
+  </tbody>
+</table>
+<p class="note">Semua kutipan tabel: <sup class="cite"><a href="https://hl7.org/fhir/R4/versions.html">[6]</a></sup>. Backward compatibility (instance versi baru dibaca sistem lama) "is not guaranteed by FHIR".</p>
+<ul>
+  <li><strong>R4</strong> (4.0.0, 27 Des 2018): "First Normative content". <sup class="cite"><a href="https://hl7.org/fhir/R4/history.html">[7]</a></sup> Normative di R4 antara lain REST API <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[8]</a></sup>, format JSON <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[9]</a></sup>, <code>Patient</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[10]</a></sup>, <code>Observation</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[11]</a></sup>, <code>Bundle</code>, dan <code>StructureDefinition</code>. <code>Encounter</code> belum: FMM 2. <sup class="cite"><a href="https://hl7.org/fhir/R4/resourcelist.html">[3]</a></sup> Koreksi teknis 4.0.1: Okt 2019. <sup class="cite"><a href="https://hl7.org/fhir/R4/index.html">[12]</a></sup></li>
+  <li><strong>R5</strong> (5.0.0, 26 Mar 2023) berstatus trial use: "None of the content in this specification is considered 'Normative'"; konten yang sudah normative di R4 tetap berlabel Normative. Perubahan yang dicatat antara lain "Complete Rework Subscriptions framework", resource baru, dan rename seperti DeviceUseStatement → DeviceUsage. HL7 "plans to publish the next release as a normative specification." <sup class="cite"><a href="https://hl7.org/fhir/R5/history.html">[13]</a></sup></li>
+  <li>IG besar dibangun di atas R4, misalnya: "The US Core Implementation Guide is based on FHIR Version R4." <sup class="cite"><a href="https://hl7.org/fhir/us/core/">[14]</a></sup></li>
+</ul>
+<p class="note">
+  Kalimat "R4 adalah versi paling dominan di produksi" adalah pengamatan industri, bukan kalimat spesifikasi. Di interview, dukung dengan fakta di atas:
+  R4 rilis normative pertama, R5 trial use, dan IG utama (termasuk yang dipakai regulator) masih di R4. Posisi SATUSEHAT dibahas di <a href="0022-satusehat-platform-dan-identitas.html">lesson 0022</a>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Versi dan maturity</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="dasar-versi" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Kami memakai FHIR R4. Kenapa bukan R5? Dan apa arti label Normative dan FMM yang Anda lihat di spesifikasi?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "R4, versi 4.0.1, adalah rilis pertama yang memuat konten normative, terbit akhir 2018. Normative berarti konten itu stabil dan dikunci: tunduk pada aturan kompatibilitas antarversi, jadi data yang valid di R4 tetap valid di versi berikutnya.
+      Bagian penting seperti REST API, format JSON, Patient, dan Observation sudah normative di R4. Konten lain berstatus Trial Use dengan Maturity Model FMM 0 sampai 5; FMM 5 berarti sudah dipakai di minimal lima sistem produksi independen di lebih dari satu negara, tapi masih bisa berubah.
+      R5 terbit Maret 2023 sebagai rilis trial use: tidak ada konten baru yang normative, ada perubahan seperti rework Subscriptions. Karena itu ekosistem, termasuk IG besar seperti US Core, masih dibangun di atas R4, dan migrasi baru masuk akal saat rilis normative berikutnya."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>R4 = 4.0.1, rilis pertama dengan konten normative (2018–2019)?</li>
+      <li>Normative = stabil, dikunci, tunduk aturan kompatibilitas antarversi?</li>
+      <li>contoh normative di R4: REST API, JSON, Patient, Observation?</li>
+      <li>Trial Use + FMM 0–5; FMM 5 = minimal 5 sistem produksi independen, &gt;1 negara?</li>
+      <li>R5 (Maret 2023) berstatus trial use; contoh perubahan: rework Subscriptions?</li>
+      <li>IG (mis. US Core) dan ekosistem masih di R4; HL7 berencana rilis berikutnya normative?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review <a href="0012-review-fondasi-resource.html">0012</a> akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Fondasi") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a> · Komunitas: <a href="https://chat.fhir.org/">chat.fhir.org</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda <code>id</code> dan <code>identifier</code>?", "kapan sebuah extension harus jadi <code>modifierExtension</code>?", atau "bagaimana menjelaskan Normative vs Trial Use ke interviewer non-teknis?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/R4/overview.html">[1] FHIR Overview</a> ·
+  <a href="https://hl7.org/fhir/R4/resource.html">[2] Resource</a> ·
+  <a href="https://hl7.org/fhir/R4/resourcelist.html">[3] Resource Index</a> ·
+  <a href="https://hl7.org/fhir/R4/datatypes.html">[4] Data Types</a> ·
+  <a href="https://hl7.org/fhir/R4/references.html">[5] Resource References</a> ·
+  <a href="https://hl7.org/fhir/R4/versions.html">[6] Managing Multiple FHIR Versions (FMM, Normative)</a> ·
+  <a href="https://hl7.org/fhir/R4/history.html">[7] R4 Version History</a> ·
+  <a href="https://hl7.org/fhir/R4/http.html">[8] RESTful API</a> ·
+  <a href="https://hl7.org/fhir/R4/json.html">[9] JSON Representation</a> ·
+  <a href="https://hl7.org/fhir/R4/patient.html">[10] Patient</a> ·
+  <a href="https://hl7.org/fhir/R4/observation.html">[11] Observation</a> ·
+  <a href="https://hl7.org/fhir/R4/index.html">[12] FHIR R4 Home</a> ·
+  <a href="https://hl7.org/fhir/R5/history.html">[13] R5 Version History</a> ·
+  <a href="https://hl7.org/fhir/us/core/">[14] US Core IG</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0001-v2-ke-fhir-rest-json.html">← 0001 · Dari HL7 v2 ke FHIR</a>
+  <a href="0003-profile-extension-ig.html">0003 · Profile, Extension, IG →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

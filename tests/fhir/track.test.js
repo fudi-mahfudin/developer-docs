@@ -1,7 +1,7 @@
 // Run from repo root: node --test
 // Track FHIR (fhir/): aturan teach untuk setiap bank soal fhir/assets/questions/NNNN.js, dan
 // setiap lesson yang "tersedia" di fhir/index.html ada, memuat komponen bersama dari ../../assets/,
-// memuat bank soalnya sendiri, dan bernavigasi ke lesson sebelum/sesudahnya.
+// memuat bank soalnya sendiri, dan bernavigasi ke lesson sebelum/sesudahnya. Lesson ±20 menit, self-paced (ADR 0002).
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -15,12 +15,24 @@ const questionNums = fs.readdirSync(path.join(ROOT, "fhir", "assets", "questions
 const index = read("index.html");
 const lessons = [...index.matchAll(/<li class="tersedia[^"]*"><span class="num">(\d{4})<\/span><a class="title" href="(lessons\/[\w-]+\.html)">/g)]
   .map(m => ({ num: m[1], href: m[2] }));
-const LAST = "0007";
+const nums = [...index.matchAll(/<span class="num">(\d{4})<\/span>/g)].map(m => m[1]);
+const LAST = nums[nums.length - 1];
+const SEAMS = ["0012", "0021", "0027"];
 
-test("fhir index lists seven lessons with 0006 as the seam", () => {
-  const nums = [...index.matchAll(/<span class="num">(\d{4})<\/span>/g)].map(m => m[1]);
-  assert.deepEqual(nums, ["0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
-  assert.match(index, /<li class="[a-z]+ seam"><span class="num">0006<\/span>/);
+test("fhir index lists lessons 0001–0029 in order, with the three delayed reviews as seams", () => {
+  assert.deepEqual(nums, Array.from({ length: 29 }, (_, i) => String(i + 1).padStart(4, "0")));
+  const seams = [...index.matchAll(/<li class="[a-z]+ seam"><span class="num">(\d{4})<\/span>/g)].map(m => m[1]);
+  assert.deepEqual(seams, SEAMS);
+});
+
+test("fhir track has no one-day deadline or clock slots left", () => {
+  ["index.html", "MISSION.md", "ROADMAP.md"].forEach(f =>
+    assert.doesNotMatch(read(f), /1 hari|6–8 jam|malam sebelum interview|\b\d{2}\.\d{2}–\d{2}\.\d{2}\b/, `${f} masih menyebut deadline`));
+  lessons.forEach(({ href }) => {
+    const kicker = (read(href).match(/<div class="kicker">([^<]*)</) || [])[1] || "";
+    assert.match(kicker, /^Lesson \d{4} · FHIR · /, `${href}: format kicker`);
+    assert.doesNotMatch(kicker, /\d{2}\.\d{2}–\d{2}\.\d{2}|malam/, `${href}: kicker masih memakai jam`);
+  });
 });
 
 test("all fhir question files run together as browser scripts", () => {
@@ -30,7 +42,7 @@ test("all fhir question files run together as browser scripts", () => {
 questionNums.forEach(num => {
   test(`fhir ${num}: questions follow the teach rules`, () => {
     const { bank, qs, mc, oral } = fhir.lessonQuestions(num);
-    if (num !== "0006") assert.ok(mc.length >= 8, "butuh >= 8 soal kuis");
+    assert.ok(mc.length >= 4, "butuh >= 4 soal kuis");
     qs.forEach(q => {
       assert.match(q.id, new RegExp(`^${num}-`));
       assert.ok(bank.labels()[q.topic], `topik ${q.topic} belum diberi label`);

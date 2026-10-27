@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0017 · SMART = OAuth 2.0 untuk FHIR; EHR launch vs standalone, discovery</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0017 · FHIR · Modul SMART · ±24 menit</div>
+  <h1>SMART = OAuth 2.0 untuk FHIR; EHR launch vs standalone, discovery</h1>
+  <p class="subtitle">OAuth2 yang sudah Anda kenal, ditambah tiga hal khas kesehatan: launch dari EHR, scopes per resource FHIR, dan konteks pasien</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan apa yang ditambahkan SMART di atas OAuth 2.0,
+  membedakan EHR launch (<code>iss</code> + <code>launch</code>) dari standalone launch (<code>launch/patient</code>),
+  dan menyebut apa yang didapat app dari discovery <code>.well-known/smart-configuration</code>.
+</div>
+
+<p>Modul ini dimulai dari peta besarnya. Di modul Bulk Data (lesson 0013–0016) service Node menarik data massal; di sini pertanyaannya: bagaimana sebuah app, termasuk React SPA, mendapat izin mengakses data pasien.</p>
+
+<p class="note">
+  Versi yang dipakai: <strong>SMART App Launch IG v2.2.0 (STU 2.2)</strong>, versi terbit saat ini, berbasis FHIR R4 (4.0.1). <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/">[1]</a></sup>
+  Dasar OAuth2/JWT, 401 vs 403, CORS, dan <code>localStorage</code> vs cookie <code>HttpOnly</code> tidak diulang di sini; kalau perlu penyegaran, lihat
+  <a href="../../dotnet/lessons/0017-fullstack-auth-cors-error.html">lesson 0017 (track .NET)</a>. Fokus lesson ini hanya yang khas SMART.
+</p>
+
+<h2>1. Peta besar: SMART = OAuth 2.0 yang diprofilkan untuk FHIR</h2>
+<p>
+  SMART App Launch menghubungkan app pihak ketiga ke data EHR, dan app bisa diluncurkan dari dalam maupun dari luar UI EHR.
+  Secara teknis ini adalah "profile on OAuth 2.0" untuk app yang butuh identitas user atau resource FHIR. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#profile-audience-and-scope">[2]</a></sup>
+  Padanan dunia JS: "Login with Google" di SPA dengan authorization code + PKCE, plus tiga tambahan:
+</p>
+<table>
+  <thead><tr><th>Yang Anda kenal (OAuth2 di SPA)</th><th>Tambahan SMART</th></tr></thead>
+  <tbody>
+    <tr><td>App selalu dimulai dari tombol "Login"</td><td>App juga bisa <strong>diluncurkan oleh EHR</strong> dari dalam rekam medis yang sedang dibuka (EHR launch)</td></tr>
+    <tr><td>Endpoint OAuth di-hardcode per provider</td><td>Endpoint ditemukan lewat <code>[fhir-base]/.well-known/smart-configuration</code></td></tr>
+    <tr><td>Scope bebas (<code>read:user</code>, <code>repo</code>)</td><td>Scope mengikuti <strong>resource type FHIR</strong>: <code>patient/Observation.rs</code></td></tr>
+    <tr><td>Token response: token saja</td><td>Token response juga membawa <strong>launch context</strong>: <code>"patient": "123"</code></td></tr>
+  </tbody>
+</table>
+<p>
+  Yang tidak diatur SMART: izin dasar user di EHR. SMART hanya <em>mendelegasikan</em> sebagian izin yang sudah dimiliki user ke app, "on top of an EHR's existing user and permissions management system". <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#profile-audience-and-scope">[2]</a></sup>
+  Mekanisme seperti session time-out dan security auditing yang diwajibkan HIPAA juga di luar cakupan profile ini. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#profile-audience-and-scope">[2]</a></sup>
+</p>
+
+<h2>2. Dua cara mulai: EHR launch vs standalone launch, lalu discovery</h2>
+<p>Langkah tingkat atas SMART App Launch: <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#top-level-steps-for-smart-app-launch">[2]</a></sup></p>
+<div class="flow">
+  <span class="box">Register app (sekali)</span><span class="arrow">→</span>
+  <span class="box">Launch: EHR / standalone</span><span class="arrow">→</span>
+  <span class="box">.well-known/smart-configuration</span><span class="arrow">→</span>
+  <span class="box">authorization code</span><span class="arrow">→</span>
+  <span class="box">access token</span><span class="arrow">→</span>
+  <span class="box">FHIR API</span><span class="arrow">→</span>
+  <span class="box">refresh</span>
+</div>
+<table>
+  <thead><tr><th></th><th>EHR launch</th><th>Standalone launch</th></tr></thead>
+  <tbody>
+    <tr><td>Siapa memulai</td><td>User sudah di sesi EHR lalu membuka app (mis. dari tab rekam medis)</td><td>User membuka app dari luar EHR (mis. ikon di home screen)</td></tr>
+    <tr><td>Yang diterima app di awal</td><td>Launch URL dibuka dengan <code>iss</code> (FHIR endpoint EHR) dan <code>launch</code> (handle opaque)</td><td>Tidak ada; app sudah tahu server FHIR mana yang dituju</td></tr>
+    <tr><td>Cara minta konteks</td><td>Scope <code>launch</code> + parameter <code>launch=xyz123</code> dikirim balik saat authorize</td><td>Scope <code>launch/patient</code>: EHR bisa menampilkan pemilih pasien</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#launch-app-ehr-launch">[2]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#scopes-for-requesting-context-data">[3]</a></sup></p>
+<pre><code>Location: https://app/launch?iss=https%3A%2F%2Fehr%2Ffhir&amp;launch=xyz123</code></pre>
+<p>
+  Setelah tahu base URL FHIR (dari <code>iss</code> atau konfigurasi), app melakukan <strong>discovery</strong>: <code>GET</code> ke base URL + <code>/.well-known/smart-configuration</code>.
+  Server SHALL menjawab JSON; <code>capabilities</code>, <code>token_endpoint</code>, dan <code>code_challenge_methods_supported</code> wajib ada, <code>authorization_endpoint</code> wajib bila server mendukung launch.
+  Dulu sebagian info ini ada di CapabilityStatement; mekanisme itu sekarang deprecated. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/conformance.html#using-well-known">[4]</a></sup>
+</p>
+<pre><code>// GET https://ehr.example.com/fhir/.well-known/smart-configuration  (ilustrasi, dipersingkat)
+{
+  "authorization_endpoint": "https://ehr.example.com/auth/authorize",
+  "token_endpoint": "https://ehr.example.com/auth/token",
+  "grant_types_supported": ["authorization_code", "client_credentials"],
+  "code_challenge_methods_supported": ["S256"],
+  "scopes_supported": ["openid", "fhirUser", "launch", "launch/patient", "patient/*.rs", "offline_access"],
+  "capabilities": ["launch-ehr", "launch-standalone", "client-public", "context-ehr-patient",
+                   "context-standalone-patient", "permission-patient", "permission-v2", "sso-openid-connect"]
+}</code></pre>
+<p>
+  <code>capabilities</code> memberi tahu app fitur apa yang didukung: mode launch (<code>launch-ehr</code>, <code>launch-standalone</code>),
+  tipe client (<code>client-public</code>, <code>client-confidential-symmetric</code>, <code>client-confidential-asymmetric</code>), konteks, dan sintaks scope
+  (<code>permission-v1</code>, <code>permission-v2</code>). <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/conformance.html#capabilities">[4]</a></sup>
+  Untuk browser app, server SHALL mengaktifkan CORS: discovery untuk origin apa pun, token endpoint dan FHIR API hanya untuk origin yang terdaftar. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#considerations-for-cross-origin-resource-sharing-cors-support">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — EHR launch dan discovery</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0027.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0027.</p>
+  <div class="quiz" data-bank-lesson="0017" data-bank-topic="smart-launch,smart-discovery" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras seolah sedang interview, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0027.</p>
+  <p class="note">Soal ini merangkum seluruh modul SMART. Bagian PKCE, scopes, dan <code>fhirclient</code> dibahas di lesson 0018–0020; kalau belum bisa menjawabnya sekarang, ulangi soal ini setelah lesson 0020.</p>
+
+  <blockquote>"Bagaimana React app Anda mendapat akses ke data pasien di EHR? Apa itu SMART on FHIR?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "SMART App Launch adalah profile OAuth 2.0, plus OpenID Connect, di atas FHIR. Ada dua cara mulai: EHR launch, EHR membuka launch URL kami dengan <code>iss</code> dan <code>launch</code>;
+      atau standalone, user membuka app langsung dan kami meminta <code>launch/patient</code>. App mengambil <code>[iss]/.well-known/smart-configuration</code> untuk tahu authorize dan token endpoint,
+      lalu redirect ke authorize dengan <code>response_type=code</code>, scopes seperti <code>launch patient/Observation.rs openid fhirUser</code>, <code>state</code>, <code>aud</code>, dan PKCE S256.
+      Karena React SPA adalah public client, tidak ada client secret; PKCE yang melindungi code. Setelah redirect balik, app memvalidasi <code>state</code>, menukar code + <code>code_verifier</code>,
+      dan menerima access token, scope yang benar-benar diberikan, serta <code>patient</code> ID sebagai launch context. Setiap request FHIR membawa <code>Authorization: Bearer</code>.
+      Di React saya pakai <code>fhirclient</code>: <code>authorize()</code> di launch page, <code>ready()</code> di redirect page."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>SMART = profile OAuth 2.0 (+ OIDC) untuk app FHIR?</li>
+      <li>EHR launch (<code>iss</code> + <code>launch</code>) vs standalone (<code>launch/patient</code>)?</li>
+      <li>discovery lewat <code>.well-known/smart-configuration</code>?</li>
+      <li>authorization code + PKCE S256, tanpa client secret di SPA?</li>
+      <li><code>state</code> divalidasi dan <code>aud</code> = FHIR base URL?</li>
+      <li>token response: access token, scope yang diberikan, <code>patient</code> context; lalu Bearer?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, lesson 0018: setelah discovery app tahu URL authorize dan token. Bagaimana React SPA menukar authorization code menjadi token tanpa client secret?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Keamanan dan SMART on FHIR") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/smart-app-launch/">[1] SMART App Launch IG v2.2.0 (STU 2.2)</a> ·
+  <a href="https://hl7.org/fhir/smart-app-launch/app-launch.html">[2] App Launch: Launch and Authorization</a> ·
+  <a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html">[3] Scopes and Launch Context</a> ·
+  <a href="https://hl7.org/fhir/smart-app-launch/conformance.html">[4] Conformance (.well-known/smart-configuration)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0016-decimal-di-javascript.html">← 0016 · Jebakan decimal FHIR di JavaScript</a>
+  <a href="0018-pkce.html">0018 · Authorization code + PKCE: kenapa React SPA tidak punya secret →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

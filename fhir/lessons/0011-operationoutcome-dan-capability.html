@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0011 · Error: OperationOutcome; discovery: CapabilityStatement</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0011 · FHIR · Modul REST · ±22 menit</div>
+  <h1>Error: <code>OperationOutcome</code>. Discovery: CapabilityStatement</h1>
+  <p class="subtitle">Membaca error dari server FHIR, dan menanyakan apa yang didukung server</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Apa yang ada di body error FHIR, dan apa beda 400 dan 422? Bagaimana tahu resource dan interaksi apa yang didukung server?"</em>
+  tanpa catatan: <code>OperationOutcome.issue</code> (<code>severity</code>, <code>code</code>, <code>expression</code>) dan <code>GET [base]/metadata</code>.
+</div>
+
+<p class="note">
+  Sebelumnya, di lesson <a href="0010-bundle-dan-versioning.html">0010</a>, update yang kalah balapan ditolak dengan <code>412</code>.
+  Lesson terakhir modul REST ini membahas isi body error seperti itu, dan cara mengetahui kemampuan server sebelum mulai integrasi.
+</p>
+
+<!-- ============ 7. ERROR + DISCOVERY ============ -->
+<h2>1. Error: <code>OperationOutcome</code>. Discovery: CapabilityStatement</h2>
+<p>
+  "In case of failure, servers SHOULD always return a body that contains an OperationOutcome resource." <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup>
+  OperationOutcome adalah "A collection of error, warning, or information messages that result from a system action", dan isinya "SHOULD be in alignment with the HTTP response code". <sup class="cite"><a href="https://hl7.org/fhir/R4/operationoutcome.html">[2]</a></sup>
+</p>
+<pre><code>// 422 Unprocessable Entity
+{
+  "resourceType": "OperationOutcome",
+  "issue": [{
+    "severity": "error",                       // fatal | error | warning | information
+    "code": "required",                        // dari value set IssueType
+    "diagnostics": "Observation.status: minimum required = 1, but only found 0",
+    "expression": ["Observation.status"]       // lokasi elemen (subset FHIRPath)
+  }]
+}</code></pre>
+<p class="note">Elemen: <sup class="cite"><a href="https://hl7.org/fhir/R4/operationoutcome.html">[2]</a></sup>. Contoh kode <code>issue.code</code>: <code>invalid</code>, <code>required</code>, <code>value</code>, <code>not-found</code>, <code>conflict</code> ("Edit Version Conflict"), <code>business-rule</code>, <code>security</code>, <code>exception</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/valueset-issue-type.html">[4]</a></sup>. Teks <code>diagnostics</code> di atas hanya ilustrasi; isinya bebas per server.</p>
+<table>
+  <thead><tr><th>Status</th><th>Kapan (create/update)</th></tr></thead>
+  <tbody>
+    <tr><td>400</td><td>"resource could not be parsed or failed basic FHIR validation rules"</td></tr>
+    <tr><td>404 / 410</td><td>tidak dikenal / sudah dihapus</td></tr>
+    <tr><td>409 / 412</td><td>konflik versi; <code>If-Match</code> tidak cocok, atau conditional create/update cocok &gt; 1</td></tr>
+    <tr><td>422</td><td>"the proposed resource violated applicable FHIR profiles or server business rules"</td></tr>
+  </tbody>
+</table>
+<p class="note">Sumber tabel: <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup>. Di React: <code>issue[].expression</code> bisa dipetakan ke field form untuk menandai input yang salah.</p>
+
+<p>
+  <strong>CapabilityStatement</strong> "documents a set of capabilities (behaviors) of a FHIR Server for a particular version of FHIR". <sup class="cite"><a href="https://hl7.org/fhir/R4/capabilitystatement.html">[3]</a></sup>
+  Ambil dengan <code>GET [base]/metadata</code>: "A Capability Statement that specifies which resource types and interactions are supported." <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup>
+  Yang dibaca saat mulai integrasi: <code>fhirVersion</code>, <code>format</code>, <code>rest.security</code> (cara autentikasi, lesson <a href="0017-smart-peta-dan-launch.html">0017</a>), dan per <code>rest.resource</code>:
+  <code>type</code>, <code>interaction</code>, <code>searchParam</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/capabilitystatement.html">[3]</a></sup>
+  Padanan JS: seperti dokumen OpenAPI, tapi baku dan wajib ada di setiap server FHIR.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Error dan discovery</h2>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="rest-error" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Ucapkan dengan suara keras (±5 menit)</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Server FHIR menolak request dari aplikasi Anda. Bagaimana Anda membaca error-nya, dan bagaimana Anda tahu lebih dulu apa yang didukung server itu?" (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Kalau gagal, server SHOULD mengembalikan body <code>OperationOutcome</code>. Saya baca setiap <code>issue</code>: <code>severity</code> (fatal, error, warning, information), <code>code</code> dari value set IssueType seperti <code>required</code> atau <code>conflict</code>, <code>diagnostics</code> sebagai teks tambahan, dan <code>expression</code>, path FHIRPath sederhana ke elemen yang salah, yang saya petakan ke field form di React. Status HTTP-nya juga saya bedakan: 400 berarti body tidak bisa di-parse atau gagal validasi dasar, 422 melanggar profil atau aturan bisnis, 404 tidak dikenal, 410 sudah dihapus, 409/412 konflik versi. Supaya tidak menebak, sebelum integrasi saya panggil <code>GET [base]/metadata</code>: server mengembalikan CapabilityStatement berisi <code>fhirVersion</code>, <code>format</code>, <code>rest.security</code>, dan per resource <code>interaction</code> serta <code>searchParam</code> yang didukung. Padanannya dokumen OpenAPI, tapi baku di setiap server FHIR."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>body error = <code>OperationOutcome</code> (server SHOULD mengirimnya saat gagal)?</li>
+      <li><code>issue.severity</code> dan <code>issue.code</code> (value set IssueType)?</li>
+      <li><code>issue.expression</code> menunjuk elemen yang salah, dipetakan ke field form; <code>diagnostics</code> teks bebas?</li>
+      <li>400 (tidak bisa di-parse / validasi dasar) vs 422 (profil / aturan bisnis)?</li>
+      <li>status lain: 404 vs 410, 409/412 untuk konflik versi?</li>
+      <li><code>GET [base]/metadata</code> → CapabilityStatement: <code>fhirVersion</code>, <code>format</code>, <code>rest.security</code>, <code>interaction</code>, <code>searchParam</code>?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review <a href="0021-review-rest-bulk.html">0021</a> akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://hl7.org/fhir/R4/http.html">HL7 FHIR R4: RESTful API (http.html)</a>.
+  Baca tabel ringkasan interaksi di atas halaman, lalu bagian create, update, "Managing Resource Contention", dan transaction/batch.
+  Setelah itu, sekilas <a href="https://hl7.org/fhir/R4/search.html">Search</a> bagian modifier, prefix, chained parameters, dan <code>_include</code>.
+</div>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/rest-search-bundle.html">Reference: REST, search, Bundle</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "REST API")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal.</p>
+
+<p class="note sources">
+  Sumber (semua FHIR R4 4.0.1, diakses 2026-10-26):
+  <a href="https://hl7.org/fhir/R4/http.html">[1] RESTful API</a> ·
+  <a href="https://hl7.org/fhir/R4/operationoutcome.html">[2] OperationOutcome</a> ·
+  <a href="https://hl7.org/fhir/R4/capabilitystatement.html">[3] CapabilityStatement</a> ·
+  <a href="https://hl7.org/fhir/R4/valueset-issue-type.html">[4] ValueSet IssueType</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0010-bundle-dan-versioning.html">← 0010 · Bundle transaction/batch dan versioning</a>
+  <a href="0012-review-fondasi-resource.html">0012 · Review 1: Fondasi + Resource →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

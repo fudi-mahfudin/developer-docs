@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0010 · Bundle transaction vs batch, conditional create; versioning, ETag, If-Match</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0010 · FHIR · Modul REST · ±30 menit</div>
+  <h1>Bundle <code>transaction</code> vs <code>batch</code>, conditional create; versioning, ETag, <code>If-Match</code></h1>
+  <p class="subtitle">Banyak perubahan dalam satu request, dan optimistic locking lewat header HTTP</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Apa beda Bundle <code>transaction</code> dan <code>batch</code>? Bagaimana mencegah dua user saling menimpa update?"</em>
+  tanpa catatan: aturan atomik transaction, conditional create untuk import idempoten, dan optimistic locking dengan ETag + <code>If-Match</code> → <code>412</code>.
+</div>
+
+<p class="note">
+  Sebelumnya, di lesson <a href="0009-include-dan-paging.html">0009</a>, Anda membaca Bundle <code>searchset</code> hasil search.
+  Lesson ini memakai Bundle ke arah sebaliknya, untuk mengirim banyak perubahan sekaligus, lalu membahas cara mencegah dua user saling menimpa update.
+</p>
+
+<!-- ============ 5. TRANSACTION / BATCH ============ -->
+<h2>1. Bundle <code>transaction</code> vs <code>batch</code>, dan conditional create</h2>
+<p>
+  Keduanya dikirim dengan <code>POST [base]</code>; body-nya Bundle dengan <code>type</code> <code>transaction</code> atau <code>batch</code>, dan setiap entry membawa
+  <code>request.method</code> + <code>request.url</code> ("the HTTP action to be executed for this entry"). <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/bundle.html">[2]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th><code>transaction</code></th><th><code>batch</code></th></tr></thead>
+  <tbody>
+    <tr><td>Definisi</td><td>"processed by a server as an atomic commit"</td><td>"a group of independent actions"</td></tr>
+    <tr><td>Satu entry gagal</td><td>semua ditolak: "either succeed or fail together"; status 4xx/5xx + satu <code>OperationOutcome</code></td><td>entry lain tetap diproses; "The success or failure of one change SHOULD not alter" yang lain</td></tr>
+    <tr><td>Respons sukses</td><td>200 + <code>transaction-response</code>, semua entry sukses</td><td>200 + <code>batch-response</code>, "some responses may indicate failure and others success"</td></tr>
+    <tr><td>Referensi antar-entry</td><td>boleh, lewat <code>fullUrl</code> sementara (<code>urn:uuid:…</code>); server mengganti dengan id baru</td><td>tidak boleh: "there SHALL be no interdependencies between the different entries"</td></tr>
+    <tr><td>Padanan JS</td><td><code>prisma.$transaction([...])</code></td><td><code>Promise.allSettled([...])</code></td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan: <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/codesystem-bundle-type.html">[3]</a></sup>. Untuk transaction, server "SHALL also update any references to that resource in the same bundle". Padanan JS hanya analogi perilaku, bukan klaim spesifikasi.</p>
+
+<pre><code>{
+  "resourceType": "Bundle",
+  "type": "transaction",
+  "entry": [
+    { "fullUrl": "urn:uuid:61ebe359-bfdc-4613-8bf2-c5e300945f0a",
+      "resource": { "resourceType": "Patient",
+                    "identifier": [{ "system": "http://rs.example.org/mrn", "value": "12345" }] },
+      "request": { "method": "POST", "url": "Patient",
+                   "ifNoneExist": "identifier=http://rs.example.org/mrn|12345" } },
+    { "resource": { "resourceType": "Observation", "status": "final",
+                    "code": { "coding": [{ "system": "http://loinc.org", "code": "29463-7" }] },
+                    "subject": { "reference": "urn:uuid:61ebe359-bfdc-4613-8bf2-c5e300945f0a" } },
+      "request": { "method": "POST", "url": "Observation" } }
+  ]
+}</code></pre>
+<p>
+  <strong>Conditional create</strong> (<code>Bundle.entry.request.ifNoneExist</code>: "Instruct the server not to perform the create if a specified resource already exists" <sup class="cite"><a href="https://hl7.org/fhir/R4/bundle-definitions.html">[4]</a></sup>, atau header <code>If-None-Exist: [search parameters]</code> pada POST biasa) membuat import idempoten:
+  0 cocok → create biasa; 1 cocok → "The server ignores the post and returns 200 OK"; lebih dari 1 → <code>412</code>, kriteria "not selective enough".
+  Pola sama untuk <strong>conditional update</strong> <code>PUT [base]/Patient?identifier=…</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup>
+  Di contoh atas, kalau Patient MRN 12345 sudah ada, Observation tetap dibuat dan merujuk ke Patient lama.
+</p>
+
+<h3>Urutan pemrosesan transaction</h3>
+<p>"The outcome of processing the transaction SHALL NOT depend on the order of the resources in the transaction": server sendiri yang mengurutkan berdasarkan method. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup> Susun urutan yang ditetapkan spesifikasi:</p>
+<div class="order">
+  <ol>
+    <li>Proses semua <code>DELETE</code></li>
+    <li>Proses semua <code>POST</code> (create)</li>
+    <li>Proses semua <code>PUT</code> atau <code>PATCH</code></li>
+    <li>Proses semua <code>GET</code> atau <code>HEAD</code></li>
+  </ol>
+  <p class="explain">DELETE → POST → PUT/PATCH → GET/HEAD. Jadi GET/HEAD diproses setelah semua perubahan di Bundle yang sama, dan urutan entry yang Anda tulis tidak mengubah hasil. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></p>
+</div>
+
+<section class="exercise">
+  <h2>Latihan 1 — Transaction, batch, conditional create</h2>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="rest-bundle" data-stack></div>
+</section>
+
+<!-- ============ 6. VERSIONING ============ -->
+<h2>2. Versioning: <code>vread</code>, ETag, <code>If-Match</code></h2>
+<ul>
+  <li>Setiap update membuat versi baru; nomornya di <code>meta.versionId</code> dan dikirim sebagai header <strong>ETag</strong>, waktu di <code>meta.lastUpdated</code> sebagai <code>Last-Modified</code>. Version id adalah "weak" ETag, jadi berawalan <code>W/</code>, mis. <code>ETag: W/"3141"</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></li>
+  <li><strong>Lost update</strong> ("two clients update the same resource, and the second overwrites the updates of the first") "can be prevented using a combination of the ETag and If-Match header". Kalau versi di <code>If-Match</code> tidak cocok, "the server returns a 412 Precondition Failed status code instead of updating the resource". <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></li>
+  <li>Versioning tidak wajib: server "SHOULD provide full version support", tapi boleh tidak; cek CapabilityStatement. Untuk PATCH pun, "Clients SHOULD always consider using version specific PATCH operations". <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></li>
+</ul>
+<pre><code>// Optimistic locking: sama seperti kolom version di ORM, tapi lewat header HTTP
+const read = await fetch(`${base}/Patient/123`, { headers: { Accept: "application/fhir+json" } });
+const etag = read.headers.get("ETag");          // W/"3"
+const patient = await read.json();
+patient.telecom = [{ system: "phone", value: "+62-812-0000-0000" }];
+
+const res = await fetch(`${base}/Patient/123`, {
+  method: "PUT",
+  headers: { "Content-Type": "application/fhir+json", "If-Match": etag! },
+  body: JSON.stringify(patient),
+});
+if (res.status === 412) {
+  // user lain sudah menyimpan versi 4: muat ulang, tampilkan perbedaan, minta user memutuskan
+}</code></pre>
+<p class="note">Melihat versi lama: <code>GET [base]/Patient/123/_history/3</code> (vread, satu versi) atau <code>GET [base]/Patient/123/_history</code> (Bundle <code>type: "history"</code>, semua versi). <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[1]</a></sup></p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Versi dan konflik</h2>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="rest-versioning" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras (±10 menit)</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Apa beda Bundle <code>transaction</code> dan <code>batch</code>? Kapan Anda memakai masing-masing?" (60–90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Keduanya di-POST ke base URL, <code>POST [base]</code>, berisi Bundle dengan <code>type</code> transaction atau batch; setiap entry punya <code>request.method</code>
+      dan <code>request.url</code>, jadi satu Bundle bisa berisi create, update, delete, dan read. Transaction itu atomik: semua sukses atau semua gagal. Kalau satu entry
+      gagal, server menolak semuanya dengan 4xx/5xx dan satu OperationOutcome; kalau sukses, saya dapat <code>transaction-response</code>. Di dalam transaction, entry
+      boleh saling merujuk lewat <code>fullUrl</code> <code>urn:uuid:...</code>, dan server mengganti referensi itu dengan id asli. Batch adalah sekumpulan aksi
+      independen: tidak boleh ada ketergantungan antar-entry, dan <code>batch-response</code> berisi status per entry, sebagian bisa gagal. Saya pakai transaction
+      untuk data yang harus konsisten, misalnya Encounter beserta Observation-nya; batch untuk banyak aksi yang tidak saling terkait, misalnya beberapa read sekaligus.
+      Padanan JS: transaction seperti <code>prisma.$transaction</code>, batch seperti <code>Promise.allSettled</code>. Untuk import yang idempoten saya tambahkan
+      conditional create (<code>ifNoneExist</code>) per entry."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li><code>POST [base]</code> dengan <code>Bundle.type</code> transaction/batch, entry berisi <code>request.method</code> + <code>url</code>?</li>
+      <li>transaction atomik: semua sukses atau semua gagal (4xx/5xx + OperationOutcome)?</li>
+      <li>batch: aksi independen, respons per entry, sebagian boleh gagal?</li>
+      <li>referensi antar-entry lewat <code>fullUrl</code> <code>urn:uuid</code> hanya di transaction; batch tanpa ketergantungan?</li>
+      <li>contoh kapan memakai masing-masing (data saling terkait vs aksi lepas)?</li>
+      <li>padanan JS (<code>$transaction</code> vs <code>allSettled</code>) atau conditional create untuk idempoten?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Dua user mengedit Patient yang sama di React app Anda. Bagaimana mencegah lost update, dan bagaimana error-nya sampai ke UI?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Setiap resource FHIR punya <code>meta.versionId</code>, dan server mengirimnya sebagai ETag, misalnya <code>W/&quot;3&quot;</code>. Saat read saya simpan ETag itu;
+      saat update saya kirim <code>PUT [base]/Patient/123</code> dengan <code>If-Match: W/&quot;3&quot;</code>. Kalau sementara itu user lain sudah menyimpan versi 4,
+      server menolak dengan <code>412 Precondition Failed</code>, bukan menimpa diam-diam. Ini optimistic locking, sama seperti kolom version di ORM. Di UI saya tangkap
+      412, ambil versi terbaru, lalu minta user meninjau atau menggabungkan perubahan. Versi lama bisa dilihat dengan vread <code>_history/3</code> atau seluruh history.
+      Untuk error lain, server mengembalikan <code>OperationOutcome</code>: setiap <code>issue</code> punya <code>severity</code>, <code>code</code> seperti
+      <code>required</code> atau <code>conflict</code>, <code>diagnostics</code>, dan <code>expression</code> yang menunjuk elemen yang salah, jadi saya bisa menandai
+      field di form. 400 artinya body tidak valid secara dasar, 422 melanggar profil atau aturan bisnis."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li><code>meta.versionId</code> = ETag (weak, <code>W/"n"</code>)?</li>
+      <li>update dengan <code>If-Match</code> berisi ETag terakhir yang dibaca?</li>
+      <li>versi tidak cocok → <code>412 Precondition Failed</code>, lalu reload/merge di UI?</li>
+      <li>menyebut optimistic locking / lost update, dan vread atau <code>_history</code>?</li>
+      <li>error dalam <code>OperationOutcome</code>: <code>severity</code>, <code>code</code>, <code>diagnostics</code>, <code>expression</code>?</li>
+      <li>membedakan 400 (tidak valid dasar) dan 422 (profil/aturan bisnis)?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6. Review <a href="0021-review-rest-bulk.html">0021</a> akan menanyakan salah satunya lagi.</p>
+  </details>
+</section>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/rest-search-bundle.html">Reference: REST, search, Bundle</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "REST API")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal.</p>
+
+<p class="note sources">
+  Sumber (semua FHIR R4 4.0.1, diakses 2026-10-26):
+  <a href="https://hl7.org/fhir/R4/http.html">[1] RESTful API</a> ·
+  <a href="https://hl7.org/fhir/R4/bundle.html">[2] Bundle</a> ·
+  <a href="https://hl7.org/fhir/R4/codesystem-bundle-type.html">[3] CodeSystem BundleType</a> ·
+  <a href="https://hl7.org/fhir/R4/bundle-definitions.html">[4] Bundle: detailed definitions</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0009-include-dan-paging.html">← 0009 · <code>_include</code> dan paging</a>
+  <a href="0011-operationoutcome-dan-capability.html">0011 · OperationOutcome dan CapabilityStatement →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

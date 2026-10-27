@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0025 · PDP: empat jebakan, enam saluran bocor</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0025 · FHIR · Modul PDP · ±18 menit</div>
+  <h1>PDP: empat jebakan, enam saluran bocor</h1>
+  <p class="subtitle">Di mana data pasien biasanya bocor ke log dan monitoring: jebakan di resource FHIR dan saluran yang mencatat otomatis</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyebut empat jebakan (query search, <code>OperationOutcome.diagnostics</code>, narrative <code>text.div</code>, kode diagnosis)
+  dan enam saluran tempat data pasien bocor (log aplikasi, URL, trace, label metrik, Sentry, frontend), lalu menjelaskan dalam ±60 detik cara memeriksanya di sistem yang sudah jalan.
+</div>
+
+<p>Di <a href="0024-pdp-hukum-dan-tiga-warna.html">lesson 0024</a> setiap field FHIR sudah diberi warna: 🔴 drop, 🟡 HMAC, 🟢 aman. Lesson ini membahas kenapa field 🔴 tetap sering lolos: empat jebakan di resource FHIR sendiri, lalu enam saluran yang mencatat otomatis.</p>
+
+<h2>Empat jebakan yang membedakan jawaban mid-level (±7 menit)</h2>
+<ol>
+  <li><strong>Query search adalah data pasien.</strong> <code>GET /Patient?identifier=https://fhir.kemkes.go.id/id/nik|3171…</code> menaruh NIK di URL. <sup class="cite"><a href="https://hl7.org/fhir/R4/search.html">[1]</a></sup>
+    FHIR R4: "HTTP logs, including those that only contain the URL itself, should be regarded as being as sensitive as the resources themselves." Bahkan dengan <code>POST _search</code>, log "will still contain a rich set of information about the clinical records". <sup class="cite"><a href="https://hl7.org/fhir/R4/security.html">[2]</a></sup></li>
+  <li><strong><code>OperationOutcome.diagnostics</code> bisa memuat ulang input.</strong> Field ini teks bebas: "a description of how a value is erroneous" atau "a stack dump". <sup class="cite"><a href="https://hl7.org/fhir/R4/operationoutcome-definitions.html">[3]</a></sup>
+    Pesan validasi SATUSEHAT bisa mengutip nilai yang salah. Catat <code>issue.code</code>; <code>diagnostics</code> masuk 🔴.</li>
+  <li><strong>Narrative <code>text.div</code> mengulang isi resource.</strong> Definisinya "a human-readable narrative that contains a summary of the resource". <sup class="cite"><a href="https://hl7.org/fhir/R4/domainresource-definitions.html">[4]</a></sup>
+    Menyensor <code>name</code> tapi meloloskan <code>text.div</code> berarti nama tetap tercetak, kali ini sebagai HTML. FHIR: "Narrative and Attachment elements present particularly difficult challenges." <sup class="cite"><a href="https://hl7.org/fhir/R4/secpriv-module.html">[5]</a></sup></li>
+  <li><strong>Kode diagnosis sensitif bocor tanpa nama.</strong> Lihat paragraf HIV di <a href="0024-pdp-hukum-dan-tiga-warna.html">lesson 0024</a>: kode ICD-10 itu sendiri adalah isi klinis.</li>
+</ol>
+
+<section class="exercise">
+  <h2>Latihan 3 — Jebakan</h2>
+  <div class="quiz" data-bank-lesson="0025" data-bank-topic="pdp-jebakan" data-stack></div>
+</section>
+
+<h2>3. Di mana bocornya: enam saluran (±8 menit)</h2>
+<p>Body yang di-log dengan sengaja jarang jadi masalah utama. Yang berbahaya adalah saluran yang mencatat <em>otomatis</em>.</p>
+<table>
+  <thead><tr><th>Saluran</th><th>Apa yang bocor</th><th>Fakta yang bisa Anda kutip</th></tr></thead>
+  <tbody>
+    <tr><td>1. Log aplikasi</td><td>body resource, <code>diagnostics</code>, nama yang disisipkan ke string pesan</td><td>pino <code>redact</code> hanya bekerja pada path kunci objek (case-sensitive), tidak menyentuh isi string. <sup class="cite"><a href="https://github.com/pinojs/pino/blob/main/docs/redaction.md">[6]</a></sup></td></tr>
+    <tr><td>2. URL: access log, proxy, APM</td><td>query search FHIR (NIK, nama, tanggal lahir)</td><td>Log HTTP sama sensitifnya dengan resource. <sup class="cite"><a href="https://hl7.org/fhir/R4/security.html">[2]</a></sup></td></tr>
+    <tr><td>3. Trace (OpenTelemetry)</td><td><code>url.full</code>, <code>url.query</code>, atribut custom</td><td>Redaksi default <code>url.query</code> hanya untuk kunci tanda tangan seperti <code>X-Amz-Signature</code> dan <code>sig</code>. <sup class="cite"><a href="https://opentelemetry.io/docs/specs/semconv/registry/attributes/url/">[7]</a></sup> OTel "can't determine what data is sensitive in your specific context on its own". <sup class="cite"><a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[8]</a></sup></td></tr>
+    <tr><td>4. Label metrik</td><td><code>patient_id</code> sebagai label</td><td>Prometheus: "Do not use labels to store dimensions with high cardinality … such as user IDs". <sup class="cite"><a href="https://prometheus.io/docs/practices/naming/#labels">[9]</a></sup> Label juga menyebar ke dashboard dan alert yang aksesnya longgar.</td></tr>
+    <tr><td>5. Error tracking (Sentry)</td><td>body request/response, breadcrumbs, nama transaksi berisi ID mentah</td><td>Default <code>dataCollection</code> mengumpulkan "request/response bodies"; denylist bawaan (<code>auth</code>, <code>token</code>, <code>secret</code>, …) tidak mencakup <code>nik</code> atau <code>birthDate</code>. <sup class="cite"><a href="https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/">[10]</a></sup></td></tr>
+    <tr><td>6. Frontend React</td><td><code>console.log(patient)</code>, analytics event, URL halaman (<code>/pasien/3171…</code>)</td><td>Sentry: breadcrumbs dan nama transaksi dengan URL mentah adalah tempat PII muncul. <sup class="cite"><a href="https://docs.sentry.io/platforms/javascript/guides/node/data-management/sensitive-data/">[11]</a></sup></td></tr>
+  </tbody>
+</table>
+
+<section class="exercise">
+  <h2>Latihan 4 — Saluran</h2>
+  <div class="quiz" data-bank-lesson="0025" data-bank-topic="pdp-saluran" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Saluran (±3 menit)</h2>
+  <p>Pasang timer, jawab dengan suara keras seolah sedang interview, baru buka jawaban contoh.</p>
+
+  <blockquote>"Anda baru masuk tim dan sistemnya sudah jalan. Bagaimana memeriksa apakah monitoring kami membocorkan data pasien?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saya telusuri satu request FHIR dari ujung ke ujung, misalnya search pasien by NIK, lalu cari jejaknya di setiap saluran.
+      Access log dan proxy: apakah query string tercatat utuh? Trace OpenTelemetry: <code>url.full</code>, <code>url.query</code>, atribut custom. Metrik: ada label berisi ID pasien?
+      Sentry: body request terkirim, breadcrumbs, nama transaksi dengan ID mentah? Log aplikasi: body resource, <code>OperationOutcome.diagnostics</code>, string pesan yang menyisipkan nama.
+      Frontend: console log, analytics, session replay. Untuk temuan, perbaikannya di sumber: allowlist field, HMAC untuk ID, matikan body di Sentry, tambahkan parameter FHIR ke redaksi query.
+      Lalu saya tambahkan tes yang gagal kalau NIK contoh muncul di output log."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>telusuri satu request nyata (mis. search by NIK) di semua saluran?</li>
+      <li>access log/proxy: query string?</li>
+      <li>trace OTel (<code>url.query</code>) dan label metrik?</li>
+      <li>Sentry: body, breadcrumbs, nama transaksi?</li>
+      <li>log aplikasi dan frontend (console, analytics, replay)?</li>
+      <li>perbaiki di sumber (allowlist, HMAC) + tes regresi?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0026-pdp-hmac-dan-audit.html">lesson 0026</a>: cara menutup saluran-saluran ini (allowlist di sumber, HMAC untuk korelasi) dan kenapa audit trail dipisah dari log operasional.</p>
+
+<p class="note sources">
+  Sumber (semua diakses 2026-10-27):
+  <a href="https://hl7.org/fhir/R4/search.html">[1] FHIR R4 Search</a> ·
+  <a href="https://hl7.org/fhir/R4/security.html">[2] FHIR R4 Security</a> ·
+  <a href="https://hl7.org/fhir/R4/operationoutcome-definitions.html">[3] FHIR R4 OperationOutcome definitions</a> ·
+  <a href="https://hl7.org/fhir/R4/domainresource-definitions.html">[4] FHIR R4 DomainResource definitions</a> ·
+  <a href="https://hl7.org/fhir/R4/secpriv-module.html">[5] FHIR R4 Security and Privacy Module (de-identification)</a> ·
+  <a href="https://github.com/pinojs/pino/blob/main/docs/redaction.md">[6] pino: redaction</a> ·
+  <a href="https://opentelemetry.io/docs/specs/semconv/registry/attributes/url/">[7] OpenTelemetry semantic conventions: url</a> ·
+  <a href="https://opentelemetry.io/docs/security/handling-sensitive-data/">[8] OpenTelemetry: Handling sensitive data</a> ·
+  <a href="https://prometheus.io/docs/practices/naming/#labels">[9] Prometheus: metric and label naming</a> ·
+  <a href="https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/">[10] Sentry JS: configuration options</a> ·
+  <a href="https://docs.sentry.io/platforms/javascript/guides/node/data-management/sensitive-data/">[11] Sentry JS: scrubbing sensitive data</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0024-pdp-hukum-dan-tiga-warna.html">← 0024 · PDP: hukum dan tiga warna</a>
+  <a href="0026-pdp-hmac-dan-audit.html">0026 · PDP: allowlist + HMAC, audit trail →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0025.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

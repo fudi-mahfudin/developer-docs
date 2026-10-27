@@ -37,7 +37,7 @@ Jembatan: "persis seperti saya mempelajari .NET & Angular untuk posisi ini, ini 
 ## Skenario teknis: SATUSEHAT (hipotetis, bukan STAR)
 
 Bukan cerita pengalaman. Dipakai untuk pertanyaan "bagaimana Anda menangani…", dijawab dengan "pendekatan saya…", **bukan** "dulu saya…".
-Fakta SATUSEHAT dari `fhir/lessons/0006-satusehat-dan-review.html` (dokumentasi resmi, diakses 2026-10-26).
+Fakta SATUSEHAT dari `fhir/lessons/0022-satusehat-platform-dan-identitas.html` dan `0023-satusehat-validasi-dan-mapping.html` (dokumentasi resmi, diakses 2026-10-26).
 
 **Pertanyaan:** "Jam ramai loket pendaftaran, pencarian pasien by NIK ke SATUSEHAT mulai gagal: 401, lalu timeout. Antrean menumpuk. Apa yang Anda lakukan?"
 

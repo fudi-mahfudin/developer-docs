@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0003 · Profile, Extension, Implementation Guide; server yang sering disebut</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0003 · FHIR · Modul Fondasi · ±23 menit</div>
+  <h1>Profile, Extension, Implementation Guide; server yang sering disebut</h1>
+  <p class="subtitle">Pertanyaan pembuka yang hampir pasti muncul, dijelaskan dengan bahasa developer JavaScript</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Apa itu profile?"</em>
+  tanpa catatan, dalam kurang dari satu menit: kenapa FHIR "dasar" selalu disesuaikan lewat Profile, Extension (termasuk <code>modifierExtension</code>), dan Implementation Guide,
+  dan mengenali nama server HAPI FHIR dan Medplum.
+</div>
+
+<p class="note">
+  Semua fakta di bawah diambil dari spesifikasi FHIR R4 (v4.0.1) dan dikutip <sup class="cite">[n]</sup>. Contoh JSON dan TypeScript hanya untuk dibaca, tidak perlu dijalankan.
+  REST, HTTP status, JSON, dan OAuth sudah Anda kuasai; lesson ini hanya mengajarkan yang khas FHIR.
+</p>
+
+<p>Sebelumnya, di <a href="0002-resource-dan-versi.html">lesson 0002</a>, Anda melihat Resource, datatype, dan status versi R4 (Normative, Trial Use, FMM). Lesson ini menutup modul Fondasi: bagaimana FHIR dasar disesuaikan ke konteks tertentu, dan server yang namanya sering disebut.</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. Profile, Extension, dan Implementation Guide (konsep)</h2>
+<p>
+  Spesifikasi dasar FHIR sengaja menjadi "a common platform or foundation on which a variety of different solutions are implemented", dan karena itu
+  "usually requires further adaptation to particular contexts of use". <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[1]</a></sup>
+  Filosofinya: resource dasar memenuhi "the majority of common use cases", dan "There is a built-in extension mechanism to cover the remaining content". <sup class="cite"><a href="https://hl7.org/fhir/R4/overview.html">[2]</a></sup>
+</p>
+
+<h3>Profile</h3>
+<p>
+  "A set of constraints on a resource represented as a structure definition", ditulis sebagai resource <code>StructureDefinition</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[1]</a></sup>
+  Profile bisa: mengubah kardinalitas ("One key function of profiles"), melarang elemen dengan max 0, memaku nilai tetap, membatasi tipe,
+  mengikat ke value set terminologi lain, dan menandai elemen yang "must be 'supported'". <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[1]</a></sup>
+  Must support berarti implementasi "SHALL provide 'support' for the element in some meaningful way". <sup class="cite"><a href="https://hl7.org/fhir/R4/conformance-rules.html">[3]</a></sup>
+</p>
+<p>
+  Contoh konkret: di <code>Patient</code> dasar, <code>identifier</code> dan <code>name</code> berkardinalitas 0..* <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[4]</a></sup>;
+  profile US Core Patient (<code>http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient</code>) mempersempitnya menjadi 1..*. <sup class="cite"><a href="https://hl7.org/fhir/us/core/StructureDefinition-us-core-patient.html">[5]</a></sup>
+  Resource bisa menyatakan kesesuaiannya di <code>meta.profile</code>.
+</p>
+
+<h3>Extension</h3>
+<pre><code>{
+  "resourceType": "Patient",
+  "id": "123",
+  "extension": [{
+    "url": "http://hl7.org/fhir/StructureDefinition/patient-birthPlace",
+    "valueAddress": { "city": "Bandung", "country": "ID" }
+  }]
+}</code></pre>
+<ul>
+  <li><code>url</code> wajib dan "identifies a retrievable extension definition"; ia harus "the canonical URL of a StructureDefinition that defines the extension". <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[6]</a></sup> URL di contoh adalah extension resmi untuk tempat lahir dengan tipe <code>Address</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/extension-patient-birthplace.html">[7]</a></sup></li>
+  <li>Isinya <code>value[x]</code>: nama "value" + nama tipe dalam TitleCase (<code>valueAddress</code>, <code>valueCode</code>, <code>valueString</code>), atau sub-extension, "but not both". <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[6]</a></sup></li>
+  <li><code>modifierExtension</code> dipakai "If it is not safe for an application processing the content of the resource to ignore the extension". Aplikasi yang tidak mengenalnya tidak boleh diam-diam mengabaikannya. <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[6]</a></sup></li>
+  <li>Kenapa tidak menambah properti sembarang ke JSON: "The use of extensions is what allows the FHIR specification to retain a core simplicity for everyone." <sup class="cite"><a href="https://hl7.org/fhir/R4/extensibility.html">[6]</a></sup></li>
+</ul>
+<p>Padanan TypeScript untuk membaca extension: cari berdasarkan <code>url</code>, jangan berdasarkan posisi array.</p>
+<pre><code>const BIRTH_PLACE = "http://hl7.org/fhir/StructureDefinition/patient-birthPlace";
+const birthPlace = patient.extension?.find(e =&gt; e.url === BIRTH_PLACE)?.valueAddress;</code></pre>
+
+<h3>Implementation Guide (IG)</h3>
+<p>
+  "A coherent and bounded set of adaptations that are published as a single unit" <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[1]</a></sup>:
+  profile, extension, value set, dan contoh untuk satu negara, organisasi, atau use case. US Core "defines the minimum constraints on the FHIR resources to create the US Core Profiles". <sup class="cite"><a href="https://hl7.org/fhir/us/core/">[8]</a></sup>
+  Resource <code>ImplementationGuide</code> sendiri ("A set of rules of how a particular interoperability or standards problem is solved") masih Trial Use, FMM 1. <sup class="cite"><a href="https://hl7.org/fhir/R4/implementationguide.html">[9]</a></sup>
+</p>
+<table>
+  <thead><tr><th>FHIR</th><th>Analogi TypeScript (hanya untuk mengingat)</th></tr></thead>
+  <tbody>
+    <tr><td>Resource dasar</td><td>type yang longgar: banyak field opsional (mis. semua field <code>Patient</code> di atas 0..1 atau 0..*)</td></tr>
+    <tr><td>Profile</td><td>type yang lebih ketat + aturan validasi (seperti schema zod yang di-<code>refine</code>)</td></tr>
+    <tr><td>Extension</td><td>field tambahan yang wajib punya "namespace" (URL) dan definisi</td></tr>
+    <tr><td>Implementation Guide</td><td>package npm berisi kumpulan type, schema, dan contoh</td></tr>
+  </tbody>
+</table>
+
+<section class="exercise">
+  <h2>Latihan 1 — Profile, Extension, IG</h2>
+  <div class="quiz" data-bank-lesson="0003" data-bank-topic="dasar-profil" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Server yang mungkin disebut di interview</h2>
+<p>Cukup kenali namanya; menjalankannya di luar cakupan track ini.</p>
+<ul>
+  <li><strong>HAPI FHIR</strong>: "a complete implementation of the HL7 FHIR standard for healthcare interoperability in Java", open source dengan lisensi Apache 2.0. <sup class="cite"><a href="https://hapifhir.io/">[10]</a></sup> Sering dipakai sebagai server referensi atau server uji.</li>
+  <li><strong>Medplum</strong>: "Medplum is a headless EHR", open source, dibangun di atas FHIR, dengan TypeScript SDK dan komponen React. <sup class="cite"><a href="https://www.medplum.com/docs">[11]</a></sup> Relevan untuk tim Node/React.</li>
+</ul>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 2 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Kenapa FHIR 'dasar' tidak langsung cukup untuk sebuah negara atau organisasi? Jelaskan Profile, Extension, dan Implementation Guide." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Spesifikasi dasar FHIR sengaja menjadi platform bersama: resource-nya hanya memuat elemen yang akan didukung kebanyakan sistem, jadi spesifikasi menyatakan bahwa ia biasanya perlu diadaptasi ke konteks pemakaian.
+      Adaptasi itu ditulis sebagai profile, yaitu StructureDefinition berisi constraint: misalnya <code>identifier</code> pasien wajib (kardinalitas 1..*), elemen tertentu dilarang (max 0), kode harus dari value set tertentu, atau elemen ditandai must support.
+      Kebutuhan yang tidak ada di core ditambahkan sebagai extension: objek dengan <code>url</code> ke definisinya plus <code>value[x]</code>; kalau extension itu mengubah makna data, ia harus menjadi <code>modifierExtension</code> yang tidak boleh diabaikan.
+      Sekumpulan profile, extension, dan terminologi untuk satu konteks diterbitkan sebagai Implementation Guide, misalnya US Core di Amerika yang dibangun di atas R4. Resource bisa menyatakan kesesuaiannya lewat <code>meta.profile</code>.
+      Analogi TypeScript: resource dasar adalah type yang longgar, profile adalah type yang lebih ketat plus aturan validasi, dan IG adalah package berisi kumpulan type itu."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>spesifikasi dasar = platform bersama dengan core kecil, biasanya perlu diadaptasi ke konteks?</li>
+      <li>profile = StructureDefinition berisi constraint (kardinalitas, max 0, binding terminologi, must support)?</li>
+      <li>extension = <code>url</code> ke definisi + <code>value[x]</code>; menambah data yang tidak ada di core?</li>
+      <li><code>modifierExtension</code> mengubah makna, tidak boleh diabaikan diam-diam?</li>
+      <li>Implementation Guide = kumpulan adaptasi yang diterbitkan sebagai satu unit (contoh US Core di atas R4)?</li>
+      <li><code>meta.profile</code> untuk menyatakan kesesuaian; analogi TS: type lebih ketat / package type?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://hl7.org/fhir/R4/overview-dev.html">HL7 FHIR R4: FHIR Overview – Developers</a>.
+  Baca "Framework", "Example Resource Instance", "URLs and Identities", dan "Managing Variability". Lanjutkan dengan
+  <a href="https://hl7.org/fhir/R4/comparison-v2.html">Comparison with HL7 v2</a> kalau masih ada waktu.
+</div>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Fondasi") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a> · Komunitas: <a href="https://chat.fhir.org/">chat.fhir.org</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda <code>id</code> dan <code>identifier</code>?", "kapan sebuah extension harus jadi <code>modifierExtension</code>?", atau "bagaimana menjelaskan Normative vs Trial Use ke interviewer non-teknis?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/R4/profiling.html">[1] Profiling FHIR</a> ·
+  <a href="https://hl7.org/fhir/R4/overview.html">[2] FHIR Overview</a> ·
+  <a href="https://hl7.org/fhir/R4/conformance-rules.html">[3] Conformance Rules</a> ·
+  <a href="https://hl7.org/fhir/R4/patient.html">[4] Patient</a> ·
+  <a href="https://hl7.org/fhir/us/core/StructureDefinition-us-core-patient.html">[5] US Core Patient Profile</a> ·
+  <a href="https://hl7.org/fhir/R4/extensibility.html">[6] Extensibility</a> ·
+  <a href="https://hl7.org/fhir/R4/extension-patient-birthplace.html">[7] Extension: patient-birthPlace</a> ·
+  <a href="https://hl7.org/fhir/us/core/">[8] US Core IG</a> ·
+  <a href="https://hl7.org/fhir/R4/implementationguide.html">[9] ImplementationGuide</a> ·
+  <a href="https://hapifhir.io/">[10] HAPI FHIR</a> ·
+  <a href="https://www.medplum.com/docs">[11] Medplum Docs</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0002-resource-dan-versi.html">← 0002 · Resource dan versi</a>
+  <a href="0004-kerangka-json-dan-identifier.html">0004 · Kerangka resource JSON →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
