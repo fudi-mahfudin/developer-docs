@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0013 · Bulk Data: tiga level $export dan alur asinkron</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0013 · FHIR · Modul Bulk Data · ±23 menit</div>
+  <h1>Tiga level <code>$export</code>; alur kick-off → 202 → polling → manifest</h1>
+  <p class="subtitle">Lesson pertama modul Bulk Data: kenapa search biasa tidak cukup untuk jutaan resource, dan bagaimana ekspor asinkron berjalan</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0012-review-fondasi-resource.html">Review 1</a> menutup modul Fondasi dan Resource. Modul ini membahas JSON massal:
+  dari "ekspor jutaan resource" sampai "insert ke database tanpa kehabisan memori". Lesson ini mulai dari sisi server FHIR: endpoint <code>$export</code> dan alur asinkronnya.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Bagaimana Anda mengekspor jutaan resource dari server FHIR?"</em>
+  tanpa catatan, dalam 90 detik: tiga level <code>$export</code>, kick-off dengan <code>Prefer: respond-async</code>,
+  202 + <code>Content-Location</code>, polling dengan <code>Retry-After</code>/429, sampai 200 + manifest.
+</div>
+
+<p class="note">
+  Semua fakta Bulk Data di lesson ini diambil dari <strong>Bulk Data Access IG v2.0.0 (STU 2)</strong>, yang dibangun di atas FHIR R4.
+  Halaman IG itu sendiri mencatat bahwa versi 3.0.0 sudah menggantikannya <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html">[1]</a></sup>;
+  alur intinya sama, tapi sebutkan versinya kalau interviewer bertanya detail.
+  Search dan paging biasa ada di lesson <a href="0008-crud-dan-search.html">0008</a> dan <a href="0009-include-dan-paging.html">0009</a>; autentikasi SMART Backend Services dibahas di lesson <a href="0019-scopes-dan-backend-services.html">0019</a>.
+  Lesson ini <strong>tanpa lab</strong>: potongan HTTP, JSON, dan TypeScript hanya untuk dibaca dan dijelaskan.
+</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. Kenapa bukan search biasa: tiga level <code>$export</code></h2>
+<p>
+  Search dengan paging (<code>GET Observation?_count=1000</code> lalu ikuti link <code>next</code>) cocok untuk layar aplikasi, bukan untuk jutaan resource:
+  satu request per halaman, dan Anda yang mengatur semuanya. Bulk Data <code>$export</code> membalik perannya: server menyiapkan file di belakang, client mengambil hasilnya nanti.
+  Operasi ini "initiates the asynchronous generation of a requested export dataset - whether that be data for all patients, data for a subset (defined group) of patients, or all FHIR data in the server."
+  <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#bulk-data-kick-off-request">[1]</a></sup>
+</p>
+
+<table>
+  <thead><tr><th>Level</th><th>Endpoint</th><th>Isi</th><th>Contoh kebutuhan</th></tr></thead>
+  <tbody>
+    <tr><td>Patient</td><td><code>[base]/Patient/$export</code></td><td>data semua pasien</td><td>migrasi rekam medis ke sistem baru</td></tr>
+    <tr><td>Group</td><td><code>[base]/Group/[id]/$export</code></td><td>data anggota satu <code>Group</code></td><td>kohort pasien diabetes untuk analitik, roster pasien dari payer</td></tr>
+    <tr><td>System</td><td><code>[base]/$export</code></td><td>semua data, terkait pasien atau tidak</td><td>backup server, ekspor terminologi dengan <code>_type</code></td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#endpoint---all-patients">[1]</a></sup>. Untuk level Patient dan Group, Patient Compartment dipakai sebagai acuan resource yang dikembalikan; resource pendukung seperti Organization dan Practitioner MAY ikut.</p>
+
+<p>Tiga hal yang perlu disebut saat menjelaskan kick-off:</p>
+<ul>
+  <li><strong>Asinkron.</strong> Header <code>Prefer: respond-async</code>: "Currently, only a value of respond-async is supported. A client SHOULD provide this header."
+    <code>Accept</code> di kick-off hanya menentukan format OperationOutcome (<code>application/fhir+json</code>). <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#headers">[1]</a></sup></li>
+  <li><strong>GET wajib, POST opsional.</strong> "A server SHALL support GET requests and MAY support POST requests that supply parameters using the FHIR Parameters Resource." <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#bulk-data-kick-off-request">[1]</a></sup></li>
+  <li><strong>Auth server-ke-server.</strong> Tidak ada user yang login: "implementers SHOULD implement OAuth 2.0 access management in accordance with the SMART Backend Services Authorization Profile", dan server "SHALL limit the data returned to only those FHIR resources for which the client is authorized." <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#privacy-and-security-considerations">[1]</a></sup> Detail client credentials + JWT di lesson 0019.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Level dan kick-off</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review campuran 0021.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0021.</p>
+  <div class="quiz" data-bank-lesson="0013" data-bank-topic="bulk-export" data-stack></div>
+</section>
+
+<p>Endpoint dan header kick-off sudah jelas. Berikutnya: apa yang terjadi setelah server menerima kick-off.</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Alur asinkron: kick-off → 202 → polling → manifest</h2>
+<div class="flow">
+  <span class="box">token (Backend Services)</span><span class="arrow">→</span>
+  <span class="box">kick-off</span><span class="arrow">→</span>
+  <span class="box">202 + Content-Location</span><span class="arrow">→</span>
+  <span class="box">polling (202…)</span><span class="arrow">→</span>
+  <span class="box">200 + manifest</span><span class="arrow">→</span>
+  <span class="box">unduh NDJSON</span>
+</div>
+
+<pre><code>GET [base]/Patient/$export?_type=Patient,Observation&amp;_since=2026-10-25T00:00:00Z
+Accept: application/fhir+json
+Prefer: respond-async
+Authorization: Bearer eyJhbGciOi…          ← token dari SMART Backend Services (0019)
+
+HTTP/1.1 202 Accepted
+Content-Location: https://fhir.example.org/bulkstatus/42   ← URL status untuk polling
+
+GET https://fhir.example.org/bulkstatus/42
+  → 202 Accepted           X-Progress: "50% complete"   Retry-After: 120
+  → 429 Too Many Requests  Retry-After: 300              (kalau polling terlalu sering)
+  → 200 OK                 Expires: …   Content-Type: application/json   + body manifest
+  → 4XX/5XX                body OperationOutcome          (export gagal)</code></pre>
+
+<ul>
+  <li><strong>Kick-off sukses</strong>: "HTTP Status Code of 202 Accepted" plus "Content-Location header with the absolute URL of an endpoint for subsequent status requests (polling location)". Gagal (mis. parameter tidak didukung): 4XX/5XX dengan body OperationOutcome. <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#response---success">[1]</a></sup></li>
+  <li><strong>Polling</strong>: "Clients SHOULD follow an exponential backoff approach when polling for status." <code>Retry-After</code> berisi detik (mis. 120) atau http-date. Kalau client terlalu sering, server "SHOULD respond with a 429 Too Many Requests status code in addition to a Retry-After header". Selama berjalan: 202, opsional <code>X-Progress</code> (teks bebas &lt; 100 karakter). <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#bulk-data-status-request">[1]</a></sup></li>
+  <li><strong>Export lain masih jalan</strong>: server yang ingin menolak export baru SHOULD membalas 429 + <code>Retry-After</code> juga. <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#response---error-eg-unsupported-search-parameter">[1]</a></sup></li>
+  <li><strong>Batal</strong>: <code>DELETE</code> ke URL status → 202; setelah itu polling ke URL yang sama SHALL menghasilkan 404 + OperationOutcome. <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#bulk-data-delete-request">[1]</a></sup></li>
+</ul>
+
+<p>Versi TypeScript singkat dari sisi client (untuk dibaca, bukan dijalankan):</p>
+<pre><code>async function waitForManifest(statusUrl: string, token: string): Promise&lt;Manifest&gt; {
+  let delay = 10;                                          // detik
+  for (;;) {
+    const res = await fetch(statusUrl, {
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 200) return (await res.json()) as Manifest;   // manifest kecil: json() aman
+    if (res.status !== 202 &amp;&amp; res.status !== 429) {
+      throw new Error(`export gagal: ${res.status}`);     // body: OperationOutcome
+    }
+    const retryAfter = Number(res.headers.get("Retry-After"));       // http-date → NaN
+    delay = retryAfter &gt; 0 ? retryAfter : Math.min(delay * 2, 600);  // hormati server, else backoff
+    await new Promise(r =&gt; setTimeout(r, delay * 1000));
+  }
+}</code></pre>
+<p class="note">Padanan yang mungkin Anda kenal: pola "job + status URL" yang sama dengan antrean job (BullMQ) atau API laporan asinkron. IG menyebutnya "FHIR Asynchronous Request Pattern". <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#bulk-data-export-operation-request-flow">[1]</a></sup></p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Susun urutan alur <code>$export</code></h2>
+  <p>Urutkan langkahnya dari awal sampai data masuk database. Gunakan ↑/↓, lalu Periksa.</p>
+  <div class="order">
+    <ol>
+      <li>Client meminta access token lewat SMART Backend Services</li>
+      <li><code>GET [base]/Group/[id]/$export</code> dengan <code>Prefer: respond-async</code></li>
+      <li>Server membalas <code>202 Accepted</code> + <code>Content-Location</code></li>
+      <li>Client polling URL status; menunggu sesuai <code>Retry-After</code> selama masih 202</li>
+      <li>Server membalas <code>200 OK</code> dengan manifest JSON</li>
+      <li>Client mengunduh setiap URL di <code>output</code> dan <code>error</code> sebelum <code>Expires</code></li>
+      <li>Setiap file NDJSON di-stream, di-parse per baris, di-insert per batch</li>
+      <li><code>transactionTime</code> disimpan sebagai <code>_since</code> untuk export berikutnya</li>
+    </ol>
+    <p class="explain">Token dulu (kick-off, status, dan file dengan <code>requiresAccessToken: true</code> dilindungi dengan cara yang sama), lalu kick-off → 202 → polling → 200 + manifest → unduh → proses streaming. <code>transactionTime</code> adalah jam server saat query dijalankan, jadi aman dipakai sebagai <code>_since</code> berikutnya.</p>
+  </div>
+  <div class="quiz" data-bank-lesson="0013" data-bank-topic="bulk-polling" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <p class="note">Jawaban contoh dan checklist di bawah juga menyebut isi manifest, <code>_type</code>, dan <code>_since</code>; detailnya ada di lesson berikutnya, <a href="0014-manifest-ndjson-dan-json-parse.html">0014</a>.</p>
+
+  <blockquote>"Bagaimana Anda mengekspor jutaan resource dari server FHIR? Jelaskan alurnya dari kick-off sampai file diunduh." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saya tidak memakai paging search biasa, tapi Bulk Data <code>$export</code>. Ada tiga level: <code>Patient/$export</code> untuk semua pasien, <code>Group/[id]/$export</code> untuk satu kohort,
+      dan <code>$export</code> di base untuk seluruh server. Client mendapat token lewat SMART Backend Services, lalu kick-off dengan <code>Prefer: respond-async</code>, opsional <code>_type</code> untuk membatasi tipe
+      dan <code>_since</code> untuk export inkremental. Server membalas 202 Accepted dengan header <code>Content-Location</code>, yaitu URL status. Client polling URL itu: selama masih 202, ikuti <code>Retry-After</code>
+      dan exponential backoff; kalau terlalu sering, server membalas 429. Setelah selesai, 200 dengan manifest JSON: <code>transactionTime</code>, <code>requiresAccessToken</code>, array <code>output</code> berisi URL
+      file NDJSON per tipe resource, dan array <code>error</code> berisi OperationOutcome. File diunduh sebelum <code>Expires</code>, diproses secara streaming, dan <code>transactionTime</code> disimpan sebagai
+      <code>_since</code> untuk export berikutnya."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>tiga level: <code>Patient/$export</code>, <code>Group/[id]/$export</code>, system <code>$export</code>?</li>
+      <li>kick-off asinkron dengan <code>Prefer: respond-async</code>, autentikasi lewat SMART Backend Services?</li>
+      <li>202 Accepted + <code>Content-Location</code> sebagai URL status?</li>
+      <li>polling: 202 selama berjalan, hormati <code>Retry-After</code>/backoff, 429 kalau terlalu sering?</li>
+      <li>200 + manifest: <code>output</code> (URL file NDJSON per tipe), <code>error</code>, <code>transactionTime</code>?</li>
+      <li><code>_type</code> untuk membatasi tipe dan <code>_since</code> = <code>transactionTime</code> sebelumnya untuk inkremental?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0014-manifest-ndjson-dan-json-parse.html">lesson 0014</a>: isi manifest, format NDJSON, parameter <code>_type</code>/<code>_since</code>, dan kenapa file hasilnya tidak boleh di-<code>JSON.parse</code> sekaligus.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Bulk Data dan JSON skala besar") · Indeks: <a href="../index.html">semua lesson FHIR</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda <code>Patient/$export</code> dan <code>Group/[id]/$export</code> untuk use case analitik?", "bagaimana menulis hasil export ke S3 dengan backpressure yang benar?", atau "kapan lebih baik memakai worker thread daripada streaming?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html">[1] Bulk Data Access IG v2.0.0 (STU 2): Export</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0012-review-fondasi-resource.html">← 0012 · Review 1: Fondasi + Resource</a>
+  <a href="0014-manifest-ndjson-dan-json-parse.html">0014 · Manifest, NDJSON, dan batas JSON.parse →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

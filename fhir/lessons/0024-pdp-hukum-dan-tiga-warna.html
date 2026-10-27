@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0024 · PDP: tiga aturan hukum, tiga warna untuk setiap field</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0024 · FHIR · Modul PDP · ±25 menit</div>
+  <h1>PDP: tiga aturan hukum, tiga warna untuk setiap field</h1>
+  <p class="subtitle">Pelindungan Data Pribadi untuk sistem yang terhubung ke SATUSEHAT: kenapa data pasien tidak boleh ada di log, dan field FHIR mana yang dibuang</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <strong>kenapa</strong> data pasien tidak boleh ada di log
+  (UU 27/2022, UU 17/2023, Permenkes 24/2022, satu kalimat masing-masing) dan menggolongkan field FHIR ke tiga warna:
+  🔴 drop (identitas, isi klinis, kredensial), 🟡 HMAC (ID untuk korelasi), 🟢 aman (metadata operasional).
+</div>
+
+<p class="note">
+  Hanya hukum Indonesia yang mengikat sistem yang terhubung ke SATUSEHAT: UU 27/2022, UU 17/2023, dan Permenkes 24/2022.
+  Semua pasal dibaca dari PDF resmi di peraturan.bpk.go.id, <strong>diakses 2026-10-27</strong>.
+  Nama resminya <strong>"Pelindungan</strong> Data Pribadi"; dalam percakapan orang sering menyebut "perlindungan". Keduanya merujuk ke UU yang sama.
+  Kuis di sini adalah feedback cepat; topik <code>pdp-</code> ikut ditarik lagi di review 0027.
+</p>
+
+<h2>1. Kenapa: tiga aturan, satu kalimat masing-masing (±8 menit)</h2>
+<table>
+  <thead><tr><th>Aturan</th><th>Yang perlu Anda ucapkan di interview</th></tr></thead>
+  <tbody>
+    <tr><td><strong>UU 27/2022</strong><br>Pelindungan Data Pribadi</td><td>
+      Data kesehatan adalah <strong>data pribadi spesifik</strong>, sejajar biometrik, genetika, dan data anak (Pasal 4 ayat (2) huruf a). <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1]</a></sup>
+      Penjelasannya: "catatan atau keterangan individu yang berkaitan dengan kesehatan fisik, kesehatan mental, dan/atau pelayanan kesehatan". <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1]</a></sup>
+    </td></tr>
+    <tr><td><strong>UU 17/2023</strong><br>Kesehatan</td><td>
+      Setiap orang berhak atas "kerahasiaan data dan informasi Kesehatan pribadinya" (Pasal 4 ayat (1) huruf i), dan penyelenggara Sistem Informasi Kesehatan "wajib menjamin pelindungan data dan informasi Kesehatan setiap individu" (Pasal 351 ayat (1)). <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/314883/UU%20Nomor%2017%20Tahun%202023.pdf">[2]</a></sup>
+    </td></tr>
+    <tr><td><strong>Permenkes 24/2022</strong><br>Rekam Medis</td><td>
+      Isi rekam medis "wajib dijaga kerahasiaannya … walaupun Pasien telah meninggal dunia" (Pasal 32 ayat (1)), juga oleh "pihak lain yang memiliki akses terhadap data dan informasi kesehatan Pasien" (ayat (2) huruf f).
+      Rekam medis elektronik wajib terhubung ke platform interoperabilitas Kemenkes (Pasal 21), yaitu SATUSEHAT dalam praktiknya. <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/301563/Permenkes%20Nomor%2024%20Tahun%202022.pdf">[3]</a></sup>
+    </td></tr>
+  </tbody>
+</table>
+<p>Tiga konsekuensi yang langsung menyentuh pekerjaan developer:</p>
+<ul>
+  <li><strong>Definisinya luas.</strong> Data pribadi termasuk data yang bisa mengidentifikasi orang "dikombinasi dengan informasi lainnya baik secara langsung maupun tidak langsung" (UU PDP Pasal 1 angka 1). Nomor HP dan IP address disebut sebagai contoh. <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1]</a></sup>
+    Membuang nama saja tidak cukup kalau diagnosis, tanggal, dan faskes masih ada di baris log yang sama.</li>
+  <li><strong>Vendor ikut terikat.</strong> Kalau perusahaan Anda memproses data atas nama rumah sakit, Anda <em>prosesor</em>. Kewajiban keamanan dan kerahasiaan (Pasal 35–39) "berlaku juga terhadap Prosesor Data Pribadi" (Pasal 52). <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1]</a></sup></li>
+  <li><strong>Log bocor = insiden.</strong> Kebocoran wajib diberitahukan secara tertulis "paling lambat 3 x 24 (tiga kali dua puluh empat) jam" kepada subjek data <em>dan</em> lembaga PDP (Pasal 46 ayat (1)). <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1]</a></sup>
+    Sanksinya mulai dari denda administratif sampai 2% pendapatan tahunan (Pasal 57 ayat (3)) hingga pidana untuk pengungkapan yang disengaja dan melawan hukum (Pasal 67). <sup class="cite"><a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1]</a></sup></li>
+</ul>
+<p class="note">
+  <strong>Tafsiran, bukan bunyi pasal:</strong> UU PDP tidak memakai istilah pseudonim, anonim, atau enkripsi sama sekali.
+  Tapi data yang di-HMAC atau di-hash masih bisa dihubungkan kembali oleh pemegang kunci, jadi masih memenuhi unsur "dapat diidentifikasi … tidak langsung".
+  Jawaban aman di interview: <em>"Log yang sudah dipseudonimkan tetap saya perlakukan sebagai data pribadi: aksesnya dibatasi."</em>
+</p>
+<p class="note">
+  <strong>Belum terverifikasi (diakses 2026-10-27), jangan dijadikan inti jawaban:</strong>
+  (1) <strong>PP No. 33 Tahun 2026</strong>, aturan pelaksana UU PDP, dilaporkan ditetapkan Juli 2026 dan berlaku Januari 2027. Sumbernya hanya berita, dan PP ini belum ada di database BPK.
+  (2) <strong>Kepmenkes HK.01.07/Menkes/721/2026 tentang Pedoman Pelindungan Data Pribadi</strong> dan kewajiban kontrol keamanan bagi sistem yang terhubung ke SATUSEHAT. Sumbernya hanya artikel GovInsider; situs Kemenkes tidak bisa diakses saat riset.
+  (3) Lembaga pengawas PDP: per siaran pers Komdigi 22 Juli 2026 masih "tengah memfinalisasi".
+  Kalau pewawancara menyebutnya, jawab: "Per yang terakhir saya baca, …", lalu kembali ke UU dan Permenkes.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Dasar hukum</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0024" data-bank-topic="pdp-hukum" data-stack></div>
+</section>
+
+<h2>2. Apa: tiga warna untuk setiap field (±12 menit)</h2>
+<p>
+  Inti jawaban Anda. Kelompokkan, jangan menghafal daftar panjang. Tiga kelompok yang <strong>dibuang</strong>, satu kelompok yang <strong>disamarkan</strong> untuk korelasi, dan sisanya <strong>aman</strong>.
+  Contoh memakai resource SATUSEHAT dari <a href="0022-satusehat-platform-dan-identitas.html">lesson 0022</a>.
+</p>
+<table>
+  <thead><tr><th></th><th>Kelompok</th><th>Contoh field FHIR / SATUSEHAT</th></tr></thead>
+  <tbody>
+    <tr><td>🔴 drop</td><td><strong>Identitas</strong></td><td>
+      <code>Patient.identifier</code>: NIK (<code>https://fhir.kemkes.go.id/id/nik</code>), KK, paspor, nomor rekam medis lokal · <code>name</code> · <code>telecom</code> · <code>address</code> (termasuk extension <code>administrativeCode</code> sampai desa, RT, RW) · <code>birthDate</code> lengkap · <code>photo</code> · NIK tenaga kesehatan. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[4]</a></sup>
+    </td></tr>
+    <tr><td>🔴 drop</td><td><strong>Isi klinis</strong></td><td>
+      <code>Condition.code</code> (ICD-10) · <code>Observation.value[x]</code> dan <code>code</code> (LOINC) · obat (KFA) · <code>note</code> · narrative <code>text.div</code> · lampiran.
+      Modul privasi FHIR R4 menggolongkan <code>code</code> dan <code>value[x]</code> Observation sebagai <em>indirect identifier</em>. <sup class="cite"><a href="https://hl7.org/fhir/R4/secpriv-module.html">[5]</a></sup>
+    </td></tr>
+    <tr><td>🔴 drop</td><td><strong>Kredensial</strong></td><td>
+      <code>client_secret</code> · header <code>Authorization: Bearer …</code> · body respons token SATUSEHAT. OWASP: access token, password, dan secret "should usually not be recorded directly in the logs". <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">[6]</a></sup>
+    </td></tr>
+    <tr><td>🟡 HMAC</td><td><strong>ID untuk korelasi</strong></td><td>
+      Logical id (<code>Patient/{patient-ihs-number}</code>, <code>Encounter/…</code>) · nomor IHS · user id / practitioner id. Dibutuhkan untuk menelusuri satu pasien atau satu user lintas log, tapi disimpan sebagai HMAC (lihat <a href="0026-pdp-hmac-dan-audit.html">lesson 0026</a>).
+    </td></tr>
+    <tr><td>🟢 aman</td><td><strong>Metadata operasional</strong></td><td>
+      <code>resourceType</code> · jenis interaksi (<code>read</code>, <code>search</code>, <code>create</code>) · route template (<code>GET /Patient</code>, tanpa query) · status HTTP · latensi · jumlah entry Bundle · <code>OperationOutcome.issue.severity</code> dan <code>issue.code</code>.
+    </td></tr>
+  </tbody>
+</table>
+<p>
+  Kenapa diagnosis tetap merah walaupun nama sudah dibuang: label keamanan FHIR mencontohkan "a Diagnostic Report with an HIV test is always highly confidential, whereas a routine electrolytes report is rarely particularly confidential". <sup class="cite"><a href="https://hl7.org/fhir/R4/security-labels.html">[7]</a></sup>
+  Diagnosis ditambah tanggal kunjungan dan faskes sudah cukup untuk menunjuk satu orang di kota kecil.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Field mana, warna apa?</h2>
+  <div class="quiz" data-bank-lesson="0024" data-bank-topic="pdp-field" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Dasar hukum (±3 menit)</h2>
+  <p>Pasang timer, jawab dengan suara keras seolah sedang interview, baru buka jawaban contoh.</p>
+
+  <blockquote>"Kenapa data kesehatan di log itu masalah hukum, bukan sekadar best practice?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Karena ada aturan yang mengikat, bukan cuma saran. UU 27/2022 Pasal 4 ayat (2) menggolongkan data kesehatan sebagai data pribadi <em>spesifik</em>, sejajar biometrik dan data anak.
+      UU 17/2023 Pasal 351 mewajibkan penyelenggara Sistem Informasi Kesehatan menjamin pelindungan data Kesehatan setiap individu, dan Permenkes 24/2022 Pasal 32 mewajibkan isi rekam medis dirahasiakan, bahkan setelah pasien meninggal, termasuk oleh pihak lain yang punya akses.
+      Sebagai vendor, kami biasanya prosesor, dan UU PDP Pasal 52 memberlakukan kewajiban keamanan dan kerahasiaan juga ke prosesor.
+      Definisinya luas: data yang bisa mengidentifikasi orang kalau dikombinasi dengan informasi lain, jadi membuang nama saja tidak cukup.
+      Kalau log bocor, itu insiden: pemberitahuan tertulis ke subjek data dan lembaga PDP paling lambat 3×24 jam (Pasal 46), dengan sanksi mulai denda administratif sampai 2% pendapatan tahunan hingga pidana untuk pengungkapan yang disengaja."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>UU 27/2022 Pasal 4: data kesehatan = data pribadi spesifik?</li>
+      <li>UU 17/2023 Pasal 351 atau Permenkes 24/2022 Pasal 32: wajib dirahasiakan, juga setelah pasien meninggal?</li>
+      <li>vendor = prosesor, ikut terikat kewajiban keamanan (UU PDP Pasal 52)?</li>
+      <li>definisi luas: teridentifikasi lewat kombinasi, membuang nama saja tidak cukup?</li>
+      <li>log bocor = insiden: beri tahu subjek dan lembaga dalam 3×24 jam (Pasal 46)?</li>
+      <li>sanksi: denda administratif sampai 2% pendapatan tahunan, pidana untuk pengungkapan disengaja?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0025-pdp-jebakan-dan-saluran.html">lesson 0025</a>: empat jebakan yang membuat field 🔴 tetap lolos ke log, dan enam saluran tempat data biasanya bocor.</p>
+
+<p class="note sources">
+  Sumber (semua diakses 2026-10-27):
+  <a href="https://peraturan.bpk.go.id/Download/224884/UU%20Nomor%2027%20Tahun%202022.pdf">[1] UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (PDF, BPK)</a> ·
+  <a href="https://peraturan.bpk.go.id/Download/314883/UU%20Nomor%2017%20Tahun%202023.pdf">[2] UU No. 17 Tahun 2023 tentang Kesehatan (PDF, BPK)</a> ·
+  <a href="https://peraturan.bpk.go.id/Download/301563/Permenkes%20Nomor%2024%20Tahun%202022.pdf">[3] Permenkes No. 24 Tahun 2022 tentang Rekam Medis (PDF, BPK)</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">[4] SATUSEHAT: Patient (diakses 2026-10-26, lesson 0022)</a> ·
+  <a href="https://hl7.org/fhir/R4/secpriv-module.html">[5] FHIR R4 Security and Privacy Module (de-identification)</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">[6] OWASP Logging Cheat Sheet</a> ·
+  <a href="https://hl7.org/fhir/R4/security-labels.html">[7] FHIR R4 Security Labels</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0023-satusehat-validasi-dan-mapping.html">← 0023 · SATUSEHAT: validasi profile dan mapping</a>
+  <a href="0025-pdp-jebakan-dan-saluran.html">0025 · PDP: empat jebakan, enam saluran →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0024.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

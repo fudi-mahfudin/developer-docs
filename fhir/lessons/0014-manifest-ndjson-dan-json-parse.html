@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0014 · Bulk Data: manifest, NDJSON, _type/_since, batas JSON.parse</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0014 · FHIR · Modul Bulk Data · ±21 menit</div>
+  <h1>Manifest, NDJSON, <code>_type</code>/<code>_since</code>; batas <code>JSON.parse</code> di Node</h1>
+  <p class="subtitle">Apa yang Anda terima setelah export selesai, dan kenapa file itu tidak boleh dibaca sekaligus</p>
+</header>
+
+<p>
+  Sebelumnya, di <a href="0013-export-dan-alur-async.html">lesson 0013</a>, polling URL status berakhir dengan <code>200 OK</code> + manifest.
+  Lesson ini membedah manifest itu, format file NDJSON yang ditunjuknya, parameter <code>_type</code> dan <code>_since</code>, lalu masalah pertama di sisi Node: <code>JSON.parse</code> satu file besar.
+  Seperti seluruh modul ini, <strong>tanpa lab</strong>: potongan kode hanya untuk dibaca dan dijelaskan.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa membaca manifest Bulk Data (<code>transactionTime</code>, <code>output</code>, <code>error</code>, <code>requiresAccessToken</code>),
+  menjelaskan NDJSON dan <code>_since</code> untuk export inkremental, dan menyebut tiga alasan <code>JSON.parse</code> satu file besar itu salah:
+  batas string, event loop terblok, dan format NDJSON.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Manifest, NDJSON, <code>_type</code> dan <code>_since</code></h2>
+<pre><code>{
+  "transactionTime": "2026-10-26T01:00:00Z",
+  "request": "https://fhir.example.org/fhir/Patient/$export?_type=Patient,Observation",
+  "requiresAccessToken": true,
+  "output": [
+    { "type": "Patient",     "url": "https://files.example.org/42/Patient_1.ndjson" },
+    { "type": "Observation", "url": "https://files.example.org/42/Observation_1.ndjson", "count": 1000000 },
+    { "type": "Observation", "url": "https://files.example.org/42/Observation_2.ndjson", "count": 734120 }
+  ],
+  "deleted": [],
+  "error": [
+    { "type": "OperationOutcome", "url": "https://files.example.org/42/err_1.ndjson" }
+  ]
+}</code></pre>
+<table>
+  <thead><tr><th>Field</th><th>Arti (Bulk Data IG v2.0.0)</th></tr></thead>
+  <tbody>
+    <tr><td><code>transactionTime</code></td><td>wajib; "the server's time when the query is run". Export SHALL memuat semua resource yang cocok sampai dan termasuk instant ini.</td></tr>
+    <tr><td><code>requiresAccessToken</code></td><td>wajib; <code>true</code> berarti unduhan file butuh token yang sama. Boleh <code>false</code> untuk file server dengan skema lain, mis. URL bucket S3.</td></tr>
+    <tr><td><code>output</code></td><td>wajib; satu item <code>{type, url, count?}</code> per file. "Each file SHALL contain resources of only one type, but a server MAY create more than one file for each resource type returned."</td></tr>
+    <tr><td><code>error</code></td><td>wajib (boleh kosong); file NDJSON berisi OperationOutcome. Export yang sebagian gagal tetap 200: "In the case of a partial success, the server SHALL use a 200 status code".</td></tr>
+    <tr><td><code>deleted</code></td><td>opsional; dengan <code>_since</code>, berisi Bundle <code>transaction</code> dengan <code>request.method = DELETE</code> untuk resource yang dihapus sejak waktu itu.</td></tr>
+    <tr><td>header <code>Expires</code></td><td>SHOULD; kapan file tidak lagi tersedia. Unduh dan proses sebelum itu.</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#response---complete-status">[1]</a></sup></p>
+
+<p>
+  <strong>NDJSON</strong> (newline delimited JSON): "resources are serialized with no whitespace, and separated by a newline pair (characters 13 and 10)", MIME type
+  <code>application/fhir+ndjson</code>, dan "each nd-json document contains only resources of a single type". <sup class="cite"><a href="https://hl7.org/fhir/R4/nd-json.html">[2]</a></sup>
+  Padanan JS: format ini sama dengan <em>JSON Lines</em> yang mungkin Anda kenal dari log. Isi <code>Observation_1.ndjson</code>, dua baris pertama:
+</p>
+<pre><code>{"resourceType":"Observation","id":"obs-1","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"8310-5","display":"Body temperature"}]},"subject":{"reference":"Patient/p-1"},"valueQuantity":{"value":36.50,"unit":"Cel","system":"http://unitsofmeasure.org","code":"Cel"}}
+{"resourceType":"Observation","id":"obs-2","status":"final","code":{"coding":[{"system":"http://loinc.org","code":"8310-5","display":"Body temperature"}]},"subject":{"reference":"Patient/p-2"},"valueQuantity":{"value":37.20,"unit":"Cel","system":"http://unitsofmeasure.org","code":"Cel"}}</code></pre>
+<p class="note">Kode LOINC 8310-5 (Body temperature) dari profil vital signs R4. <sup class="cite"><a href="https://hl7.org/fhir/R4/observation-vitalsigns.html">[3]</a></sup> Perhatikan <code>36.50</code>; kita kembali ke angka ini di <a href="0016-decimal-di-javascript.html">lesson 0016</a>.</p>
+
+<p>Parameter kick-off yang paling sering ditanya: <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#query-parameters">[1]</a></sup></p>
+<ul>
+  <li><code>_type</code>: daftar tipe resource dipisah koma; "The response SHALL be filtered to only include resources of the specified resource types(s)." Tanpa <code>_type</code>, server mengembalikan semua tipe yang didukung dalam batas otorisasi client.</li>
+  <li><code>_since</code> (FHIR instant): hanya resource yang "state has changed after the supplied time (e.g., if Resource.meta.lastUpdated is later than the supplied _since time)". Untuk export inkremental, isi dengan <code>transactionTime</code> dari manifest sebelumnya, seperti pola Group di IG yang menyuruh client "retains the transactionTime value from the response". <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#group-membership-request-pattern">[1]</a></sup></li>
+  <li><code>_outputFormat</code>: default <code>application/fhir+ndjson</code>; server SHALL mendukung NDJSON. <code>_elements</code> dan <code>_typeFilter</code> berstatus <em>experimental</em>.</li>
+</ul>
+<p class="note">Data yang diekspor hanya versi terbaru setiap resource: "The exported data SHALL include only the most recent version of any exported resources". <sup class="cite"><a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html#bulk-data-output-file-request">[1]</a></sup></p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Membaca manifest</h2>
+  <div class="quiz" data-bank-lesson="0014" data-bank-topic="bulk-manifest" data-stack></div>
+</section>
+
+<p>Manifest menunjuk file NDJSON yang bisa berukuran gigabyte. Langkah berikutnya membaca file itu di Node, dan cara yang paling jelas justru yang salah.</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Di Node: kenapa <code>JSON.parse</code> satu file besar itu salah</h2>
+<pre><code>// JANGAN untuk file hasil $export
+const text = await readFile("Observation_1.ndjson", "utf8");   // seluruh file → satu string
+const all = JSON.parse(text);                                   // + seluruh objek di heap, sekaligus</code></pre>
+<table>
+  <thead><tr><th>Masalah</th><th>Kenapa</th></tr></thead>
+  <tbody>
+    <tr><td>Batas string</td><td><code>buffer.constants.MAX_STRING_LENGTH</code>: "The largest length allowed for a single string instance", dan "This value may depend on the JS engine". <sup class="cite"><a href="https://nodejs.org/api/buffer.html#bufferconstantsmax_string_length">[4]</a></sup> Di Node 24.21.0 yang saya cek nilainya 536.870.888 UTF-16 code unit, jauh di bawah file 3 GB.</td></tr>
+    <tr><td>Memori</td><td>Teks mentah dan hasil parse ada di heap bersamaan; jutaan objek kecil ditahan sampai Anda selesai.</td></tr>
+    <tr><td>Event loop terblok</td><td><code>JSON.parse</code> dan <code>JSON.stringify</code> "are O(n) in the length of the input, for large n they can take surprisingly long". Contoh resmi: parse string 50 MB makan 1,3 detik, dan selama itu tidak ada request lain yang dilayani. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop#blocking-the-event-loop-json-dos">[5]</a></sup></td></tr>
+    <tr><td>Format</td><td>NDJSON adalah <em>banyak</em> dokumen JSON dipisah newline, bukan satu array; <code>JSON.parse</code> pada seluruh isi file langsung melempar <code>SyntaxError</code>.</td></tr>
+  </tbody>
+</table>
+<p>Solusinya selalu sama: jangan pernah memegang seluruh file. Baca potongan demi potongan, parse <strong>satu resource</strong> setiap kali, lalu buang.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Batas <code>JSON.parse</code></h2>
+  <div class="quiz" data-bank-lesson="0014" data-bank-topic="bulk-jsonparse" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Export Anda selesai dengan <code>200 OK</code>. Jelaskan isi manifest-nya dan bagaimana Anda memakainya untuk export harian yang inkremental." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Body 200 adalah manifest JSON. <code>transactionTime</code> adalah jam server saat query dijalankan; export memuat semua resource yang cocok sampai instant itu.
+      <code>output</code> berisi satu item <code>{type, url, count?}</code> per file: satu file hanya satu tipe resource, tapi satu tipe bisa dipecah ke beberapa file.
+      <code>error</code> berisi file NDJSON OperationOutcome; export yang sebagian gagal tetap 200. <code>requiresAccessToken: true</code> berarti unduhan file butuh token yang sama.
+      Setiap file NDJSON, satu baris satu resource, dengan MIME type <code>application/fhir+ndjson</code>, dan harus diunduh sebelum header <code>Expires</code>.
+      Untuk export harian, saya simpan <code>transactionTime</code> dan memakainya sebagai <code>_since</code> berikutnya, bukan jam client; <code>_type</code> membatasi tipe resource,
+      dan dengan <code>_since</code> array <code>deleted</code> bisa berisi resource yang dihapus."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li><code>transactionTime</code>: jam server saat query dijalankan, export memuat sampai instant itu?</li>
+      <li><code>output</code>: <code>{type, url, count?}</code> per file; satu file satu tipe, satu tipe bisa beberapa file?</li>
+      <li><code>error</code>: file NDJSON berisi OperationOutcome; sukses sebagian tetap 200?</li>
+      <li><code>requiresAccessToken: true</code>: unduhan file memakai token yang sama?</li>
+      <li>NDJSON satu baris satu resource (<code>application/fhir+ndjson</code>), diunduh sebelum <code>Expires</code>?</li>
+      <li><code>_since</code> = <code>transactionTime</code> sebelumnya (bukan jam client), <code>_type</code> membatasi tipe, <code>deleted</code> untuk yang dihapus?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0015-streaming-dan-backpressure.html">lesson 0015</a>: cara yang benar, yaitu streaming baris per baris, batching ke database, backpressure, dan <code>pipeline</code>.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Bulk Data dan JSON skala besar") · Indeks: <a href="../index.html">semua lesson FHIR</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda <code>Patient/$export</code> dan <code>Group/[id]/$export</code> untuk use case analitik?", "bagaimana menulis hasil export ke S3 dengan backpressure yang benar?", atau "kapan lebih baik memakai worker thread daripada streaming?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/uv/bulkdata/STU2/export.html">[1] Bulk Data Access IG v2.0.0 (STU 2): Export</a> ·
+  <a href="https://hl7.org/fhir/R4/nd-json.html">[2] FHIR R4: ND-JSON Representation of Resources</a> ·
+  <a href="https://hl7.org/fhir/R4/observation-vitalsigns.html">[3] FHIR R4: Vital Signs profile</a> ·
+  <a href="https://nodejs.org/api/buffer.html#bufferconstantsmax_string_length">[4] Node.js: buffer.constants.MAX_STRING_LENGTH</a> ·
+  <a href="https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop">[5] Node.js Learn: Don't Block the Event Loop</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0013-export-dan-alur-async.html">← 0013 · Tiga level $export dan alur asinkron</a>
+  <a href="0015-streaming-dan-backpressure.html">0015 · Streaming dan backpressure →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

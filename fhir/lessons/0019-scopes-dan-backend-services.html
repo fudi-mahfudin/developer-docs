@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0019 · Scopes patient/, user/, system/; Backend Services untuk job Node</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0019 · FHIR · Modul SMART · ±20 menit</div>
+  <h1>Scopes <code>patient/</code>, <code>user/</code>, <code>system/</code>; Backend Services untuk job Node</h1>
+  <p class="subtitle">Sintaks scope SMART v2, konteks dan identitas, lalu Backend Services untuk service tanpa user</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa membaca scope seperti <code>patient/Observation.rs</code> (<code>patient/</code> vs <code>user/</code> vs <code>system/</code>, v1 vs v2, <code>openid fhirUser</code>, <code>offline_access</code>)
+  dan menjelaskan alur Backend Services: <code>client_credentials</code> + JWT assertion, scope <code>system/</code>, token pendek tanpa refresh token.
+</div>
+
+<p>Sebelumnya, di <a href="0018-pkce.html">lesson 0018</a>: app menukar code + <code>code_verifier</code> dan menerima access token beserta <code>scope</code> yang diberikan. Lesson ini membedah scope itu, lalu alur tanpa user.</p>
+
+<h2>4. Scopes: <code>patient/</code>, <code>user/</code>, <code>system/</code>, dan <code>.cruds</code></h2>
+<p>Sintaks scope resource: <code>(patient | user | system) / (ResourceType | *) . (subset dari cruds) [?param=value]</code>. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#fhir-resource-scope-syntax">[1]</a></sup></p>
+<table>
+  <thead><tr><th>Bagian</th><th>Arti</th></tr></thead>
+  <tbody>
+    <tr><td><code>patient/</code></td><td>data tentang <em>satu</em> pasien yang sedang dalam konteks. "what and not who": siapa pasiennya ditentukan oleh launch context</td></tr>
+    <tr><td><code>user/</code></td><td>data yang <em>bisa diakses</em> user yang login (bukan hanya data tentang user itu)</td></tr>
+    <tr><td><code>system/</code></td><td>data yang client sendiri diizinkan akses, tanpa user (Backend Services)</td></tr>
+    <tr><td><code>c r u d s</code></td><td>create, read (termasuk vread, history instance), update (termasuk patch), delete, search. Harus urut: <code>.rs</code> sah, <code>.dus</code> tidak</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#scopes-for-requesting-fhir-resources">[1]</a></sup></p>
+<ul>
+  <li><strong>v1 vs v2.</strong> SMART 1.0 memakai <code>patient/Observation.read</code>. Di v2: <code>.read</code> ⇒ <code>.rs</code>, <code>.write</code> ⇒ <code>.cud</code>, <code>.*</code> ⇒ <code>.cruds</code>; server SHOULD mengiklankan <code>permission-v1</code> bila masih menerima v1. v2 juga menambah filter berbasis search parameter, mis. <code>patient/Observation.rs?category=…|laboratory</code>. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#scopes-for-requesting-fhir-resources">[1]</a></sup></li>
+  <li><strong>Konteks:</strong> <code>launch</code> (EHR launch), <code>launch/patient</code>, <code>launch/encounter</code> (standalone, atau sebagai petunjuk). <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#scopes-for-requesting-context-data">[1]</a></sup></li>
+  <li><strong>Identitas:</strong> <code>openid fhirUser</code> menghasilkan <code>id_token</code>; klaim <code>fhirUser</code> adalah URL resource user (Patient, Practitioner, PractitionerRole, RelatedPerson, atau Person). <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#scopes-for-requesting-identity-data">[1]</a></sup></li>
+  <li><strong>Refresh token:</strong> <code>offline_access</code> (tetap bisa dipakai walau user tidak online) atau <code>online_access</code> (selama user masih online). Refresh tidak bisa menambah izin baru. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#scopes-for-requesting-a-refresh-token">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/app-launch.html#refresh-access-token">[2]</a></sup></li>
+  <li><strong>Least privilege:</strong> minta scope minimum; <code>patient/*.cruds</code> berarti juga semua jenis data yang <em>nanti</em> ditambahkan ke server. Selalu periksa scope yang benar-benar diberikan. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#wildcard-scopes">[1]</a></sup></li>
+  <li><strong>Scope ≠ izin penuh:</strong> izin dasar user tetap membatasi. Client bisa menerima 200 dengan sebagian hasil dihilangkan dari Bundle, atau 403 untuk write yang tampak diizinkan scope. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html#smarts-scopes-are-used-to-delegate-access">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 4 — Scopes</h2>
+  <div class="quiz" data-bank-lesson="0019" data-bank-topic="smart-scopes" data-stack></div>
+</section>
+
+<h2>5. Backend Services: job Node tanpa user (dan kaitannya dengan Bulk Data)</h2>
+<p>
+  Kalau tidak ada user yang mengotorisasi di runtime (data warehouse, sinkronisasi pasien baru, monitoring lab), pakai <strong>SMART Backend Services</strong>.
+  Profile ini "is designed to work with FHIR Bulk Data Access", jadi inilah cara service Node di <a href="0013-export-dan-alur-async.html">lesson 0013</a> mendapat token untuk <code>$export</code>. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/backend-services.html#profile-audience-and-scope">[3]</a></sup>
+</p>
+<ol>
+  <li>Sekali di awal: daftarkan client dengan <strong>public key</strong> (JWKS atau URL JWKS). Private key tetap di server Anda. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/client-confidential-asymmetric.html#registering-a-client-communicating-public-keys">[4]</a></sup></li>
+  <li>Setiap butuh token: buat JWT sekali pakai, ditandatangani private key (SHOULD RS384 atau ES384): <code>iss</code> = <code>sub</code> = client_id, <code>aud</code> = token URL, <code>exp</code> maksimal 5 menit ke depan, <code>jti</code> unik (mencegah replay). <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/client-confidential-asymmetric.html#authenticating-to-the-token-endpoint">[4]</a></sup></li>
+  <li><code>POST</code> ke token endpoint: <code>grant_type=client_credentials</code>, <code>client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer</code>, <code>client_assertion=&lt;JWT&gt;</code>, <code>scope=system/…</code>. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/backend-services.html#obtain-access-token">[3]</a></sup></li>
+  <li>Token SHALL berumur pendek, <code>expires_in</code> SHOULD NOT melebihi 300 detik, dan refresh token SHOULD NOT diterbitkan: minta token baru saat perlu. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/backend-services.html#issue-access-token">[3]</a></sup></li>
+</ol>
+<pre><code>// Payload JWT assertion (contoh IG); header: { "typ": "JWT", "alg": "RS384", "kid": "eee9f17a..." }
+{
+  "iss": "https://bili-monitor.example.com",          // client_id
+  "sub": "https://bili-monitor.example.com",          // client_id
+  "aud": "https://authorize.smarthealthit.org/token", // token URL
+  "exp": 1422568860,                                  // ≤ 5 menit dari sekarang
+  "jti": "random-non-reusable-jwt-id-123"
+}</code></pre>
+<p class="note">
+  Padanan JS: ini mirip "service account" Google Cloud (JWT ditandatangani private key, ditukar dengan access token), bukan login user.
+  Bedanya dengan app launch: tidak ada redirect, tidak ada PKCE, tidak ada <code>patient</code> context; scope-nya <code>system/</code> dan dibatasi oleh izin yang sudah diatur saat registrasi. <sup class="cite"><a href="https://hl7.org/fhir/smart-app-launch/backend-services.html#scopes">[3]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 5 — Backend Services</h2>
+  <div class="quiz" data-bank-lesson="0019" data-bank-topic="smart-backend" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras seolah sedang interview, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0027.</p>
+
+  <blockquote>"Service Node kami perlu menarik data populasi tiap malam lewat Bulk Data <code>$export</code>. Bagaimana autentikasinya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Itu kasus SMART Backend Services, karena tidak ada user di runtime. Sekali di awal kami mendaftarkan client dengan public key, berupa JWKS atau URL JWKS; private key tetap di server kami, misalnya di secret manager.
+      Setiap butuh token, service membuat JWT sekali pakai: <code>iss</code> dan <code>sub</code> = client_id, <code>aud</code> = token URL, <code>exp</code> maksimal 5 menit, <code>jti</code> unik, ditandatangani RS384 atau ES384.
+      Lalu POST ke token endpoint dengan <code>grant_type=client_credentials</code>, <code>client_assertion</code>, dan scope <code>system/</code> sesempit mungkin, misalnya <code>system/Patient.rs system/Observation.rs</code>.
+      Token-nya pendek, sekitar 5 menit, tanpa refresh token, jadi selama polling <code>$export</code> yang lama kami minta token baru saat kedaluwarsa."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Backend Services karena tidak ada user yang mengotorisasi?</li>
+      <li>registrasi public key (JWKS), private key tetap di server?</li>
+      <li>JWT assertion: <code>iss</code>/<code>sub</code> = client_id, <code>aud</code> = token URL, <code>exp</code> ≤ 5 menit, <code>jti</code> unik?</li>
+      <li>ditandatangani RS384 atau ES384?</li>
+      <li><code>grant_type=client_credentials</code> + <code>client_assertion</code>, scope <code>system/</code> seminimal mungkin?</li>
+      <li>token pendek (≤ 300 detik), tanpa refresh token: minta token baru saat perlu?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, lesson 0020: semua alur ini dipakai dari React dengan <code>fhirclient</code>, lalu bagaimana menjaga token dan PHI di browser.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Keamanan dan SMART on FHIR") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/smart-app-launch/scopes-and-launch-context.html">[1] Scopes and Launch Context</a> ·
+  <a href="https://hl7.org/fhir/smart-app-launch/app-launch.html">[2] App Launch: Launch and Authorization</a> ·
+  <a href="https://hl7.org/fhir/smart-app-launch/backend-services.html">[3] Backend Services</a> ·
+  <a href="https://hl7.org/fhir/smart-app-launch/client-confidential-asymmetric.html">[4] Client Authentication: Asymmetric</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0018-pkce.html">← 0018 · Authorization code + PKCE: kenapa React SPA tidak punya secret</a>
+  <a href="0020-fhirclient-dan-keamanan-token.html">0020 · React + fhirclient; token di browser, PHI, audit →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0019.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

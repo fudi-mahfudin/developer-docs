@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0029 · Reframe STAR ke konteks health-tech</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0029 · FHIR · Penutup · ±10 menit</div>
+  <h1>Reframe STAR ke konteks health-tech</h1>
+  <p class="subtitle">Empat cerita STAR yang sudah ada, dibingkai ulang untuk perusahaan health-tech: data sensitif, integrasi antar sistem, volume besar.</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa mengucapkan dua cerita STAR yang sudah dibingkai ulang ke health-tech, masing-masing ±2 menit, dengan satu jembatan jujur ke FHIR.
+</div>
+
+<div class="timer" data-segments="STAR:10"></div>
+
+<h2>Reframe 4 cerita STAR ke konteks health-tech</h2>
+<p>
+  Cerita STAR <strong>tidak dibuat baru</strong>. Buka <code>star/draf-star.md</code> di root repo (empat tema: insiden produksi, refactor, konflik teknis, belajar teknologi baru) dan pakai cerita yang sudah Anda tulis.
+  Kalau sebagian masih kosong, isi dulu poin S/T/A/R dari pengalaman Anda sendiri; saya (agent) tidak bisa mengarang pengalaman Anda. File itu tidak perlu diubah untuk latihan ini: tulis versi health-tech di kertas atau catatan terpisah.
+</p>
+<p>
+  Yang diubah hanya <em>bingkainya</em>: pilih kalimat Situation dan Action yang menyentuh tiga hal yang dipedulikan perusahaan health-tech, lalu sebut padanan FHIR-nya dengan jujur ("di sana kami memakai X; di FHIR padanannya Y").
+  Porsi tetap: Situation ±20%, Task ±10%, <strong>Action ±60%</strong>, Result ±10%, "saya" bukan "kami", dan Result dengan angka. <sup class="cite"><a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Cerita di draf</th><th>Sorot sudut ini (bila memang ada di cerita Anda)</th><th>Jembatan ke FHIR / health-tech</th></tr></thead>
+  <tbody>
+    <tr><td>1. Bug/insiden produksi tersulit</td>
+      <td><strong>Data sensitif:</strong> insiden yang menyentuh data pribadi, log yang terlalu banyak bicara, akses yang salah. <strong>Integrasi:</strong> sistem pihak ketiga yang berubah format.</td>
+      <td>PHI di log dan query string, <code>AuditEvent</code>, OperationOutcome yang disimpan, retry idempoten dengan identifier</td></tr>
+    <tr><td>2. Refactor yang meningkatkan kualitas</td>
+      <td><strong>Integrasi antar sistem:</strong> memisahkan adapter/mapper dari logika bisnis, menambah test di batas integrasi. <strong>Volume:</strong> mengganti proses "muat semua" menjadi streaming/batch.</td>
+      <td>Lapisan mapping tabel → resource dan ConceptMap terpisah dan teruji; NDJSON + <code>pipeline</code>; validasi sebelum kirim</td></tr>
+    <tr><td>3. Konflik/beda pendapat teknis</td>
+      <td><strong>Data sensitif vs kecepatan:</strong> menyimpan token di browser vs backend, validasi ketat vs kehilangan data, buatan sendiri vs standar.</td>
+      <td>Public vs confidential client (BFF), Postel's law dan trade-off validasi di production, "pakai standar (FHIR/terminologi) daripada format sendiri"</td></tr>
+    <tr><td>4. Mempelajari teknologi baru dengan cepat</td>
+      <td><strong>Domain baru yang ketat aturan:</strong> cara Anda belajar dari spesifikasi resmi, bukan blog.</td>
+      <td>Track ini sebagai bukti: dari nol ke membaca R4, SMART, Bulk Data, dan dokumentasi SATUSEHAT, dengan sumber primer</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>Volume besar:</strong> kalau Result Anda punya angka skala (baris, request/detik, ukuran file, waktu proses), letakkan di depan; health-tech selalu bicara data populasi.</li>
+  <li><strong>Jangan memaksa:</strong> kalau sebuah cerita tidak punya sudut health-tech, cukup tutup dengan satu kalimat jembatan ("pelajaran yang sama saya bawa ke data pasien: …"). Mengarang detail medis justru berbahaya di interview.</li>
+  <li><strong>Bonus "kenapa pindah stack"</strong> di draf ditulis untuk posisi .NET/Angular dan tidak berlaku di sini. Untuk posisi ini, pertanyaan yang lebih mungkin adalah "kenapa health-tech?"; jawab dengan alasan Anda sendiri, lalu kaitkan ke cerita 4.</li>
+  <li>Latihan: saat timer segmen <em>STAR</em> berjalan, ucapkan dua cerita yang sudah dibingkai ulang, masing-masing ±2 menit. Lebih dari 2,5 menit → pangkas Situation.</li>
+</ul>
+
+
+<p class="ask">Ingin cerita Anda dipadatkan? Tanyakan ke saya (agent) di terminal, misalnya: "tolong padatkan cerita insiden saya dengan sudut data sensitif".</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/">[1] MIT CAPD: The STAR method for behavioral interviews</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0028-tanya-jawab-campuran.html">← 0028 · Bank tanya-jawab interview campuran</a>
+  <a href="../index.html">Indeks →</a>
+</nav>
+
+</main>
+<script src="../../assets/timer.js"></script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FHIR 0004 · Kerangka resource JSON; Patient: id vs identifier</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0004 · FHIR · Modul Resource · ±21 menit</div>
+  <h1>Kerangka resource JSON; Patient: <code>id</code> vs <code>identifier</code></h1>
+  <p class="subtitle">Membaca JSON FHIR R4 seperti membaca tipe TypeScript: bagian bersama setiap resource, aturan JSON, cardinality, dan id vs Identifier</p>
+</header>
+
+<p>Di <a href="0003-profile-extension-ig.html">lesson 0003</a> Anda mengenal profile, extension, dan Implementation Guide sebagai konsep. Modul ini membuka isi resource-nya: JSON yang akan Anda baca dan tulis setiap hari. Mulai dari kerangka yang dimiliki semua resource, lalu Patient.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyebut bagian bersama setiap resource (<code>resourceType</code>, <code>id</code>, <code>meta</code>, <code>text</code>, <code>contained</code>, <code>extension</code>),
+  menerapkan aturan JSON FHIR (tanpa <code>null</code>, elemen berulang selalu array) dan membaca cardinality sebagai tipe TypeScript,
+  serta menjelaskan beda <code>id</code> dan <code>identifier</code> tanpa catatan.
+</div>
+
+<p class="note">
+  Semua JSON di lesson ini diadaptasi (dipendekkan) dari contoh resmi spesifikasi FHIR R4 (4.0.1); tautannya ada di setiap blok.
+  Tanpa lab: cukup baca, jawab kuis, lalu latihan lisan. Kuis di sini adalah feedback cepat; bukti penguasaan hanya dari review campuran 0012.
+</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. Kerangka setiap resource, dan aturan JSON-nya (±8 menit)</h2>
+<p>
+  Hampir semua resource diturunkan dari <strong>DomainResource</strong>, yang diturunkan dari <strong>Resource</strong>. Jadi setiap Patient, Encounter, atau Observation
+  punya bagian bersama yang sama, lalu elemen khasnya sendiri. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup>
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/domainresource.html">[7]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Property</th><th>Dari</th><th>Isi</th></tr></thead>
+  <tbody>
+    <tr><td><code>resourceType</code></td><td>JSON</td><td>nama tipe resource; di JSON jenis resource "is carried as the property resourceType" <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[4]</a></sup></td></tr>
+    <tr><td><code>id</code></td><td>Resource</td><td>logical id (bagian 2)</td></tr>
+    <tr><td><code>meta</code></td><td>Resource</td><td><code>versionId</code>, <code>lastUpdated</code>, <code>profile</code>, … (lesson 0007)</td></tr>
+    <tr><td><code>text</code></td><td>DomainResource</td><td>narrative XHTML untuk dibaca manusia</td></tr>
+    <tr><td><code>contained</code></td><td>DomainResource</td><td>resource lain yang disisipkan (lesson 0007)</td></tr>
+    <tr><td><code>extension</code>, <code>modifierExtension</code></td><td>DomainResource</td><td>data tambahan di luar definisi inti (lesson 0007)</td></tr>
+  </tbody>
+</table>
+<p>Aturan JSON yang paling sering menjebak developer JavaScript <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[4]</a></sup>:</p>
+<ul>
+  <li><strong>Tidak ada <code>null</code> dan tidak ada nilai kosong.</strong> "JSON objects and arrays are never empty, and properties never have null values ... Omit a property if it is empty." Di TypeScript, semua elemen opsional adalah <code>?:</code>, bukan <code>| null</code>.</li>
+  <li><strong>Elemen yang bisa berulang selalu array</strong>, walau isinya satu: "arrays are used when the item might repeat, even if it does not repeat in a specific instance". Nama array tetap tunggal (<code>name</code>, <code>identifier</code>, <code>coding</code>).</li>
+  <li>Urutan property tidak bermakna, tapi "order within an array SHALL be maintained". Parser juga tidak boleh menganggap <code>resourceType</code> selalu di depan.</li>
+  <li>Nama property case-sensitive.</li>
+</ul>
+<p>
+  Yang menentukan "selalu array" atau "objek tunggal" adalah <strong>cardinality</strong> di definisi resource: "the lower and upper bounds on how many times this element is allowed to appear".
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[3]</a></sup> Cara membacanya sebagai tipe TypeScript:
+</p>
+<table>
+  <thead><tr><th>Cardinality</th><th>Arti</th><th>Padanan TS</th><th>Contoh R4</th></tr></thead>
+  <tbody>
+    <tr><td><code>0..1</code></td><td>opsional, paling banyak satu</td><td><code>gender?: string</code></td><td><code>Patient.gender</code></td></tr>
+    <tr><td><code>1..1</code></td><td>wajib, tepat satu</td><td><code>status: string</code></td><td><code>Observation.status</code>, <code>Observation.code</code></td></tr>
+    <tr><td><code>0..*</code></td><td>opsional, boleh banyak</td><td><code>name?: HumanName[]</code></td><td><code>Patient.name</code>, <code>Patient.identifier</code></td></tr>
+    <tr><td><code>1..*</code></td><td>wajib, minimal satu</td><td><code>type: Coding[]</code> (non-empty)</td><td><code>Signature.type</code></td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Kardinalitas contoh: <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[5]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[6]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup>.
+  Di tabel definisi juga ada flag: <code>?!</code> = modifier element (mengubah makna elemen lain, mis. <code>Patient.active</code>, <code>Observation.status</code>) dan <code>Σ</code> = bagian dari summary. <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[3]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — JSON dan cardinality</h2>
+  <div class="quiz" data-bank-lesson="0004" data-bank-topic="res-json" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Patient: <code>id</code> vs <code>identifier</code> (±10 menit)</h2>
+<p>Patient adalah "Demographics and other administrative information about an individual or animal receiving care". <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[5]</a></sup> Potongan contoh resmi:
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/patient-example.html">[8]</a></sup></p>
+<pre><code>{
+  "resourceType": "Patient",
+  "id": "example",                          // logical id: dari server, bagian URL
+  "identifier": [{                          // business identifier: 0..*, selalu array
+    "use": "usual",
+    "type": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/v2-0203", "code": "MR" }] },
+    "system": "urn:oid:1.2.36.146.595.217.0.1",   // namespace: "siapa yang menjamin unik"
+    "value": "12345",                             // nomor rekam medis (MR)
+    "assigner": { "display": "Acme Healthcare" }
+  }],
+  "active": true,
+  "name": [
+    { "use": "official", "family": "Chalmers", "given": ["Peter", "James"] },
+    { "use": "usual", "given": ["Jim"] }
+  ],
+  "gender": "male",
+  "birthDate": "1974-12-25",
+  "deceasedBoolean": false,                 // choice type deceased[x] (lesson 0006)
+  "managingOrganization": { "reference": "Organization/1" }
+}</code></pre>
+<table>
+  <thead><tr><th></th><th><code>id</code> (logical id)</th><th><code>identifier</code> (business identifier)</th></tr></thead>
+  <tbody>
+    <tr><td>Siapa yang menetapkan</td><td>server yang menyimpan resource</td><td>organisasi/sistem dunia nyata (RS, negara, lab)</td></tr>
+    <tr><td>Bentuk</td><td>satu string, maks. 64 karakter <code>[A-Za-z0-9\-\.]</code></td><td>objek <code>system</code> + <code>value</code> (+ <code>use</code>, <code>type</code>, <code>period</code>, <code>assigner</code>), boleh banyak</td></tr>
+    <tr><td>Cakupan unik</td><td>per tipe resource, di server itu</td><td>di dalam <code>system</code>-nya</td></tr>
+    <tr><td>Berubah?</td><td>"Once assigned by the server, the id is never changed"; tapi bisa berbeda di server lain</td><td>tetap sama di semua salinan resource</td></tr>
+    <tr><td>Dipakai untuk</td><td>URL: <code>[base]/Patient/example</code>, Reference</td><td>mencocokkan entitas antar sistem; search <code>?identifier=system|value</code></td></tr>
+    <tr><td>Padanan</td><td>primary key (surrogate) di database Anda</td><td>natural key: nomor RM, NIK</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan dan aturan tabel: <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></p>
+<ul>
+  <li>Spesifikasi memberi contoh pasien yang sama di dua server, <code>Patient/23</code> dan <code>Patient/5860200e-…</code>, dengan identifier sama:
+    "Given that the identifier is the same, the patient resources are understood to mean that they describe the same patient." <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup></li>
+  <li><code>Identifier.value</code> "SHALL be unique within the defined system". <code>system</code> adalah URI namespace; kalau tidak ada system, "no useful matching may be performed using the value". <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[2]</a></sup></li>
+  <li>Logical id bersifat "opaque": jangan mem-parsing strukturnya. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource.html">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 2 — id atau identifier?</h2>
+  <div class="quiz" data-bank-lesson="0004" data-bank-topic="res-identifier" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Apa beda <code>id</code> dan <code>identifier</code> di resource FHIR? Bagaimana Observation menunjuk ke pasiennya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "<code>id</code> adalah logical id: ditetapkan server yang menyimpan resource, unik per tipe resource di server itu, tidak pernah berubah, dan membentuk URL-nya, misalnya <code>Patient/123</code>.
+      Kalau resource disalin ke server lain, id-nya bisa berbeda. <code>identifier</code> adalah business identifier, seperti nomor rekam medis atau NIK: pasangan <code>system</code> (URI namespace) + <code>value</code>, dan bisa banyak.
+      Dua resource dengan identifier sama dianggap entitas yang sama. Observation menunjuk pasien lewat Reference di <code>subject</code>: biasanya literal reference relatif <code>Patient/123</code>, opsional dengan <code>display</code> untuk UI.
+      Kalau URL-nya tidak diketahui, bisa logical reference lewat <code>subject.identifier</code>, tapi chaining dan <code>_include</code> tidak jalan.
+      Padanannya: id itu primary key database, identifier itu natural key, reference itu foreign key."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>id = logical id dari server, unik per tipe di server itu, tidak berubah?</li>
+      <li>id membentuk URL resource ([base]/Patient/123) dan bisa berbeda antar server?</li>
+      <li>identifier = business identifier (system + value), mis. nomor rekam medis/NIK, boleh banyak?</li>
+      <li>identifier sama = entitas dunia nyata yang sama, dipakai untuk mencocokkan antar sistem?</li>
+      <li>Reference relatif Patient/123 di subject, display hanya teks untuk ditampilkan?</li>
+      <li>logical reference lewat Reference.identifier bila URL tidak diketahui (tanpa chaining/_include)?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/anatomi-resource.html">Reference: Anatomi resource + datatype</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Resource dan datatype")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan Observation memakai <code>component</code> alih-alih beberapa Observation?", "bagaimana mengetik resource FHIR di TypeScript tanpa menulis semuanya sendiri?", atau "apa beda ValueSet dan CodeSystem?"</p>
+
+<p class="note sources">
+  Sumber (semua diakses 26 Oktober 2026):
+  <a href="https://hl7.org/fhir/R4/resource.html">[1] Resource</a> ·
+  <a href="https://hl7.org/fhir/R4/datatypes.html">[2] Data Types</a> ·
+  <a href="https://hl7.org/fhir/R4/formats.html">[3] Resource Formats</a> ·
+  <a href="https://hl7.org/fhir/R4/json.html">[4] JSON Representation</a> ·
+  <a href="https://hl7.org/fhir/R4/patient.html">[5] Patient</a> ·
+  <a href="https://hl7.org/fhir/R4/observation.html">[6] Observation</a> ·
+  <a href="https://hl7.org/fhir/R4/domainresource.html">[7] DomainResource</a> ·
+  <a href="https://hl7.org/fhir/R4/patient-example.html">[8] Contoh Patient</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0003-profile-extension-ig.html">← 0003 · Profile, Extension, IG</a>
+  <a href="0005-reference-dan-codeableconcept.html">0005 · Reference (Encounter); Observation: CodeableConcept vs Coding →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0004.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

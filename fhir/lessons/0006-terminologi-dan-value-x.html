@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FHIR 0006 · LOINC, SNOMED CT, ICD-10; choice type value[x]</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0006 · FHIR · Modul Resource · ±18 menit</div>
+  <h1>LOINC, SNOMED CT, ICD-10; choice type <code>value[x]</code></h1>
+  <p class="subtitle">Code system mana untuk apa, dan bagaimana satu elemen bisa punya beberapa tipe di JSON</p>
+</header>
+
+<p>Di <a href="0005-reference-dan-codeableconcept.html">lesson 0005</a> Anda melihat bahwa kode hanya bermakna bersama <code>system</code>-nya. Lesson ini memetakan code system yang paling sering muncul, lalu membahas <code>valueQuantity</code> dan kerabatnya: choice type <code>value[x]</code>.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyebut code system yang tepat untuk tes lab, konsep klinis, diagnosis, dan satuan (LOINC, SNOMED CT, ICD-10, UCUM) beserta URI <code>system</code>-nya,
+  serta membaca dan menulis choice type <code>value[x]</code> (<code>valueQuantity</code>, <code>valueCodeableConcept</code>, <code>effectivePeriod</code>) dengan benar.
+</div>
+
+<p class="note">
+  Semua JSON di lesson ini diadaptasi (dipendekkan) dari contoh resmi spesifikasi FHIR R4 (4.0.1); tautannya ada di setiap blok.
+  Tanpa lab: cukup baca, jawab kuis, lalu latihan lisan. Kuis di sini adalah feedback cepat; bukti penguasaan hanya dari review campuran 0012.
+</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. Terminologi: LOINC, SNOMED CT, ICD-10 (±8 menit)</h2>
+<table>
+  <thead><tr><th>Code system</th><th><code>system</code> di FHIR</th><th>Untuk apa</th><th>Contoh kode</th></tr></thead>
+  <tbody>
+    <tr><td>LOINC (Regenstrief Institute)</td><td><code>http://loinc.org</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/loinc.html">[6]</a></sup></td>
+      <td>nama observasi/tes: "The Observation.code is preferably a LOINC concept code." <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[5]</a></sup></td>
+      <td><code>15074-8</code> Glucose [Moles/volume] in Blood</td></tr>
+    <tr><td>SNOMED CT (SNOMED International)</td><td><code>http://snomed.info/sct</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/snomedct.html">[7]</a></sup></td>
+      <td>terminologi klinis luas: temuan, prosedur, alasan kunjungan, nilai berkode; "For non-numeric values, the Observation.value is preferably a SNOMED CT concept code." <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[5]</a></sup></td>
+      <td><code>260385009</code> Negative; <code>34068001</code> Heart valve replacement</td></tr>
+    <tr><td>ICD-10 (WHO)</td><td><code>http://hl7.org/fhir/sid/icd-10</code>; varian nasional mis. <code>…/icd-10-cm</code> <sup class="cite"><a href="https://hl7.org/fhir/R4/icd.html">[8]</a></sup></td>
+      <td>klasifikasi penyakit: dasar statistik morbiditas/mortalitas, dan datanya "support payment systems" <sup class="cite"><a href="https://www.who.int/standards/classifications/classification-of-diseases">[9]</a></sup></td>
+      <td><code>J21.8</code> (ditulis dengan titik)</td></tr>
+    <tr><td>UCUM</td><td><code>http://unitsofmeasure.org</code></td>
+      <td>satuan di Quantity: "If the unit can be coded in UCUM and a code is provided, it SHOULD be a UCUM code." <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[1]</a></sup></td>
+      <td><code>mmol/L</code>, <code>[lb_av]</code>, <code>min</code></td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Resource mengikat elemen berkode ke ValueSet dengan <strong>binding strength</strong>: <em>required</em> (SHALL dari value set itu), <em>extensible</em> (wajib dari value set kalau ada kode yang cocok), <em>preferred</em> (dianjurkan), <em>example</em> (hanya contoh). <sup class="cite"><a href="https://hl7.org/fhir/R4/terminologies.html">[2]</a></sup>
+    Contoh: <code>Observation.status</code> required; <code>Observation.code</code> hanya example binding ke LOINC; <code>Condition.code</code> example binding ke kode SNOMED CT. <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[5]</a></sup> Profile nasional (mis. SATUSEHAT, lesson 0023) biasanya memperketatnya.</li>
+  <li>Kode ICD ditulis dengan titik ("ICD codes SHALL be represented with the period included"), dan ICD-9 serta ICD-10 adalah code system terpisah. <sup class="cite"><a href="https://hl7.org/fhir/R4/icd.html">[8]</a></sup></li>
+  <li>Satu kalimat untuk interview: <em>LOINC menamai apa yang diukur, SNOMED CT menamai konsep klinisnya, ICD-10 mengelompokkan diagnosis untuk pelaporan dan klaim.</em></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Terminologi</h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="res-terminologi" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Choice type <code>value[x]</code> (±7 menit)</h2>
+<p>
+  Di definisi, <code>Observation.value[x]</code> bertipe <code>Quantity | CodeableConcept | string | boolean | integer | Range | Ratio | SampledData | time | dateTime | Period</code>
+  dan <code>effective[x]</code> bertipe <code>dateTime | Period | Timing | instant</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[5]</a></sup>
+  Di JSON, "[x] is replaced with the title-cased name of the type that is actually used", dan "Elements that have a choice of data type cannot repeat - they must have a maximum cardinality of 1."
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/formats.html">[3]</a></sup>
+</p>
+<pre><code>// Contoh resmi glukosa (f001): effective[x] = Period, value[x] = Quantity
+"effectivePeriod": { "start": "2013-04-02T09:30:10+01:00" },
+"valueQuantity": { "value": 6.3, "unit": "mmol/l", "system": "http://unitsofmeasure.org", "code": "mmol/L" }
+
+// Hasil berkode: value[x] = CodeableConcept (contoh dari halaman datatypes)
+"valueCodeableConcept": { "coding": [{ "system": "http://snomed.info/sct", "code": "260385009", "display": "Negative" }],
+                          "text": "Negative for Chlamydia Trachomatis rRNA" }
+
+// Patient: deceased[x] = boolean atau dateTime
+"deceasedBoolean": false</code></pre>
+<p class="note">Sumber contoh: <sup class="cite"><a href="https://hl7.org/fhir/R4/observation-example-f001-glucose.html">[10]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/datatypes.html">[1]</a></sup> <sup class="cite"><a href="https://hl7.org/fhir/R4/patient-example.html">[11]</a></sup></p>
+<pre><code>// Padanan TS: union yang diskriminatornya NAMA property, bukan field "type".
+type ObservationValue =
+  | { valueQuantity: Quantity }
+  | { valueCodeableConcept: CodeableConcept }
+  | { valueString: string };          // ... dan seterusnya; paling banyak satu yang ada
+
+function showValue(o: Observation): string {
+  if (o.valueQuantity) return `${o.valueQuantity.value} ${o.valueQuantity.unit ?? o.valueQuantity.code ?? ""}`;
+  if (o.valueCodeableConcept) return label(o.valueCodeableConcept);
+  if (o.valueString !== undefined) return o.valueString;
+  return o.dataAbsentReason ? label(o.dataAbsentReason) : "-";   // value bisa absen
+}</code></pre>
+<p>
+  Kalau nilai tidak ada, Observation memakai <code>dataAbsentReason</code>, dan aturannya "dataAbsentReason SHALL only be present if Observation.value[x] is not present".
+  <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[5]</a></sup>
+  Catatan angka: <code>JSON.parse</code> mengubah <code>2.00</code> menjadi <code>2</code>, padahal presisi <code>decimal</code> FHIR penting secara klinis; dibahas di lesson 0016. <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[4]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — <code>value[x]</code></h2>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="res-choice" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Sistem lab kami mengirim hasil glukosa darah dan diagnosis pasien ke server FHIR. Code system apa yang Anda pakai untuk masing-masing, dan bagaimana menuliskannya di JSON?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Apa yang diukur saya tulis di <code>Observation.code</code> dengan LOINC, <code>system</code> <code>http://loinc.org</code>, misalnya <code>15074-8</code> untuk glukosa darah; spesifikasi menyebut <code>Observation.code</code> preferably LOINC. Hasil angkanya di <code>valueQuantity</code> dengan satuan UCUM, <code>system</code> <code>http://unitsofmeasure.org</code>, kode <code>mmol/L</code>. Kalau hasilnya berkode, misalnya Negative, <code>value[x]</code> menjadi <code>valueCodeableConcept</code> dengan SNOMED CT, <code>http://snomed.info/sct</code>. Diagnosis untuk pelaporan dan klaim memakai ICD-10, <code>system</code> <code>http://hl7.org/fhir/sid/icd-10</code>, dan kodenya ditulis dengan titik, seperti <code>J21.8</code>; SNOMED CT menamai konsep klinisnya. Setiap kode selalu saya tulis berpasangan dengan <code>system</code>-nya. Di spesifikasi inti, binding <code>Observation.code</code> dan <code>Condition.code</code> hanya example, jadi profile nasional seperti SATUSEHAT biasanya memperketatnya; itu yang saya cek dulu."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Observation.code memakai LOINC (system http://loinc.org), mis. 15074-8 untuk glukosa darah?</li>
+      <li>hasil angka di valueQuantity dengan satuan UCUM (system http://unitsofmeasure.org)?</li>
+      <li>hasil berkode di valueCodeableConcept dengan SNOMED CT (system http://snomed.info/sct)?</li>
+      <li>diagnosis untuk pelaporan/klaim memakai ICD-10 (system http://hl7.org/fhir/sid/icd-10), kode ditulis dengan titik?</li>
+      <li>kode selalu ditulis berpasangan dengan system-nya?</li>
+      <li>binding Observation.code/Condition.code di spesifikasi inti hanya example; profile nasional (mis. SATUSEHAT) biasanya memperketatnya?</li>
+    </ul>
+    <p class="note">Semua poin dari bagian 1 dan 2 lesson ini; pasangan <code>system</code> + <code>code</code>: "coded values are always treated as a pair composed of 'system' and 'code'". <sup class="cite"><a href="https://hl7.org/fhir/R4/terminologies.html">[2]</a></sup> Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Ringkasan untuk dicetak: <a href="../reference/anatomi-resource.html">Reference: Anatomi resource + datatype</a> · Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Resource dan datatype")</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan Observation memakai <code>component</code> alih-alih beberapa Observation?", "bagaimana mengetik resource FHIR di TypeScript tanpa menulis semuanya sendiri?", atau "apa beda ValueSet dan CodeSystem?"</p>
+
+<p class="note sources">
+  Sumber (semua diakses 26 Oktober 2026):
+  <a href="https://hl7.org/fhir/R4/datatypes.html">[1] Data Types</a> ·
+  <a href="https://hl7.org/fhir/R4/terminologies.html">[2] Using Codes in Resources</a> ·
+  <a href="https://hl7.org/fhir/R4/formats.html">[3] Resource Formats</a> ·
+  <a href="https://hl7.org/fhir/R4/json.html">[4] JSON Representation</a> ·
+  <a href="https://hl7.org/fhir/R4/observation.html">[5] Observation</a> ·
+  <a href="https://hl7.org/fhir/R4/loinc.html">[6] Using LOINC with FHIR</a> ·
+  <a href="https://hl7.org/fhir/R4/snomedct.html">[7] Using SNOMED CT with FHIR</a> ·
+  <a href="https://hl7.org/fhir/R4/icd.html">[8] Using ICD-[X] with FHIR</a> ·
+  <a href="https://www.who.int/standards/classifications/classification-of-diseases">[9] WHO: International Classification of Diseases</a> ·
+  <a href="https://hl7.org/fhir/R4/observation-example-f001-glucose.html">[10] Contoh Observation f001 (glukosa)</a> ·
+  <a href="https://hl7.org/fhir/R4/patient-example.html">[11] Contoh Patient</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0005-reference-dan-codeableconcept.html">← 0005 · Reference (Encounter); Observation: CodeableConcept vs Coding</a>
+  <a href="0007-meta-contained-extension.html">0007 · meta, contained, extension; membaca resource utuh →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

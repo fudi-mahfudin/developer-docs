@@ -1,0 +1,136 @@
+// Soal lesson 0023 (track FHIR, modul SATUSEHAT): validasi terhadap profile, terminologi standar SATUSEHAT,
+// dan mapping data legacy -> FHIR (kode lokal -> terminologi standar, ConceptMap secara konsep).
+// Dipecah dari bank lama 0006 bagian 1; slug topik tidak berubah. Review 0027 menarik soal file ini lewat review.js.
+// Sumber: dokumentasi SATUSEHAT Platform (satusehat.kemkes.go.id/platform/docs, diakses 2026-10-26),
+// FHIR R4 validation.html, profiling.html, conceptmap.html, resource-operation-validate.html, conceptmap-operation-translate.html.
+QuestionBank.labelTopics({
+  "ss-validasi": "Validasi terhadap profile dan OperationOutcome",
+  "ss-terminologi": "SATUSEHAT: terminologi standar (ICD-10, ICD-9 CM, LOINC, SNOMED CT, KFA)",
+  "ss-mapping": "Mapping data legacy ke FHIR dan ConceptMap",
+});
+
+// Urutan registrasi diselang-seling antar topik; posisi jawaban bervariasi dan tidak berulang berturut-turut.
+QuestionBank.register([
+  {
+    id: "0023-01", lesson: "0023", topic: "ss-validasi", type: "mc",
+    prompt: "Apa saja yang diperiksa saat <strong>validasi resource</strong> FHIR (R4 validation.html)?",
+    options: {
+      a: "Hanya bentuk JSON, karena aturan lain dicek oleh database",
+      b: "Hanya tanda tangan digital dan masa berlaku access token",
+      c: "Struktur, cardinality, nilai, binding kode, invariant, dan aturan profile",
+      d: "Hanya kecepatan respons server dan ukuran payload yang dikirim",
+    },
+    answer: "c",
+    explain: "R4 validation.html: structure, cardinality, value domains, Coding/CodeableConcept bindings, invariants, profiles (termasuk <code>meta.profile</code> atau yang diwajibkan konteks), questionnaires, dan business rules (duplikat, reference yang resolve, otorisasi), yang terakhir dibuat di luar spesifikasi.",
+  },
+  {
+    id: "0023-02", lesson: "0023", topic: "ss-mapping", type: "mc",
+    prompt: "SIMRS lama menyimpan diagnosis sebagai kode internal <code>DX-017</code>. Langkah mapping yang tepat?",
+    options: {
+      a: "Kirim <code>DX-017</code> apa adanya tanpa <code>system</code> di dalam Coding",
+      b: "Petakan ke ICD-10 lewat tabel mapping, simpan kode asal",
+      c: "Ganti <code>Condition.code</code> dengan <code>extension</code> berisi teks diagnosis yang bebas",
+      d: "Hapus diagnosis yang tidak bisa dipetakan supaya validasi lolos",
+    },
+    answer: "b",
+    explain: "SATUSEHAT memakai ICD-10 (versi 2010) untuk <code>Condition.code</code> dan memvalidasi kode terminologi. Kode lokal dipetakan ke kode standar (secara formal: ConceptMap); kode asal boleh tetap dibawa sebagai Coding tambahan dengan <code>system</code> lokal di CodeableConcept yang sama. Data yang belum terpetakan masuk antrean review, bukan dibuang diam-diam.",
+  },
+  {
+    id: "0023-03", lesson: "0023", topic: "ss-terminologi", type: "mc",
+    prompt: "Di SATUSEHAT, kode obat pada <code>Medication.code</code> memakai code system apa?",
+    options: {
+      a: "KFA (Kamus Farmasi dan Alat Kesehatan) dari Kemenkes",
+      b: "LOINC, karena obat termasuk hasil pemeriksaan laboratorium klinis",
+      c: "ICD-10 karena semua kode klinis harus berbasis WHO",
+      d: "Kode internal apotek, karena tidak ada standar nasional",
+    },
+    answer: "a",
+    explain: "Dokumentasi resource Medication SATUSEHAT: <code>Medication.code.coding</code> mengacu ke Kamus Farmasi dan Alat Kesehatan (KFA), contoh <code>\"system\": \"http://sys-ids.kemkes.go.id/kfa\"</code>. LOINC dipakai untuk penamaan uji laboratorium, ICD-10 untuk diagnosis.",
+  },
+  {
+    id: "0023-04", lesson: "0023", topic: "ss-validasi", type: "mc",
+    prompt: "Client memanggil <code>POST [base]/Patient/$validate</code> dan menerima <code>200 OK</code>. Artinya?",
+    options: {
+      a: "Resource sudah tersimpan dan mendapat logical id dari server",
+      b: "Resource pasti valid, jadi OperationOutcome tidak perlu dibaca lagi",
+      c: "Validasi sudah dijalankan; valid atau tidak, lihat isi OperationOutcome",
+      d: "Server menolak validasi karena profile yang diminta tidak dikenal",
+    },
+    answer: "c",
+    explain: "R4 <code>$validate</code>: \"This operation returns a 200 OK whether or not the resource is valid\"; 4xx/5xx berarti validasinya sendiri tidak bisa dijalankan. Hasilnya OperationOutcome; tanpa error berarti lolos. Operasi ini tidak menyimpan resource.",
+  },
+  {
+    id: "0023-05", lesson: "0023", topic: "ss-mapping", type: "mc",
+    prompt: "Pernyataan mana yang benar tentang resource <strong>ConceptMap</strong> di FHIR R4?",
+    options: {
+      a: "Mapping berlaku dua arah, jadi kebalikannya selalu otomatis ikut benar",
+      b: "ConceptMap mengubah struktur JSON resource seperti sebuah skrip transformasi data",
+      c: "ConceptMap wajib dirujuk dari setiap Coding yang memakai kode lokal",
+      d: "Mapping satu arah, terikat konteks, dan setiap target punya equivalence",
+    },
+    answer: "d",
+    explain: "R4 conceptmap.html: \"Mappings are one way - from the source to the target system\", hanya bermakna dalam konteks bisnis tertentu, dan setiap mapping punya <code>equivalence</code> (mis. equivalent, wider, narrower, inexact, unmatched). Transformasi struktur adalah tugas StructureMap; ConceptMap tidak dirujuk langsung dari resource lain.",
+  },
+  {
+    id: "0023-06", lesson: "0023", topic: "ss-mapping", type: "mc",
+    prompt: "SIMRS menyimpan jam kunjungan <code>2026-10-26 17:35</code> (WIB) tanpa zona waktu. Apa yang dikirim?",
+    options: {
+      a: "<code>2026-10-26T10:35:00+00:00</code>, dikonversi ke UTC sesuai panduan resmi",
+      b: "<code>2026-10-26T17:35:00</code> tanpa offset supaya sama dengan SIMRS",
+      c: "<code>2026-10-26</code> saja, karena jam kunjungan tidak penting",
+      d: "<code>17:35 WIB</code> sebagai string bebas di <code>extension</code>",
+    },
+    answer: "a",
+    explain: "Dokumentasi SATUSEHAT: \"Standar format Waktu yang digunakan dalam pengiriman data adalah UTC +00\"; WIB dikurangi 7 jam, WITA 8, WIT 9 (contoh resmi: 17.35 WIB → <code>…T10:35:00+00:00</code>). Datetime tanpa zona waktu adalah jebakan klasik saat mapping data legacy.",
+  },
+  {
+    id: "0023-07", lesson: "0023", topic: "ss-validasi", type: "mc",
+    prompt: "SATUSEHAT menolak POST Condition dengan 4xx. Body responsnya biasanya berupa apa?",
+    options: {
+      a: "Halaman HTML error dari API gateway tanpa detail",
+      b: "Bundle <code>transaction-response</code> berisi status semua resource yang lain",
+      c: "String teks polos berisi kode error internal server",
+      d: "OperationOutcome berisi <code>issue</code> dengan severity, code, dan expression",
+    },
+    answer: "d",
+    explain: "Halaman Validasi Interoperabilitas SATUSEHAT: response 4xx berisi <code>resourceType: \"OperationOutcome\"</code> dengan <code>issue[]</code> (<code>severity</code>, <code>code</code> seperti <code>duplicate</code>/<code>format</code>/<code>value</code>, <code>details.text</code>, <code>expression</code> = resource dan field). Simpan dan tampilkan, jangan hanya log status code.",
+  },
+  {
+    id: "0023-08", lesson: "0023", topic: "ss-terminologi", type: "mc",
+    prompt: "Untuk penamaan <strong>prosedur dan tindakan medis</strong>, SATUSEHAT memakai standar apa?",
+    options: {
+      a: "LOINC, karena semua tindakan menghasilkan hasil laboratorium",
+      b: "ICD-9 CM, standar penamaan prosedur dan tindakan",
+      c: "KFA, karena tindakan medis selalu membutuhkan obat",
+      d: "UCUM, karena tindakan medis diukur dengan satuan",
+    },
+    answer: "b",
+    explain: "Halaman Terminologi SATUSEHAT: ICD-10 (versi 2010) untuk diagnosis, ICD-9 CM (versi 2010) untuk prosedur dan tindakan medis, LOINC untuk penamaan uji laboratorium, SNOMED CT untuk istilah klinis. Kode obat memakai KFA.",
+  },
+  {
+    id: "0023-oral-1", lesson: "0023", topic: "ss-mapping", type: "oral",
+    prompt: "\"Rumah sakit kami punya SIMRS lama dengan tabel <code>pasien</code>, <code>kunjungan</code>, <code>diagnosa</code>, dan kode lokal. Bagaimana Anda memetakannya ke FHIR untuk dikirim ke SATUSEHAT?\" (90 detik)",
+    sample: "Saya mulai dari profile target, bukan dari tabel: IG SATUSEHAT dan panduan use case menentukan elemen wajib dan terminologinya. Lalu saya buat peta tabel ke resource: <code>pasien</code> → Patient (cari nomor IHS lewat NIK, simpan di tabel kita), <code>kunjungan</code> → Encounter dengan identifier <code>http://sys-ids.kemkes.go.id/encounter/{id-organisasi}</code> + nomor kunjungan lokal, <code>diagnosa</code> → Condition yang merujuk Encounter dan Patient. Kode lokal dipetakan ke terminologi standar: diagnosis ke ICD-10, lab ke LOINC, obat ke KFA. Secara konsep itu ConceptMap: satu arah, per konteks, dan tiap pasangan punya equivalence; kode yang tidak cocok masuk antrean review oleh coder, tidak dibuang. Saya juga normalisasi format: waktu ke UTC, gender ke <code>male</code>/<code>female</code>. Sebelum kirim, validasi terhadap profile di sandbox; hasil OperationOutcome disimpan per record supaya bisa diperbaiki dan dikirim ulang secara idempoten berdasarkan identifier.",
+    checklist: [
+      "mulai dari profile/IG dan panduan use case (elemen wajib, terminologi)",
+      "tabel → resource: pasien → Patient (nomor IHS via NIK), kunjungan → Encounter, diagnosa → Condition",
+      "identifier lokal dengan system per organisasi, Reference antar resource",
+      "kode lokal → ICD-10/LOINC/KFA; ConceptMap satu arah dengan equivalence",
+      "kode tak terpetakan → antrean review; normalisasi format (UTC, gender)",
+      "validasi di sandbox, simpan OperationOutcome, kirim ulang idempoten",
+    ],
+  },
+  {
+    id: "0023-oral-2", lesson: "0023", topic: "ss-validasi", type: "oral",
+    prompt: "\"Apa artinya resource 'valid terhadap profile'? Di mana Anda menjalankan validasi di pipeline integrasi kami?\" (60 detik)",
+    sample: "Valid berarti lolos struktur, cardinality, tipe nilai, binding kode, invariant, dan aturan profile: profile adalah StructureDefinition yang mempersempit resource dasar, misalnya mewajibkan identifier atau mengikat kode ke ICD-10. Resource bisa mengklaim profile lewat <code>meta.profile</code>, dan server bisa memeriksanya, misalnya lewat <code>$validate</code> yang mengembalikan OperationOutcome, 200 baik valid maupun tidak. Business rule seperti duplikat dan reference yang resolve ada di luar spesifikasi. Di pipeline: validasi sedini mungkin di sisi kami dan di sandbox saat development, lalu di production kami tetap menangani OperationOutcome dari server. Spesifikasi sendiri mengingatkan validasi penuh dengan terminologi itu mahal dan bisa membuang data klinis karena satu field buruk, jadi kami tidak membuang record: yang gagal disimpan dengan pesan error untuk diperbaiki. Prinsipnya Postel's law: ketat saat mengirim, toleran saat menerima.",
+    checklist: [
+      "aspek validasi: struktur, cardinality, nilai, binding kode, invariant, profile",
+      "profile = StructureDefinition yang mempersempit resource; klaim lewat meta.profile",
+      "$validate mengembalikan OperationOutcome (200 walau tidak valid)",
+      "business rule (duplikat, reference) di luar spesifikasi",
+      "validasi di development/sandbox; production: biaya dan risiko kehilangan data",
+      "record gagal disimpan untuk diperbaiki; Postel's law",
+    ],
+  },
+]);

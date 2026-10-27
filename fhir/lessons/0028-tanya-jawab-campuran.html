@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0028 · Bank tanya-jawab interview campuran</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0028 · FHIR · Penutup · ±20 menit</div>
+  <h1>Bank tanya-jawab interview campuran</h1>
+  <p class="subtitle">Pertanyaan interview nyata jarang berhenti di satu modul: desain integrasi, SMART, Bulk Data, REST, dan SATUSEHAT dicampur.</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan desain yang mencampur beberapa modul dalam batas waktunya (60 detik–2 menit), dan memenuhi minimal 4 dari 6 poin checklist di setiap soal yang Anda pilih.
+</div>
+
+<h2>Enam pertanyaan campuran</h2>
+<p>
+  Pertanyaan interview nyata jarang berhenti di satu lesson. Enam soal di bawah sengaja mencampur topik (desain integrasi, SMART, Bulk Data, REST, SATUSEHAT).
+  Pilih minimal tiga secara acak (lempar dadu), jawab dengan suara keras dalam batas waktunya, lalu buka checklist. Timer ini menempel di atas layar saat Anda menggulir.
+</p>
+<div class="timer" data-segments="Tanya-jawab:20"></div>
+
+<blockquote>1. "Kami perlu mengirim data kunjungan rawat jalan dari SIMRS ke SATUSEHAT setiap hari. Rancang service Node-nya." (2 menit)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Saya pisahkan menjadi job terjadwal yang mengambil kunjungan baru dari SIMRS, mengubahnya ke resource FHIR, lalu mengirim lewat antrean, misalnya BullMQ, supaya ada retry dan backoff.
+    Token client credentials di-cache sampai mendekati <code>expires_in</code>. Prasyarat seperti nomor IHS Patient dan Practitioner diambil sekali lalu disimpan di tabel mapping.
+    Setiap record punya identifier lokal dengan <code>system</code> organisasi, jadi pengiriman ulang tidak membuat duplikat; secara FHIR umum ini conditional create dengan <code>If-None-Exist</code>, dan SATUSEHAT juga menolak duplikat dengan issue <code>duplicate</code>.
+    Respons sukses menyimpan id dari server untuk reference berikutnya; OperationOutcome gagal disimpan per record untuk diperbaiki. Data pasien adalah PHI: tidak masuk log biasa, secret di secret manager, dan ada audit siapa mengirim apa."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>job terjadwal + antrean dengan retry/backoff?</li>
+    <li>token di-cache, secret di server (bukan di React)?</li>
+    <li>prasyarat (nomor IHS Patient/Practitioner, Organization/Location) disimpan sebagai mapping?</li>
+    <li>idempoten lewat identifier (conditional create / penolakan duplikat)?</li>
+    <li>OperationOutcome per record disimpan untuk koreksi dan kirim ulang?</li>
+    <li>PHI: tidak di log biasa, audit akses?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0010-bundle-dan-versioning.html">0010</a> (conditional create), <a href="0011-operationoutcome-dan-capability.html">0011</a> (OperationOutcome), <a href="0020-fhirclient-dan-keamanan-token.html">0020</a> (PHI, audit), <a href="0022-satusehat-platform-dan-identitas.html">0022</a> (token, prasyarat, nomor IHS).</p>
+</details>
+
+<blockquote>2. "Ceritakan perjalanan data dari klik di EHR sampai React menampilkan daftar tanda vital pasien." (90 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "EHR membuka launch URL app dengan <code>iss</code> dan <code>launch</code>. App melakukan discovery di <code>.well-known/smart-configuration</code>, redirect ke authorize dengan PKCE, <code>state</code>, <code>aud</code>, dan scope <code>launch patient/Observation.rs</code>, lalu menukar code dan mendapat token plus <code>patient</code>.
+    Lalu search <code>GET Observation?patient=123&amp;category=vital-signs&amp;_sort=-date&amp;_count=50</code>; hasilnya Bundle <code>searchset</code>, dan halaman berikutnya diambil dari <code>link</code> relation <code>next</code>, bukan URL buatan sendiri.
+    Di React, label diambil dari <code>code.text</code>, lalu <code>display</code>, baru kode mentah; nilai dari <code>valueQuantity</code> dengan satuan UCUM, dan angka <code>decimal</code> dijaga presisinya."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>EHR launch: <code>iss</code> + <code>launch</code>, discovery?</li>
+    <li>authorization code + PKCE, scope <code>patient/Observation.rs</code>, konteks <code>patient</code>?</li>
+    <li>search dengan parameter (patient, category/code, sort, <code>_count</code>)?</li>
+    <li>Bundle <code>searchset</code> + paging lewat <code>link</code> <code>next</code>?</li>
+    <li>CodeableConcept ditampilkan dari <code>text</code>/<code>display</code>, bukan kode mentah?</li>
+    <li><code>valueQuantity</code>/UCUM atau presisi <code>decimal</code>?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0017-smart-peta-dan-launch.html">0017</a>, <a href="0018-pkce.html">0018</a>, <a href="0008-crud-dan-search.html">0008</a>, <a href="0009-include-dan-paging.html">0009</a>, <a href="0020-fhirclient-dan-keamanan-token.html">0020</a>, <a href="0016-decimal-di-javascript.html">0016</a>.</p>
+</details>
+
+<blockquote>3. "Tim data minta salinan semua Observation tiap malam untuk warehouse. Bagaimana Anda melakukannya?" (90 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Bukan search biasa, tapi Bulk Data <code>$export</code> dengan <code>_type=Observation</code>. Autentikasinya SMART Backend Services: JWT assertion, scope <code>system/Observation.rs</code>.
+    Kick-off dengan <code>Prefer: respond-async</code>, dapat 202 dan <code>Content-Location</code>, polling mengikuti <code>Retry-After</code> sampai 200 dengan manifest berisi URL file NDJSON.
+    Setiap file diproses streaming baris per baris dengan <code>readline</code> atau <code>pipeline</code>, insert ke database per batch dengan backpressure, tidak pernah <code>JSON.parse</code> satu file utuh.
+    Malam berikutnya pakai <code>_since</code> = <code>transactionTime</code> dari manifest sebelumnya supaya inkremental."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li><code>$export</code> (bukan search), dengan <code>_type</code>?</li>
+    <li>Backend Services + scope <code>system/</code>?</li>
+    <li>kick-off → 202 → polling (<code>Retry-After</code>) → manifest?</li>
+    <li>NDJSON diproses streaming per baris, batch insert?</li>
+    <li>backpressure / tidak <code>JSON.parse</code> file utuh?</li>
+    <li>inkremental dengan <code>_since</code> = <code>transactionTime</code>?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0013-export-dan-alur-async.html">0013</a>–<a href="0015-streaming-dan-backpressure.html">0015</a>, <a href="0019-scopes-dan-backend-services.html">0019</a>.</p>
+</details>
+
+<blockquote>4. "Satu kunjungan menghasilkan Encounter, dua Condition, dan lima Observation. Bagaimana mengirimnya supaya tidak setengah tersimpan?" (60 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Di FHIR umum, Bundle <code>transaction</code> ke <code>POST [base]</code>: atomik, semua berhasil atau semua gagal. Encounter diberi <code>fullUrl</code> <code>urn:uuid:…</code> dan Condition/Observation merujuk ke urn itu; server mengganti reference dengan id asli.
+    <code>batch</code> tidak cocok karena setiap entry independen dan tidak boleh saling merujuk. Untuk retry aman, setiap entry memakai conditional create berdasarkan identifier.
+    Untuk SATUSEHAT khususnya, panduan IGD menyebut beberapa resource dikirim bersamaan memakai bundle; detail tipe Bundle dan aturan atomiknya perlu saya cek lagi di panduan use case."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>Bundle <code>transaction</code>, atomik?</li>
+    <li><code>fullUrl</code> <code>urn:uuid:</code> untuk saling merujuk?</li>
+    <li>kenapa bukan <code>batch</code> (independen, tanpa ketergantungan)?</li>
+    <li>conditional create / identifier untuk retry idempoten?</li>
+    <li>respons <code>transaction-response</code> berisi lokasi/id per entry?</li>
+    <li>jujur tentang detail SATUSEHAT yang perlu dicek di panduan?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0010-bundle-dan-versioning.html">0010</a>. Dukungan Bundle di SATUSEHAT: panduan interoperabilitas IGD menyebut Medication dan MedicationDispense "dikirimkan secara bersamaan menggunakan bundle" <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/interoperability/igd/">[1]</a></sup>; tipe Bundle dan perilaku atomiknya <strong>belum terverifikasi (diakses 2026-10-26)</strong>.</p>
+</details>
+
+<blockquote>5. "Pasien yang sama terdaftar di tiga sistem dengan nomor berbeda. Bagaimana FHIR membantu, dan apa jebakannya?" (60 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "Logical <code>id</code> berbeda di setiap server dan tidak boleh dipakai sebagai identitas lintas sistem. Yang dipakai adalah <code>identifier</code>: pasangan <code>system</code> + <code>value</code>, misalnya NIK dengan system <code>https://fhir.kemkes.go.id/id/nik</code>, plus nomor rekam medis per rumah sakit dengan system masing-masing.
+    Satu Patient boleh punya banyak identifier. Search memakai token <code>identifier=system|value</code>, dan create memakai conditional create supaya tidak dobel.
+    Di Indonesia, MPI SATUSEHAT memberi nomor IHS setelah verifikasi NIK ke DUKCAPIL. Jebakannya: pasien tanpa NIK, misalnya bayi, punya alur sendiri, dan <code>value</code> tanpa <code>system</code> tidak bermakna."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li><code>id</code> vs <code>identifier</code> (id lokal per server)?</li>
+    <li><code>system</code> + <code>value</code>, beberapa identifier per Patient?</li>
+    <li>search token <code>identifier=system|value</code>?</li>
+    <li>conditional create untuk mencegah duplikat?</li>
+    <li>MPI/nomor IHS, verifikasi NIK ke DUKCAPIL?</li>
+    <li>jebakan: pasien tanpa NIK, value tanpa system?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0004-kerangka-json-dan-identifier.html">0004</a>, <a href="0008-crud-dan-search.html">0008</a>, <a href="0010-bundle-dan-versioning.html">0010</a>, <a href="0022-satusehat-platform-dan-identitas.html">0022</a>. Alur pasien tanpa NIK dan bayi ada di menu MPI dokumentasi SATUSEHAT (<code>pasien-bayi</code>, <code>pasien-no-nik</code>) dan tidak dibahas di track ini.</p>
+</details>
+
+<blockquote>6. "Kenapa kami memakai FHIR R4, bukan R5? Dan apa itu profile SATUSEHAT?" (60 detik)</blockquote>
+<details>
+  <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+  <p>
+    "R4 adalah rilis pertama yang memuat konten Normative, jadi bagian intinya stabil dan dijaga kompatibilitasnya; R5 masih Trial Use. Ekosistem IG besar dibangun di atas R4, dan SATUSEHAT juga: base URL-nya <code>fhir-r4</code> dan IG-nya SATUSEHAT FHIR R4 Implementation Guide.
+    Profile adalah StructureDefinition yang mempersempit resource dasar untuk konteks tertentu: elemen wajib, cardinality, binding terminologi seperti ICD-10 dan LOINC, serta extension Indonesia seperti kode wilayah administratif.
+    Resource bisa mengklaim profile di <code>meta.profile</code>, dan validator memeriksa aturan itu."
+  </p>
+  <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+  <ul>
+    <li>R4 = konten Normative pertama; R5 Trial Use?</li>
+    <li>IG nasional dibangun di atas R4, termasuk SATUSEHAT?</li>
+    <li>profile = StructureDefinition berisi constraint?</li>
+    <li>contoh constraint: elemen wajib, binding terminologi?</li>
+    <li>extension untuk data lokal (mis. kode wilayah)?</li>
+    <li><code>meta.profile</code> + validasi?</li>
+  </ul>
+  <p class="note">Lulus kalau minimal 4 dari 6. Sumber: <a href="0002-resource-dan-versi.html">0002</a>, <a href="0003-profile-extension-ig.html">0003</a>, <a href="0022-satusehat-platform-dan-identitas.html">0022</a>, <a href="0023-satusehat-validasi-dan-mapping.html">0023</a>.</p>
+</details>
+
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> · Cheat sheet: <a href="../reference/anatomi-resource.html">anatomi resource</a>, <a href="../reference/rest-search-bundle.html">REST, search, Bundle</a>, <a href="../reference/pdp-monitoring.html">PDP dan monitoring</a></p>
+
+<p class="ask">Jawaban yang menurut Anda benar tapi tidak cocok dengan checklist? Tanyakan ke saya (agent) di terminal. Untuk pertanyaan implementasi SATUSEHAT yang tidak terjawab dokumentasi, kanal resminya adalah <a href="https://faq.kemkes.go.id/category/satusehat-platform">FAQ SATUSEHAT Platform</a>; untuk interpretasi spesifikasi FHIR, <a href="https://chat.fhir.org/">chat.fhir.org</a>.</p>
+
+<p class="note">Skor latihan ini hanya catatan, bukan bukti penguasaan. Bukti penguasaan dari review 0012, 0021, dan 0027.</p>
+
+<p class="note sources">
+  Sumber (diakses 2026-10-26):
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/interoperability/igd/">[1] SATUSEHAT: Panduan Interoperabilitas Pelayanan IGD</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0027-review-smart-satusehat-pdp.html">← 0027 · Review 3: SMART + SATUSEHAT + PDP + topik lemah</a>
+  <a href="0029-star-health-tech.html">0029 · Reframe 4 cerita STAR ke konteks health-tech →</a>
+</nav>
+
+</main>
+<script src="../../assets/timer.js"></script>
+</body>
+</html>

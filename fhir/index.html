@@ -21,13 +21,13 @@
 <main>
 
 <header class="lesson-head">
-  <div class="kicker">Indeks · 7 lesson · 1 hari + malam sebelum interview</div>
+  <div class="kicker">Indeks · 29 lesson · ±20 menit per lesson · self-paced</div>
   <h1>Persiapan interview FHIR untuk developer JavaScript</h1>
   <p class="subtitle">Fullstack Node.js + React di perusahaan health-tech. Konsep untuk interview, tanpa implementasi. Rencana: <a href="ROADMAP.md">ROADMAP</a> · Tujuan: <a href="MISSION.md">MISSION</a></p>
 </header>
 
 <p class="note">
-  Hanya hasil review campuran 0006 yang dicatat sebagai bukti penguasaan. Kuis di lesson 0001–0005 dan 0007 adalah feedback cepat.
+  Hanya hasil review 0012, 0021, dan 0027 yang dicatat sebagai bukti penguasaan. Kuis di lesson lain adalah feedback cepat.
   Track ini terpisah dari <a href="../dotnet/index.html">track .NET 8 + Angular 16</a>.
 </p>
 
@@ -35,30 +35,119 @@
   Cara mengubah status: ganti SATU baris <li> lesson Anda saja.
     segera   : <li class="segera"><span class="num">NNNN</span><span class="title">Judul</span></li>
     tersedia : <li class="tersedia"><span class="num">NNNN</span><a class="title" href="lessons/NNNN-slug.html">Judul</a></li>
-  Pertahankan class "seam" untuk 0006. Biarkan baris kosong di antara <li> supaya branch paralel tidak bentrok saat merge.
+  Pertahankan class "seam" untuk 0012, 0021, 0027. Biarkan baris kosong di antara <li> supaya branch paralel tidak bentrok saat merge.
 -->
 
-<h2>Hari FHIR · 6–8 jam</h2>
+<h2>Modul 1 · Fondasi</h2>
 <ol class="lessons">
 
-<li class="tersedia"><span class="num">0001</span><a class="title" href="lessons/0001-fondasi-fhir.html">Fondasi FHIR: HL7 v2 → FHIR, Resource, R4 vs R5, maturity, Profile/Extension/IG</a></li>
+<li class="tersedia"><span class="num">0001</span><a class="title" href="lessons/0001-v2-ke-fhir-rest-json.html">Dari HL7 v2 ke FHIR, dan kenapa REST + JSON</a></li>
 
-<li class="tersedia"><span class="num">0002</span><a class="title" href="lessons/0002-anatomi-resource-json.html">Anatomi resource JSON: Patient, Encounter, Observation, Identifier, Reference, CodeableConcept, terminologi</a></li>
+<li class="tersedia"><span class="num">0002</span><a class="title" href="lessons/0002-resource-dan-versi.html">Resource vs datatype; R4 vs R5, Normative, maturity (FMM)</a></li>
 
-<li class="tersedia"><span class="num">0003</span><a class="title" href="lessons/0003-fhir-rest-api.html">FHIR REST API: CRUD, search, Bundle <code>transaction</code> vs <code>batch</code>, versioning, <code>OperationOutcome</code></a></li>
-
-<li class="tersedia"><span class="num">0004</span><a class="title" href="lessons/0004-json-massal-bulk-data.html">JSON massal: Bulk Data <code>$export</code>, NDJSON, streaming di Node</a></li>
-
-<li class="tersedia"><span class="num">0005</span><a class="title" href="lessons/0005-smart-on-fhir.html">Keamanan, SMART on FHIR, dan frontend React</a></li>
-
-<li class="tersedia seam"><span class="num">0006</span><a class="title" href="lessons/0006-satusehat-dan-review.html">SATUSEHAT + review campuran + STAR health-tech</a></li>
+<li class="tersedia"><span class="num">0003</span><a class="title" href="lessons/0003-profile-extension-ig.html">Profile, Extension, Implementation Guide; server yang sering disebut</a></li>
 
 </ol>
 
-<h2>Malam sebelum interview · ±50 menit</h2>
+<h2>Modul 2 · Resource dan datatype</h2>
 <ol class="lessons">
 
-<li class="tersedia"><span class="num">0007</span><a class="title" href="lessons/0007-pdp-data-di-monitoring.html">PDP: data yang disembunyikan di log dan monitoring (UU PDP, SATUSEHAT)</a></li>
+<li class="tersedia"><span class="num">0004</span><a class="title" href="lessons/0004-kerangka-json-dan-identifier.html">Kerangka resource JSON; Patient: <code>id</code> vs <code>identifier</code></a></li>
+
+<li class="tersedia"><span class="num">0005</span><a class="title" href="lessons/0005-reference-dan-codeableconcept.html">Reference (Encounter); Observation: CodeableConcept vs Coding</a></li>
+
+<li class="tersedia"><span class="num">0006</span><a class="title" href="lessons/0006-terminologi-dan-value-x.html">LOINC, SNOMED CT, ICD-10; choice type <code>value[x]</code></a></li>
+
+<li class="tersedia"><span class="num">0007</span><a class="title" href="lessons/0007-meta-contained-extension.html"><code>meta</code>, <code>contained</code>, <code>extension</code>; membaca resource utuh</a></li>
+
+</ol>
+
+<h2>Modul 3 · FHIR REST API</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0008</span><a class="title" href="lessons/0008-crud-dan-search.html">Interaksi REST dan status HTTP; search: tipe parameter, modifier, prefix</a></li>
+
+<li class="tersedia"><span class="num">0009</span><a class="title" href="lessons/0009-include-dan-paging.html">Chaining, <code>_include</code>, <code>_revinclude</code>; paging dan Bundle <code>searchset</code></a></li>
+
+<li class="tersedia"><span class="num">0010</span><a class="title" href="lessons/0010-bundle-dan-versioning.html">Bundle <code>transaction</code> vs <code>batch</code>, conditional create; versioning, ETag, <code>If-Match</code></a></li>
+
+<li class="tersedia"><span class="num">0011</span><a class="title" href="lessons/0011-operationoutcome-dan-capability.html">Error: <code>OperationOutcome</code>; discovery: CapabilityStatement</a></li>
+
+</ol>
+
+<h2>Review 1</h2>
+<ol class="lessons">
+
+<li class="tersedia seam"><span class="num">0012</span><a class="title" href="lessons/0012-review-fondasi-resource.html">Review 1: Fondasi + Resource</a></li>
+
+</ol>
+
+<h2>Modul 4 · Bulk Data dan JSON massal</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0013</span><a class="title" href="lessons/0013-export-dan-alur-async.html">Tiga level <code>$export</code>; alur kick-off → 202 → polling → manifest</a></li>
+
+<li class="tersedia"><span class="num">0014</span><a class="title" href="lessons/0014-manifest-ndjson-dan-json-parse.html">Manifest, NDJSON, <code>_type</code>/<code>_since</code>; batas <code>JSON.parse</code> di Node</a></li>
+
+<li class="tersedia"><span class="num">0015</span><a class="title" href="lessons/0015-streaming-dan-backpressure.html">Streaming baris per baris, batching, backpressure dan <code>pipeline</code></a></li>
+
+<li class="tersedia"><span class="num">0016</span><a class="title" href="lessons/0016-decimal-di-javascript.html">Jebakan <code>decimal</code> FHIR di JavaScript</a></li>
+
+</ol>
+
+<h2>Modul 5 · SMART on FHIR</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0017</span><a class="title" href="lessons/0017-smart-peta-dan-launch.html">SMART = OAuth 2.0 untuk FHIR; EHR launch vs standalone, discovery</a></li>
+
+<li class="tersedia"><span class="num">0018</span><a class="title" href="lessons/0018-pkce.html">Authorization code + PKCE: kenapa React SPA tidak punya secret</a></li>
+
+<li class="tersedia"><span class="num">0019</span><a class="title" href="lessons/0019-scopes-dan-backend-services.html">Scopes <code>patient/</code>, <code>user/</code>, <code>system/</code>; Backend Services untuk job Node</a></li>
+
+<li class="tersedia"><span class="num">0020</span><a class="title" href="lessons/0020-fhirclient-dan-keamanan-token.html">React + <code>fhirclient</code>; token di browser, PHI, audit</a></li>
+
+</ol>
+
+<h2>Review 2</h2>
+<ol class="lessons">
+
+<li class="tersedia seam"><span class="num">0021</span><a class="title" href="lessons/0021-review-rest-bulk.html">Review 2: REST + Bulk Data</a></li>
+
+</ol>
+
+<h2>Modul 6 · SATUSEHAT</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0022</span><a class="title" href="lessons/0022-satusehat-platform-dan-identitas.html">SATUSEHAT: platform, token, prasyarat, NIK dan nomor IHS</a></li>
+
+<li class="tersedia"><span class="num">0023</span><a class="title" href="lessons/0023-satusehat-validasi-dan-mapping.html">SATUSEHAT: validasi profile, mapping data legacy, ConceptMap</a></li>
+
+</ol>
+
+<h2>Modul 7 · PDP: data di log dan monitoring</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0024</span><a class="title" href="lessons/0024-pdp-hukum-dan-tiga-warna.html">PDP: tiga aturan hukum, tiga warna untuk setiap field</a></li>
+
+<li class="tersedia"><span class="num">0025</span><a class="title" href="lessons/0025-pdp-jebakan-dan-saluran.html">PDP: empat jebakan, enam saluran bocor</a></li>
+
+<li class="tersedia"><span class="num">0026</span><a class="title" href="lessons/0026-pdp-hmac-dan-audit.html">PDP: allowlist + HMAC, audit trail ≠ log operasional</a></li>
+
+</ol>
+
+<h2>Review 3</h2>
+<ol class="lessons">
+
+<li class="tersedia seam"><span class="num">0027</span><a class="title" href="lessons/0027-review-smart-satusehat-pdp.html">Review 3: SMART + SATUSEHAT + PDP + topik lemah</a></li>
+
+</ol>
+
+<h2>Penutup · tanya-jawab dan STAR</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0028</span><a class="title" href="lessons/0028-tanya-jawab-campuran.html">Bank tanya-jawab interview campuran</a></li>
+
+<li class="tersedia"><span class="num">0029</span><a class="title" href="lessons/0029-star-health-tech.html">Reframe 4 cerita STAR ke konteks health-tech</a></li>
 
 </ol>
 

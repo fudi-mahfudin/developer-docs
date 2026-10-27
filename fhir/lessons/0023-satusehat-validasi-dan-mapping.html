@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0023 · SATUSEHAT: validasi profile, mapping data legacy, ConceptMap</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0023 · FHIR · Modul SATUSEHAT · ±20 menit</div>
+  <h1>SATUSEHAT: validasi profile, mapping data legacy, ConceptMap</h1>
+  <p class="subtitle">Apa artinya valid terhadap profile, bagaimana SATUSEHAT menolak data, dan bagaimana tabel serta kode lokal SIMRS lama dipetakan ke resource dan terminologi standar</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Bagaimana memetakan data rumah sakit lama ke FHIR?"</em> dalam 90 detik
+  (profile, validasi dan OperationOutcome, ICD-10/LOINC/KFA, ConceptMap).
+</div>
+
+<p>Di <a href="0022-satusehat-platform-dan-identitas.html">lesson 0022</a> Anda sudah tahu cara masuk ke SATUSEHAT: token, prasyarat, dan identifier. Lesson ini membahas apa yang terjadi pada data yang Anda kirim (validasi) dan bagaimana data SIMRS lama dibentuk menjadi resource FHIR (mapping). Klaim yang tidak bisa diverifikasi dari halaman publik tetap ditandai <strong>belum terverifikasi (diakses 2026-10-26)</strong>.</p>
+
+<h2>1c. Validasi terhadap profile (±7 menit)</h2>
+<p>
+  Spesifikasi dasar FHIR adalah "platform specification" yang biasanya perlu diadaptasi per konteks: elemen mana yang dipakai, fitur API mana, dan <strong>terminologi mana untuk elemen tertentu</strong>.
+  Adaptasi itu diterbitkan sebagai Implementation Guide berisi Profile (StructureDefinition), ValueSet, dan ConceptMap. <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[1]</a></sup>
+  Memvalidasi sebuah resource berarti memeriksa: <sup class="cite"><a href="https://hl7.org/fhir/R4/validation.html">[2]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Aspek</th><th>Contoh pertanyaan</th></tr></thead>
+  <tbody>
+    <tr><td>Structure</td><td>Ada property yang tidak dikenal spesifikasi?</td></tr>
+    <tr><td>Cardinality</td><td><code>name</code> wajib (1..*) tapi kosong?</td></tr>
+    <tr><td>Value domains</td><td><code>birthDate</code> berformat tanggal FHIR? kode enum sah?</td></tr>
+    <tr><td>Bindings</td><td>Kode di Coding/CodeableConcept ada di value set yang diikat?</td></tr>
+    <tr><td>Invariants</td><td>Aturan co-occurrence (mis. constraint <code>dom-2</code>) terpenuhi?</td></tr>
+    <tr><td>Profiles</td><td>Aturan profile dari <code>meta.profile</code>, CapabilityStatement, IG, atau konteks terpenuhi?</td></tr>
+    <tr><td>Business rules</td><td>Duplikat? reference bisa di-resolve? user berhak? (dibuat <em>di luar</em> spesifikasi)</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong><code>$validate</code>.</strong> <code>POST [base]/[Resource]/$validate</code> (opsional <code>?profile=…</code>, <code>mode=create|update|delete</code>) mengembalikan OperationOutcome; "This operation returns a 200 OK whether or not the resource is valid", sedangkan 4xx/5xx berarti validasinya sendiri gagal dijalankan. Operasi ini tidak menyimpan resource. <sup class="cite"><a href="https://hl7.org/fhir/R4/resource-operation-validate.html">[3]</a></sup>
+    Apakah SATUSEHAT menyediakan endpoint <code>$validate</code> untuk partner: <strong>belum terverifikasi (diakses 2026-10-26)</strong>; yang terdokumentasi adalah validasi saat data dikirim (di bawah).</li>
+  <li><strong>Validasi di SATUSEHAT.</strong> Saat resource interoperabilitas dikirim, sistem memvalidasi kode terminologi (ICD-10, ICD-9 CM, LOINC, SNOMED CT, dan code system lain). API Gateway memeriksa request lewat FHIR Processor dulu; kalau ada kesalahan, respons 4xx berupa OperationOutcome dengan <code>issue.severity</code>, <code>issue.code</code> (<code>duplicate</code>, <code>format</code>, <code>value</code>), <code>details.text</code>, dan <code>expression</code> (resource dan field). <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/validasi/">[4]</a></sup>
+    Apakah server SATUSEHAT juga memeriksa klaim <code>meta.profile</code> secara penuh: <strong>belum terverifikasi (diakses 2026-10-26)</strong>.</li>
+  <li><strong>Aturan format yang sering membuat ditolak:</strong> waktu dikirim dalam UTC +00 (17.35 WIB → <code>2023-08-23T10:35:00+00:00</code>) dan tanggal tidak boleh sebelum 3 Juni 2014; elemen wajib atau tidak mengikuti panduan per use case. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[5]</a></sup></li>
+  <li><strong>Validasi di production itu trade-off.</strong> Spesifikasi menyarankan validasi saat development, tapi memperingatkan di production: validasi penuh dengan terminologi mahal, bisa menyebabkan "the loss of critical health care data" karena satu field buruk, dan bisa menolak data historis yang tidak bisa diperbaiki. Anjurannya Postel's law: konservatif saat mengirim, liberal saat menerima. <sup class="cite"><a href="https://hl7.org/fhir/R4/validation.html">[2]</a></sup>
+    Terjemahan untuk desain Node: validasi sebelum kirim, dan record yang ditolak <em>disimpan</em> bersama OperationOutcome-nya untuk diperbaiki, bukan dibuang.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Validasi</h2>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="ss-validasi" data-stack></div>
+</section>
+
+<p>Validasi menolak kode yang tidak dikenal. Jadi pertanyaan berikutnya: bagaimana kode lokal di SIMRS lama menjadi kode standar yang diterima?</p>
+
+<h2>1d. Mapping data legacy → FHIR, dan ConceptMap (±8 menit)</h2>
+<p>Mapping punya dua lapis: <strong>struktur</strong> (tabel/kolom → resource/elemen) dan <strong>kode</strong> (kode lokal → terminologi standar). Terminologi standar SATUSEHAT: <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/">[6]</a></sup></p>
+<table>
+  <thead><tr><th>Data</th><th>Standar di SATUSEHAT</th><th>Contoh dari dokumentasi</th></tr></thead>
+  <tbody>
+    <tr><td>Diagnosis (<code>Condition.code</code>)</td><td>ICD-10 versi 2010</td><td><code>http://hl7.org/fhir/sid/icd-10</code> · <code>C47.0</code> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/condition/">[7]</a></sup></td></tr>
+    <tr><td>Prosedur dan tindakan medis</td><td>ICD-9 CM versi 2010</td><td>(lihat lampiran terminologi)</td></tr>
+    <tr><td>Penamaan uji laboratorium (<code>Observation.code</code>)</td><td>LOINC</td><td><code>http://loinc.org</code> · <code>8867-4</code> Heart rate <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/">[8]</a></sup></td></tr>
+    <tr><td>Istilah klinis</td><td>SNOMED CT</td><td><code>http://snomed.info/sct</code></td></tr>
+    <tr><td>Obat (<code>Medication.code</code>)</td><td>KFA (Kamus Farmasi dan Alat Kesehatan)</td><td><code>http://sys-ids.kemkes.go.id/kfa</code> · <code>93001019</code> <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/medication/">[9]</a></sup></td></tr>
+  </tbody>
+</table>
+<pre><code>// Hanya untuk dibaca: satu baris tabel lama → Condition (struktur + kode)
+type DiagnosaRow = { no_reg: string; kode_dx: string; ket: string; tgl: string };  // tgl: "2026-10-26 17:35" WIB, tanpa zona
+
+function toCondition(row: DiagnosaRow, ctx: { patientIhs: string; encounterId: string }, map: Map&lt;string, Coding&gt;): Condition {
+  const icd = map.get(row.kode_dx);                        // hasil ConceptMap lokal → ICD-10, bisa undefined
+  if (!icd) throw new UnmappedCode(row.kode_dx);           // masuk antrean review coder, jangan dikirim asal
+  return {
+    resourceType: "Condition",
+    code: { coding: [icd,                                  // kode standar
+                     { system: "https://simrs.rs-contoh.id/fhir/CodeSystem/dx-lokal", code: row.kode_dx }], // kode asal (system ilustrasi)
+            text: row.ket },
+    subject:   { reference: `Patient/${ctx.patientIhs}` },
+    encounter: { reference: `Encounter/${ctx.encounterId}` },
+    recordedDate: wibToUtc(row.tgl),                       // "2026-10-26T10:35:00+00:00"
+  };
+}</code></pre>
+<p>
+  Dokumentasi Condition SATUSEHAT menandai <code>code</code>, <code>subject</code>, dan <code>encounter</code> sebagai wajib; elemen lain wajib atau tidak mengikuti panduan per use case, jadi potongan di atas sengaja tidak lengkap. <sup class="cite"><a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/condition/">[7]</a></sup>
+  Membawa kode lokal sebagai Coding tambahan sah karena CodeableConcept boleh berisi beberapa Coding untuk konsep yang sama (<a href="0005-reference-dan-codeableconcept.html">lesson 0005</a>); apakah SATUSEHAT menerima Coding tambahan dengan <code>system</code> lokal di setiap elemen: <strong>belum terverifikasi (diakses 2026-10-26)</strong>.
+</p>
+<p><strong>ConceptMap</strong> adalah resource FHIR untuk menyatakan mapping kode itu secara formal. Profiling R4 menyebut tujuannya: "Map between local and standard terminologies or content models". <sup class="cite"><a href="https://hl7.org/fhir/R4/profiling.html">[1]</a></sup> Yang perlu Anda ucapkan di interview: <sup class="cite"><a href="https://hl7.org/fhir/R4/conceptmap.html">[10]</a></sup></p>
+<ul>
+  <li><strong>Satu arah:</strong> "Mappings are one way - from the source to the target system"; kebalikannya tidak bisa diasumsikan benar.</li>
+  <li><strong>Terikat konteks:</strong> mapping hanya berlaku untuk use case bisnis tertentu; contoh resminya SNOMED CT → ICD-10 untuk analisis data berbeda dengan untuk billing.</li>
+  <li><strong>Equivalence per target:</strong> <code>equivalent</code>, <code>equal</code>, <code>wider</code>, <code>narrower</code>, <code>inexact</code>, <code>unmatched</code>, <code>disjoint</code>, dll.; untuk <code>narrower</code> dan <code>inexact</code> alasannya SHALL dijelaskan di <code>comment</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/valueset-concept-map-equivalence.html">[11]</a></sup></li>
+  <li><strong>Bukan transformasi struktur:</strong> ConceptMap memetakan konsep; transformasi instance (tabel → resource) adalah wilayah StructureMap. ConceptMap tidak dirujuk langsung dari resource lain.</li>
+  <li><strong>Dipakai lewat <code>$translate</code>:</strong> terminology server menerjemahkan <code>system</code> + <code>code</code> berdasarkan ConceptMap; client harus memeriksa <code>equivalence</code> setiap hasil. <sup class="cite"><a href="https://hl7.org/fhir/R4/conceptmap-operation-translate.html">[12]</a></sup></li>
+</ul>
+<pre><code>// Bentuk ConceptMap R4 (struktur mengikuti contoh resmi; kode lokal ilustrasi, target dari dokumentasi SATUSEHAT)
+{
+  "resourceType": "ConceptMap",
+  "status": "active",
+  "group": [{
+    "source": "https://simrs.rs-contoh.id/fhir/CodeSystem/lab-lokal",
+    "target": "http://loinc.org",
+    "element": [
+      { "code": "NADI", "display": "Nadi per menit",
+        "target": [{ "code": "8867-4", "display": "Heart rate", "equivalence": "equivalent" }] },
+      { "code": "CEK-UMUM", "display": "Paket cek umum",
+        "target": [{ "equivalence": "unmatched", "comment": "Paket, bukan satu tes: pecah per pemeriksaan" }] }
+    ]
+  }]
+}</code></pre>
+<p class="note">
+  Struktur <code>group.source/target</code> → <code>element.code</code> → <code>target.code/equivalence/comment</code> mengikuti contoh resmi R4. <sup class="cite"><a href="https://hl7.org/fhir/R4/conceptmap-example.json.html">[13]</a></sup>
+  Padanan JS: tabel lookup <code>Map&lt;kodeLokal, Coding&gt;</code> yang diberi metadata (arah, konteks, tingkat kecocokan) dan bisa dipertukarkan antar sistem. Di proyek nyata, tabel ini disusun dan direview oleh coder klinis, bukan developer sendirian.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Terminologi dan mapping</h2>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="ss-terminologi,ss-mapping" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 3 — Jawab lisan</h2>
+  <p>Pasang timer di ponsel, jawab dengan suara keras, baru buka jawaban contoh. Centang hanya poin yang benar-benar Anda sebut.</p>
+
+  <blockquote>"Rumah sakit kami punya SIMRS lama dengan tabel <code>pasien</code>, <code>kunjungan</code>, <code>diagnosa</code>, dan kode lokal. Bagaimana Anda memetakannya ke FHIR untuk dikirim ke SATUSEHAT?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saya mulai dari profile target, bukan dari tabel: IG SATUSEHAT dan panduan use case menentukan elemen wajib dan terminologinya.
+      Lalu peta tabel ke resource: <code>pasien</code> → Patient (cari nomor IHS lewat NIK, simpan di tabel kita), <code>kunjungan</code> → Encounter dengan identifier <code>http://sys-ids.kemkes.go.id/encounter/{id-organisasi}</code> + nomor kunjungan lokal, <code>diagnosa</code> → Condition yang merujuk Encounter dan Patient.
+      Kode lokal dipetakan ke terminologi standar: diagnosis ke ICD-10, lab ke LOINC, obat ke KFA. Secara konsep itu ConceptMap: satu arah, per konteks, tiap pasangan punya equivalence; kode yang tidak cocok masuk antrean review coder, tidak dibuang.
+      Format dinormalisasi: waktu ke UTC, gender ke <code>male</code>/<code>female</code>. Sebelum kirim, uji di sandbox; OperationOutcome disimpan per record supaya bisa diperbaiki dan dikirim ulang secara idempoten berdasarkan identifier."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>mulai dari profile/IG dan panduan use case (elemen wajib, terminologi)?</li>
+      <li>tabel → resource: pasien → Patient (nomor IHS via NIK), kunjungan → Encounter, diagnosa → Condition?</li>
+      <li>identifier lokal dengan <code>system</code> per organisasi, Reference antar resource?</li>
+      <li>kode lokal → ICD-10/LOINC/KFA; ConceptMap satu arah dengan equivalence?</li>
+      <li>kode tak terpetakan → antrean review; normalisasi format (UTC, gender)?</li>
+      <li>validasi di sandbox, simpan OperationOutcome, kirim ulang idempoten?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+
+  <blockquote>"Apa artinya resource 'valid terhadap profile'? Di mana Anda menjalankan validasi di pipeline integrasi kami?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Valid berarti lolos struktur, cardinality, tipe nilai, binding kode, invariant, dan aturan profile; profile adalah StructureDefinition yang mempersempit resource dasar, misalnya mewajibkan identifier atau mengikat kode ke ICD-10.
+      Resource bisa mengklaim profile lewat <code>meta.profile</code>, dan server bisa memeriksanya lewat <code>$validate</code> yang mengembalikan OperationOutcome, 200 baik valid maupun tidak. Business rule seperti duplikat dan reference yang resolve ada di luar spesifikasi.
+      Di pipeline: validasi sedini mungkin di sisi kami dan di sandbox saat development; di production kami tetap menangani OperationOutcome dari server. Validasi penuh dengan terminologi mahal dan bisa membuang data klinis karena satu field buruk, jadi record yang gagal disimpan untuk diperbaiki. Prinsipnya Postel's law."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>aspek validasi: struktur, cardinality, nilai, binding kode, invariant, profile?</li>
+      <li>profile = StructureDefinition yang mempersempit resource; klaim lewat <code>meta.profile</code>?</li>
+      <li><code>$validate</code> mengembalikan OperationOutcome (200 walau tidak valid)?</li>
+      <li>business rule (duplikat, reference) di luar spesifikasi?</li>
+      <li>validasi di development/sandbox; production: biaya dan risiko kehilangan data?</li>
+      <li>record gagal disimpan untuk diperbaiki; Postel's law?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/prerequisites/">SATUSEHAT Platform: Orientasi / Prerequisites</a>, lalu ikuti tautannya ke halaman resource
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/patient/">Patient</a> dan
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">Encounter</a>.
+  Untuk konsep validasi, baca <a href="https://hl7.org/fhir/R4/validation.html">FHIR R4: Validating Resources</a> (pendek, satu halaman).
+</div>
+
+<p class="note sources">
+  Sumber (SATUSEHAT diakses 2026-10-26):
+  <a href="https://hl7.org/fhir/R4/profiling.html">[1] FHIR R4 Profiling</a> ·
+  <a href="https://hl7.org/fhir/R4/validation.html">[2] FHIR R4 Validating Resources</a> ·
+  <a href="https://hl7.org/fhir/R4/resource-operation-validate.html">[3] FHIR R4 $validate</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/api-catalogue/validasi/">[4] Validasi Interoperabilitas</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/encounter/">[5] Resource Encounter</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/terminology/">[6] Terminologi</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/condition/">[7] Resource Condition</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/observation/">[8] Resource Observation</a> ·
+  <a href="https://satusehat.kemkes.go.id/platform/docs/id/fhir/resources/medication/">[9] Resource Medication (KFA)</a> ·
+  <a href="https://hl7.org/fhir/R4/conceptmap.html">[10] FHIR R4 ConceptMap</a> ·
+  <a href="https://hl7.org/fhir/R4/valueset-concept-map-equivalence.html">[11] FHIR R4 ConceptMapEquivalence</a> ·
+  <a href="https://hl7.org/fhir/R4/conceptmap-operation-translate.html">[12] FHIR R4 ConceptMap $translate</a> ·
+  <a href="https://hl7.org/fhir/R4/conceptmap-example.json.html">[13] FHIR R4 contoh ConceptMap (JSON)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0022-satusehat-platform-dan-identitas.html">← 0022 · SATUSEHAT: platform, token, prasyarat, NIK dan nomor IHS</a>
+  <a href="0024-pdp-hukum-dan-tiga-warna.html">0024 · PDP: tiga aturan hukum, tiga warna untuk setiap field →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0023.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

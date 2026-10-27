@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0001 · Dari HL7 v2 ke FHIR, dan kenapa REST + JSON</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0001 · FHIR · Modul Fondasi · ±22 menit</div>
+  <h1>Dari HL7 v2 ke FHIR, dan kenapa REST + JSON</h1>
+  <p class="subtitle">Pertanyaan pembuka yang hampir pasti muncul, dijelaskan dengan bahasa developer JavaScript</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Apa itu FHIR, dan apa bedanya dengan HL7 v2?"</em>
+  tanpa catatan, dalam kurang dari satu menit: Resource sebagai unit modular ber-URL dibanding segment v2, Z-segment dibanding extension,
+  dan FHIR di atas REST + JSON (<code>application/fhir+json</code>, <code>resourceType</code>).
+</div>
+
+<p class="note">
+  Semua fakta di bawah diambil dari spesifikasi FHIR R4 (v4.0.1) dan dikutip <sup class="cite">[n]</sup>. Contoh JSON dan TypeScript hanya untuk dibaca, tidak perlu dijalankan.
+  REST, HTTP status, JSON, dan OAuth sudah Anda kuasai; lesson ini hanya mengajarkan yang khas FHIR.
+</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. Dari HL7 v2 ke FHIR</h2>
+<p>
+  FHIR (Fast Healthcare Interoperability Resources) adalah "a next generation standards framework created by HL7"
+  yang menggabungkan "the best features of HL7's" v2, v3, dan CDA. <sup class="cite"><a href="https://hl7.org/fhir/R4/summary.html">[1]</a></sup>
+  Untuk interview, pembandingnya hampir selalu HL7 v2: standar pesan lama yang masih banyak berjalan di rumah sakit.
+</p>
+<pre><code>MSH|^~\&amp;|LAB|RSUD|EHR|RSUD|202410261030||ORU^R01|MSG0001|P|2.5
+PID|1||RM-00123^^^RSUD^MR||Santoso^Budi||19800512|M
+OBX|1|NM|2339-0^Glucose^LN||95|mg/dL|70-99|N|||F</code></pre>
+<p class="note">Ilustrasi pesan v2 yang disederhanakan (bukan dikutip dari spesifikasi): satu pesan, baris = segment, field dipisah <code>|</code>, komponen dipisah <code>^</code>, seperti contoh <code>|^Smith^John|</code> di halaman perbandingan v2. <sup class="cite"><a href="https://hl7.org/fhir/R4/comparison-v2.html">[2]</a></sup></p>
+
+<table>
+  <thead><tr><th></th><th>HL7 v2</th><th>FHIR</th></tr></thead>
+  <tbody>
+    <tr><td>Unit</td><td>pesan dari "re-usable segments"; "segments can't be independently manipulated"</td><td><strong>Resource</strong>: "All exchangeable content is defined as a resource" <sup class="cite"><a href="https://hl7.org/fhir/R4/overview.html">[3]</a></sup>, masing-masing punya URL sendiri</td></tr>
+    <tr><td>Variasi</td><td>"One of the biggest challenges with HL7 v2 interoperability is the variation of implementation"</td><td>core kecil, variasi dikelola eksplisit lewat profile (<a href="0003-profile-extension-ig.html">lesson 0003</a>)</td></tr>
+    <tr><td>Data lokal</td><td>Z-segment: maknanya "opaque without prior manual explanation by the sender"</td><td>extension: "can appear at any level (including within data types)", punya URL definisi</td></tr>
+    <tr><td>Update</td><td>bisa kirim sebagian + kode penghapusan</td><td>"requiring all data to be present as a snapshot"</td></tr>
+    <tr><td>Teks manusia</td><td>tidak wajib</td><td>"FHIR requires human readable content to be provided for each resource"</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan kolom HL7 v2 dan baris extension/update/teks: <sup class="cite"><a href="https://hl7.org/fhir/R4/comparison-v2.html">[2]</a></sup>.
+  Keduanya tidak saling meniadakan: FHIR menyebut "Evolutionary development path from HL7 Version 2 and CDA: standards can co-exist and leverage each other". <sup class="cite"><a href="https://hl7.org/fhir/R4/summary.html">[1]</a></sup>
+  Di interview, sebut bahwa integrasi nyata sering memetakan pesan v2 lama ke resource FHIR (dibahas di <a href="0023-satusehat-validasi-dan-mapping.html">lesson 0023</a>).</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — v2 atau FHIR?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama muncul lagi, diacak, di review campuran <a href="0012-review-fondasi-resource.html">0012</a>.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review <a href="0012-review-fondasi-resource.html">0012</a>.</p>
+  <div class="quiz" data-bank-lesson="0001" data-bank-topic="dasar-v2-vs-fhir" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Kenapa REST + JSON: fondasi yang sudah Anda kuasai</h2>
+<p>
+  FHIR berdiri di atas "Web standards: XML, JSON, HTTP, OAuth, etc." dan mendukung "RESTful architectures". <sup class="cite"><a href="https://hl7.org/fhir/R4/summary.html">[1]</a></sup>
+  Halaman REST API-nya berstatus Normative dan menyebut FHIR "a 'RESTful' specification based on common industry level use of the term REST",
+  dengan pola URL <code>VERB [base]/[type]/[id]</code>. <sup class="cite"><a href="https://hl7.org/fhir/R4/http.html">[4]</a></sup>
+  Jadi bagi developer Node, membaca satu pasien adalah <code>fetch</code> biasa:
+</p>
+<pre><code>// base = "https://fhir.contoh-rs.id/fhir" (contoh fiktif)
+const res = await fetch(`${base}/Patient/123`, {
+  headers: { Accept: "application/fhir+json" },
+});
+const patient = await res.json(); // { resourceType: "Patient", id: "123", ... }</code></pre>
+<ul>
+  <li>MIME type JSON-nya: "The MIME-type for this format is <code>application/fhir+json</code>." <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[5]</a></sup></li>
+  <li>Setiap resource adalah objek JSON "with a property <code>resourceType</code> which informs the parser which resource type this is". <sup class="cite"><a href="https://hl7.org/fhir/R4/json.html">[5]</a></sup></li>
+  <li>REST bukan satu-satunya jalan: "you do not have to use REST to make use of resources" (ada juga dokumen dan messaging). <sup class="cite"><a href="https://hl7.org/fhir/R4/overview.html">[3]</a></sup> Detail interaksi REST, search, dan Bundle ada di <a href="0008-crud-dan-search.html">lesson 0008</a>.</li>
+</ul>
+<p>
+  Padanan TypeScript yang paling membantu: <code>resourceType</code> adalah <strong>discriminant</strong> dari union type, persis seperti field <code>type</code> di reducer Redux.
+</p>
+<pre><code>type Meta = { versionId?: string; lastUpdated?: string; profile?: string[] };
+interface Resource { resourceType: string; id?: string; meta?: Meta }
+interface Patient extends Resource { resourceType: "Patient"; birthDate?: string }
+interface Observation extends Resource { resourceType: "Observation"; status: string }
+
+function label(r: Patient | Observation): string {
+  switch (r.resourceType) {            // TypeScript mempersempit tipe di tiap case
+    case "Patient": return `Pasien, lahir ${r.birthDate ?? "?"}`;
+    case "Observation": return `Observasi (${r.status})`;
+  }
+}</code></pre>
+<p class="note">Tipe di atas sengaja diringkas. Kardinalitas aslinya: <code>Patient.birthDate</code> 0..1 <sup class="cite"><a href="https://hl7.org/fhir/R4/patient.html">[6]</a></sup>, <code>Observation.status</code> 1..1 <sup class="cite"><a href="https://hl7.org/fhir/R4/observation.html">[7]</a></sup>.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — REST + JSON</h2>
+  <div class="quiz" data-bank-lesson="0001" data-bank-topic="dasar-rest-json" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan 3 — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+
+  <blockquote>"Apa itu FHIR, dan apa bedanya dengan HL7 v2?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "FHIR, Fast Healthcare Interoperability Resources, adalah standar HL7 untuk pertukaran data kesehatan yang dibangun dari komponen modular bernama Resource, misalnya Patient, Encounter, Observation.
+      Setiap resource punya identitas URL, versi, dan bisa dibaca atau diubah sendiri lewat REST API, dengan format JSON (<code>application/fhir+json</code>) atau XML, di atas standar web yang sudah kita kenal: HTTP, JSON, OAuth.
+      HL7 v2 adalah standar pesan yang lebih tua: pesan terdiri dari segment teks berdelimiter, segment tidak bisa dimanipulasi sendiri, dan implementasinya sangat bervariasi antar sistem; data lokal masuk Z-segment yang maknanya harus dijelaskan manual.
+      Di FHIR, data lokal masuk extension yang punya URL ke definisinya, dan variasi dikelola lewat profile dan Implementation Guide. Keduanya bisa hidup berdampingan; banyak integrasi memetakan v2 ke FHIR."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>FHIR = standar HL7, dibangun dari Resource modular (contoh: Patient, Observation)?</li>
+      <li>Resource punya identitas URL dan versi, bisa dibaca/diubah sendiri?</li>
+      <li>REST API + JSON/XML di atas standar web (HTTP, OAuth)?</li>
+      <li>HL7 v2 = pesan dari segment, segment tidak bisa dimanipulasi sendiri?</li>
+      <li>masalah v2: variasi implementasi tinggi; Z-segment maknanya tidak jelas tanpa penjelasan manual?</li>
+      <li>padanan di FHIR: extension ber-URL + profile/IG; v2 dan FHIR bisa berdampingan?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Fondasi") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a> · Komunitas: <a href="https://chat.fhir.org/">chat.fhir.org</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda <code>id</code> dan <code>identifier</code>?", "kapan sebuah extension harus jadi <code>modifierExtension</code>?", atau "bagaimana menjelaskan Normative vs Trial Use ke interviewer non-teknis?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://hl7.org/fhir/R4/summary.html">[1] FHIR Summary</a> ·
+  <a href="https://hl7.org/fhir/R4/comparison-v2.html">[2] Comparison with HL7 v2</a> ·
+  <a href="https://hl7.org/fhir/R4/overview.html">[3] FHIR Overview</a> ·
+  <a href="https://hl7.org/fhir/R4/http.html">[4] RESTful API</a> ·
+  <a href="https://hl7.org/fhir/R4/json.html">[5] JSON Representation</a> ·
+  <a href="https://hl7.org/fhir/R4/patient.html">[6] Patient</a> ·
+  <a href="https://hl7.org/fhir/R4/observation.html">[7] Observation</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="../index.html">← Indeks track FHIR</a>
+  <a href="0002-resource-dan-versi.html">0002 · Resource dan versi →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0001.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

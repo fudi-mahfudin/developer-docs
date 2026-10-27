@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0027 · Review 3: SMART + SATUSEHAT + PDP</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0027 · FHIR · Review · ±25 menit · seam penguasaan</div>
+  <h1>Review 3: SMART + SATUSEHAT + PDP</h1>
+  <p class="subtitle">Tanpa materi baru: soal kuis dan lisan dari modul sebelumnya, diacak bersama (interleaving).</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> keluar dengan daftar jujur topik yang <em>benar-benar menempel</em> dari modul SMART (0017–0020), SATUSEHAT (0022–0023), dan PDP (0024–0026), dan yang perlu diulang.
+</div>
+
+<p class="note">
+  Review ini <strong>sengaja tertunda satu modul</strong>: Modul SMART (0017–0020), SATUSEHAT (0022–0023), dan PDP (0024–0026), ditambah topik lemah dari Review 1 dan 2. Jeda itu membuat skornya mengukur ingatan (retensi), bukan hafalan beberapa menit sebelumnya (fluency). Tanpa materi baru.
+</p>
+
+<h2>Aturan main</h2>
+<ol>
+  <li><strong>Jangan buka catatan, lesson, reference, atau tab lain.</strong> Yang diuji adalah kemampuan menjawab pertanyaan interview FHIR tanpa catatan. Kalau Anda mengintip, hasilnya tidak berarti.</li>
+  <li><strong>Soal kuis:</strong> pilih satu jawaban. Ada tepat satu soal kuis untuk setiap topik modul yang diuji (21 topik = 21 kuis), jadi setiap topik diuji minimal sekali.</li>
+  <li><strong>Soal lisan:</strong> jawab dengan suara keras (±60–90 detik, boleh direkam di ponsel) <em>sebelum</em> membuka checklist, lalu centang hanya poin yang benar-benar Anda sebut, bukan yang "sebenarnya tahu".</li>
+  <li><strong>Kriteria lulus per topik:</strong> soal kuis acak dijawab benar, dan soal lisan topik itu lulus (minimal 2/3 poin checklist dicentang, misalnya 4 dari 6). Satu kesalahan di topik itu = topik lemah.
+    Topik yang kuisnya benar tapi tidak mendapat soal lisan tampil sebagai <em>Kuis lulus, lisan belum diuji</em> dan belum dihitung lulus.</li>
+  <li><strong>Topik lemah Review 1 dan 2</strong> ikut diuji di sini kalau agent sudah memasukkan slug-nya ke <code>data-topics</code> (dari baris "Topik lemah FHIR …" di <code>fhir/NOTES.md</code>). Kalau <code>data-topics</code> masih kosong, review ini hanya menguji tiga modul di atas.</li>
+</ol>
+
+<p class="note">
+  Urutan soal mengikuti seed yang tampil di bawah. Tombol "Acak ulang" membuat set baru, tapi kerjakan <strong>set pertama</strong> sampai selesai sebelum mengacak ulang; hasil set pertama itulah yang dilaporkan.
+  Untuk mengulang set yang sama nanti, tambahkan <code>?seed=NNN</code> di URL. Hanya 3 soal lisan yang ditarik, jadi topik lain bisa diuji lewat <code>?seed=</code> berbeda di sesi berikutnya (pengulangan berjarak).
+</p>
+
+<!--
+  Pengaturan review (cara agent mengubahnya):
+  - data-lessons = lesson modul yang diuji (semua topiknya ikut).
+  - data-mc = jumlah topik kuis di pool (sekarang 21: smart- 8, ss- 7, pdp- 6), supaya draw() menarik tepat satu kuis per topik.
+    Hitung ulang bila bank soal modul itu mendapat topik baru; tests/fhir/review.test.js memeriksanya.
+  - data-oral = 3, supaya review muat ±20 menit.
+  - data-topics: slug topik lemah dari Review 1–2 (baris 'Topik lemah FHIR …' di fhir/NOTES.md); semua bank dimuat supaya slug apa pun bisa dipilih. Tambahkan jumlah topik lemah ke data-mc.
+-->
+<div class="review" data-title="Review 3: SMART + SATUSEHAT + PDP" data-lessons="0017,0018,0019,0020,0022,0023,0024,0025,0026"
+     data-topics="" data-mc="21" data-oral="3"></div>
+
+<section class="exercise">
+  <h2>Setelah selesai: laporkan hasilnya ke agent</h2>
+  <ol>
+    <li>Setelah semua soal dijawab, ringkasan per topik muncul di bawah soal terakhir.</li>
+    <li>Tekan <strong>Salin</strong> (atau blok teks di kotak ringkasan), lalu <strong>tempel ke agent</strong> di terminal, misalnya:
+      <em>"Ini hasil review 0027 FHIR, tolong dicatat."</em></li>
+    <li>Agent menulis learning record "sudah dikuasai" di <code>fhir/learning-records/</code> <strong>hanya untuk topik yang lulus</strong> (kuis benar dan lisan lulus), dengan seed dan skor sebagai bukti.
+      Topik <em>Kuis lulus, lisan belum diuji</em> dicatat di NOTES saja, tanpa learning record.</li>
+    <li>Topik yang lemah dicatat sebagai baris "Topik lemah FHIR 0027: …" di <code>fhir/NOTES.md</code>.</li>
+  </ol>
+  <p class="note">Hanya hasil review 0012, 0021, dan 0027 yang dicatat sebagai bukti penguasaan FHIR. Skor kuis di lesson biasa tidak dihitung.</p>
+</section>
+
+<h2>Kalau ada topik lemah</h2>
+<p>
+  Jangan baca ulang seluruh modul. Lihat <a href="../reference/pdp-monitoring.html">cheat sheet PDP dan monitoring</a> (topik <code>pdp-</code>); untuk <code>smart-</code> dan <code>ss-</code> buka bagian itu di lesson 0017–0023. Topik lemah dari Review 1–2: cheat sheet yang disebut di review itu.
+  Lalu tutup, dan jelaskan lagi dengan suara keras.
+</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> · Indeks: <a href="../index.html">semua lesson FHIR</a></p>
+
+<nav class="lesson-nav">
+  <a href="0026-pdp-hmac-dan-audit.html">← 0026 · PDP: allowlist + HMAC, audit trail ≠ log operasional</a>
+  <a href="0028-tanya-jawab-campuran.html">0028 · Bank tanya-jawab interview campuran →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0001.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../assets/questions/0004.js"></script>
+<script src="../assets/questions/0005.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../assets/questions/0007.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../assets/questions/0009.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../assets/questions/0015.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../assets/questions/0018.js"></script>
+<script src="../assets/questions/0019.js"></script>
+<script src="../assets/questions/0020.js"></script>
+<script src="../assets/questions/0022.js"></script>
+<script src="../assets/questions/0023.js"></script>
+<script src="../assets/questions/0024.js"></script>
+<script src="../assets/questions/0025.js"></script>
+<script src="../assets/questions/0026.js"></script>
+<script src="../../assets/review.js"></script>
+</body>
+</html>
