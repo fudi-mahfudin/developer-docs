@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0002 · Perjalanan request: client-server, DNS, HTTP</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0002 · System Design · Modul Fondasi · ±20 menit</div>
+  <h1>Perjalanan request: client-server, DNS, HTTP</h1>
+  <p class="subtitle">Apa yang terjadi antara user menekan Enter dan server mulai bekerja, berapa round trip yang dibutuhkan, dan kenapa HTTP stateless penting untuk skala</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyusun perjalanan request pertama (DNS → TCP → TLS → HTTP),
+  menghitung berapa round trip yang terjadi sebelum server mulai bekerja,
+  dan menjelaskan kenapa sifat stateless HTTP memungkinkan request dibagi ke banyak server.
+</div>
+
+<p>Sebelumnya, di <a href="0001-apa-itu-system-design.html">lesson 0001</a>: desain v1 adalah client → app server → database. Lesson ini memperbesar panah pertama: apa saja yang terjadi di antara client dan app server.</p>
+
+<h2>1. Client, server, dan HTTP yang stateless</h2>
+<p>
+  HTTP adalah protokol client/server. <strong>Client</strong> (browser, aplikasi mobile, atau service lain) membuka koneksi dan mengirim request;
+  <strong>server</strong> menerima koneksi dan mengirim response. Peran ini relatif: program yang sama bisa jadi server untuk satu koneksi dan client untuk koneksi lain,
+  misalnya app server yang menjadi client bagi database. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#section-3.3">[1]</a></sup>
+</p>
+<p>
+  HTTP juga <strong>stateless</strong>: makna setiap request bisa dipahami sendiri, tanpa bergantung pada request sebelumnya di koneksi yang sama.
+  RFC 9110 menyebut akibatnya langsung: banyak implementasi bergantung pada sifat ini untuk <em>"dynamically load balance requests across multiple servers"</em>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#section-3.3">[1]</a></sup>
+  Simpan kalimat ini. Di <a href="0005-vertical-horizontal-stateless.html">lesson 0005</a> ia menjadi alasan kenapa app server harus stateless supaya bisa ditambah jumlahnya.
+</p>
+
+<h2>2. Empat langkah sebelum server mulai bekerja</h2>
+<div class="flow">
+  <span class="box">DNS: nama → IP</span><span class="arrow">→</span>
+  <span class="box">TCP handshake</span><span class="arrow">→</span>
+  <span class="box">TLS handshake</span><span class="arrow">→</span>
+  <span class="box">HTTP request → response</span>
+</div>
+<ol>
+  <li>
+    <strong>DNS.</strong> Browser hanya tahu nama (<code>shop.example.com</code>), jaringan butuh alamat IP.
+    <em>Resolver</em> adalah program yang mengambil jawaban dari name server atas permintaan client. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc1034.html#section-2.4">[2]</a></sup>
+    Setiap jawaban DNS membawa <strong>TTL</strong> (time to live, dalam detik): berapa lama jawaban itu boleh disimpan di cache sebelum dibuang. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc1034.html#section-3.6">[2]</a></sup>
+    Jadi kebanyakan request tidak benar-benar bertanya ke DNS; jawabannya sudah ada di cache.
+  </li>
+  <li>
+    <strong>TCP handshake.</strong> TCP adalah protokol yang menjamin data sampai utuh dan berurutan. Koneksi dibuka dengan <em>three-way handshake</em> <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9293.html#section-3.5">[3]</a></sup>:
+    client mengirim SYN, server menjawab SYN-ACK, client mengirim ACK. Biayanya satu round trip sebelum data apa pun bisa dikirim.
+  </li>
+  <li>
+    <strong>TLS handshake.</strong> TLS adalah lapisan yang mengenkripsi koneksi dan membuktikan bahwa server memang pemilik nama domain itu (lewat sertifikat). Inilah "S" di HTTPS.
+    Di TLS 1.3, handshake penuh butuh satu round trip; RFC 8446 menyebutnya <em>"1-RTT handshake"</em>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc8446.html#section-2.3">[4]</a></sup>
+  </li>
+  <li>
+    <strong>HTTP request → response.</strong> Satu round trip lagi, ditambah waktu server bekerja (query database, dan seterusnya).
+    Di HTTP/1.1 koneksi bersifat <em>persistent</em> secara default: banyak request dan response bisa lewat satu koneksi yang sama, jadi langkah 1–3 tidak diulang. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9112.html#section-9.3">[5]</a></sup>
+  </li>
+</ol>
+
+<h2>3. Hitung round trip-nya</h2>
+<p>
+  <strong>Round trip time (RTT)</strong> adalah waktu paket pergi ke server dan jawabannya kembali. RTT bergantung pada jarak:
+  di dalam satu datacenter sekitar 0,5 ms, sedangkan California → Belanda → California sekitar 150 ms. <sup class="cite"><a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[6]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Request</th><th>Round trip sebelum response</th><th>User di benua lain (RTT 150 ms)</th></tr></thead>
+  <tbody>
+    <tr><td>Pertama (DNS sudah di cache)</td><td>TCP 1 + TLS 1 + HTTP 1 = <strong>3 RTT</strong></td><td>±450 ms + waktu server</td></tr>
+    <tr><td>Berikutnya di koneksi yang sama</td><td>HTTP 1 = <strong>1 RTT</strong></td><td>±150 ms + waktu server</td></tr>
+  </tbody>
+</table>
+<p>
+  Tiga hal yang bisa langsung disimpulkan, dan semuanya kembali di lesson berikutnya:
+</p>
+<ul>
+  <li><strong>Jarak adalah latency yang tidak bisa dioptimasi dengan kode.</strong> Server tercepat pun tidak bisa mengalahkan 450 ms kalau user ada di benua lain. Solusinya mendekatkan konten ke user, yaitu CDN (<a href="0007-reverse-proxy-dan-cdn.html">lesson 0007</a>).</li>
+  <li><strong>Memakai ulang koneksi itu murah dan berdampak besar.</strong> Dari 3 RTT menjadi 1 RTT tanpa menambah server. Ini contoh perubahan termurah dari prinsip inti.</li>
+  <li><strong>TTL DNS adalah trade-off.</strong> TTL panjang berarti lebih sedikit lookup, tapi kalau IP server berubah, sebagian user masih memakai IP lama sampai cache mereka kedaluwarsa.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Susun perjalanan request pertama</h2>
+  <p>Susun dari user menekan Enter sampai halaman tampil. Ucapkan setiap langkah dengan suara keras saat memindahkannya.</p>
+  <div class="order">
+    <ol>
+      <li>User mengetik <code>https://shop.example.com</code> dan menekan Enter</li>
+      <li>Browser meminta IP ke resolver DNS (atau memakai jawaban di cache selama TTL)</li>
+      <li>TCP three-way handshake: SYN → SYN-ACK → ACK</li>
+      <li>TLS handshake: sertifikat diperiksa, kunci enkripsi disepakati</li>
+      <li>Browser mengirim HTTP request <code>GET /</code></li>
+      <li>Server memproses request (mis. query database) dan mengirim response</li>
+      <li>Request berikutnya memakai koneksi yang sama tanpa handshake ulang</li>
+    </ol>
+    <p class="explain">
+      IP harus diketahui sebelum koneksi dibuka. TCP harus terbuka sebelum TLS bisa berjalan di atasnya, dan TLS harus selesai sebelum HTTP request terenkripsi dikirim.
+      Request pertama membayar 3 RTT (TCP + TLS + HTTP); request berikutnya di koneksi persistent hanya 1 RTT.
+    </p>
+  </div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Round trip dan DNS</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="dasar-perjalanan-request" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 3 — HTTP stateless</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="dasar-http-stateless" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+
+  <blockquote>"Apa yang terjadi sejak user mengetik URL dan menekan Enter sampai server menerima request? Fokus ke hal yang memengaruhi latency." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Pertama browser butuh IP dari nama domain lewat DNS. Biasanya jawabannya sudah di cache, karena setiap jawaban DNS punya TTL yang menentukan berapa lama boleh disimpan.
+      Lalu browser membuka koneksi TCP dengan three-way handshake, SYN, SYN-ACK, ACK, itu satu round trip. Di atasnya TLS handshake untuk enkripsi dan verifikasi sertifikat server; di TLS 1.3 itu satu round trip lagi.
+      Baru HTTP request dikirim, satu round trip plus waktu server bekerja. Jadi request pertama sekitar 3 RTT. Kalau user di benua lain dengan RTT 150 ms, itu sudah sekitar 450 ms sebelum server berbuat apa-apa.
+      Request berikutnya memakai koneksi persistent, jadi cukup 1 RTT. Dua cara murah menurunkan latency: pakai ulang koneksi, dan dekatkan konten ke user dengan CDN."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>DNS mengubah nama menjadi IP, dan jawabannya di-cache sesuai TTL?</li>
+      <li>TCP three-way handshake (SYN, SYN-ACK, ACK) = 1 RTT?</li>
+      <li>TLS handshake untuk enkripsi dan sertifikat, 1 RTT di TLS 1.3?</li>
+      <li>request pertama ±3 RTT sebelum response, termasuk HTTP request itu sendiri?</li>
+      <li>contoh angka: RTT antarbenua ±150 ms membuat request pertama ±450 ms?</li>
+      <li>koneksi persistent (pakai ulang koneksi) atau CDN sebagai cara murah mengurangi latency?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama</span>
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#section-3">RFC 9110 bagian 3 "Terminology and Core Concepts"</a>, terutama 3.3 (client, server, stateless) dan 3.7 (intermediaries). ±10 menit. Opsional, tidak dihitung dalam durasi.
+</div>
+
+<p>Berikutnya, lesson 0003: Anda sudah melihat angka 0,5 ms dan 150 ms. Angka mana lagi yang perlu dihafal, dan kenapa rata-rata latency bisa menyesatkan?</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke agent. Agent adalah guru Anda di track ini.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Fondasi") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#section-3.3">[1] RFC 9110 HTTP Semantics, §3.3</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc1034.html">[2] RFC 1034 DNS Concepts, §2.4 dan §3.6</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9293.html#section-3.5">[3] RFC 9293 TCP, §3.5</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc8446.html#section-2.3">[4] RFC 8446 TLS 1.3, §2.3</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9112.html#section-9.3">[5] RFC 9112 HTTP/1.1, §9.3</a> ·
+  <a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[6] Jeff Dean, LADIS 2009 ("Numbers Everyone Should Know")</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0001-apa-itu-system-design.html">← 0001 · Apa itu system design; functional vs non-functional requirement</a>
+  <a href="0003-latency-dan-throughput.html">0003 · Latency vs throughput; angka latency yang perlu dihafal →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>
