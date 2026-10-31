@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0004 · Estimasi back-of-envelope: QPS, storage, bandwidth</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0004 · System Design · Modul Fondasi · ±20 menit</div>
+  <h1>Estimasi back-of-envelope: QPS, storage, bandwidth</h1>
+  <p class="subtitle">Tiga rumus, dua angka bantu, dan satu kebiasaan: biarkan hitungan, bukan selera, yang memilih komponen</p>
+</header>
+
+<p>Sebelumnya, di <a href="0003-latency-dan-throughput.html">lesson 0003</a>: throughput diukur dalam request per detik, dan satu round trip di datacenter ±0,5 ms. Lesson ini memakai angka itu untuk menjawab pertanyaan langkah 2 di setiap soal desain: <em>seberapa besar bebannya?</em></p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> dari jumlah user aktif harian (DAU), Anda bisa menghitung kasar QPS rata-rata dan puncak, storage per tahun, dan bandwidth dalam waktu kurang dari dua menit,
+  lalu menunjukkan dengan angka bahwa 1.000 DAU cukup dilayani satu server + satu database.
+</div>
+
+<h2>1. Kenapa menghitung, dan seberapa teliti</h2>
+<p>
+  <strong>Back-of-envelope</strong> berarti hitungan kasar yang cukup ditulis di balik amplop: orde besaran, bukan angka tepat.
+  Jeff Dean (Google) menyebut <em>"ability to estimate performance of a system design – without actually having to build it"</em> sebagai keterampilan penting. <sup class="cite"><a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf#page=23">[1]</a></sup>
+  Contohnya di slide yang sama: membaca 30 thumbnail satu per satu dari disk butuh 30 × 10 ms seek + waktu baca ≈ 560 ms, sedangkan membacanya paralel ≈ 18 ms.
+  Dua desain dibandingkan sebelum satu baris kode pun ditulis. <sup class="cite"><a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf#page=26">[1]</a></sup>
+</p>
+<p>
+  Di interview, estimasi punya satu fungsi: <strong>menentukan apakah komponen tambahan dibutuhkan</strong>. Bulatkan dengan bebas, sebutkan asumsi Anda dengan suara keras,
+  dan jangan habiskan lebih dari ±5 menit. Kalau hasilnya 0,2 QPS, ketelitian ±50% pun tidak mengubah keputusan.
+</p>
+
+<h2>2. Dua angka bantu</h2>
+<p><strong>1 hari ≈ 10⁵ detik.</strong> Persisnya 24 × 3.600 = 86.400 detik. Dibulatkan ke 10⁵ supaya pembagian bisa dilakukan di kepala: 10 juta request per hari = 10⁷ / 10⁵ = <strong>100 QPS</strong>.</p>
+<p><strong>Pangkat 2 ≈ pangkat 10.</strong> 2¹⁰ = 1.024 ≈ 10³. Setiap tambahan 10 pada pangkat dua menambah tiga nol:</p>
+<table>
+  <thead><tr><th>Pangkat 2</th><th>≈ Pangkat 10</th><th>Satuan</th><th>Dipakai untuk</th></tr></thead>
+  <tbody>
+    <tr><td>2¹⁰</td><td>10³ (seribu)</td><td>KB</td><td>Satu baris data kecil (profil user, satu pesan dengan metadata): ±1 KB</td></tr>
+    <tr><td>2²⁰</td><td>10⁶ (juta)</td><td>MB</td><td>Satu foto hasil kompres: ratusan KB sampai beberapa MB</td></tr>
+    <tr><td>2³⁰</td><td>10⁹ (miliar)</td><td>GB</td><td>Memori satu server: puluhan sampai ratusan GB</td></tr>
+    <tr><td>2⁴⁰</td><td>10¹² (triliun)</td><td>TB</td><td>Data bertahun-tahun milik layanan besar</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Ukuran di kolom terakhir adalah <strong>asumsi</strong> yang Anda sebutkan ke interviewer, bukan fakta yang dihafal. Satu lagi: jaringan diukur dalam <strong>bit</strong> per detik (Mbps, Gbps), storage dalam <strong>byte</strong>. 1 byte = 8 bit, jadi 100 MB/s = 800 Mbps.
+</p>
+
+<h2>3. Tiga rumus</h2>
+<div class="flow">
+  <span class="box">DAU × request/user/hari</span><span class="arrow">→</span>
+  <span class="box">÷ 10⁵ = QPS rata-rata</span><span class="arrow">→</span>
+  <span class="box">× faktor puncak = QPS puncak</span><span class="arrow">→</span>
+  <span class="box">× ukuran = bandwidth / storage</span>
+</div>
+<ul>
+  <li><strong>QPS</strong> (queries per second, request per detik) = DAU × request per user per hari / 10⁵. <strong>DAU</strong> (daily active users) adalah jumlah user yang memakai sistem minimal sekali sehari, bukan jumlah akun terdaftar.</li>
+  <li><strong>QPS puncak</strong> = QPS rata-rata × faktor puncak. Faktor ini asumsi: aplikasi kantor sibuk di jam 8–9 pagi, aplikasi hiburan di malam hari. Cara menghitungnya: kalau 30% request harian datang dalam satu jam, puncaknya 0,3 × total / 3.600.</li>
+  <li><strong>Storage</strong> = jumlah record baru per hari × ukuran per record × 365 × jumlah tahun disimpan. Tambahkan index dan replika kalau relevan.</li>
+  <li><strong>Bandwidth</strong> = QPS × ukuran per request atau response. Hitung baca dan tulis terpisah; biasanya baca jauh lebih banyak.</li>
+</ul>
+
+<h2>4. Contoh: 1.000 DAU, dan kenapa satu server + satu database cukup</h2>
+<p>Soal: aplikasi internal kantor, 1.000 karyawan, masing-masing ±20 request per hari.</p>
+<table>
+  <thead><tr><th>Langkah</th><th>Hitungan</th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td>Request per hari</td><td>1.000 × 20</td><td>20.000</td></tr>
+    <tr><td>QPS rata-rata</td><td>20.000 / 10⁵</td><td><strong>0,2 QPS</strong></td></tr>
+    <tr><td>QPS puncak (30% dalam satu jam)</td><td>6.000 / 3.600</td><td><strong>±2 QPS</strong></td></tr>
+    <tr><td>Storage per tahun (1.000 record/hari × 1 KB)</td><td>1 MB × 365</td><td><strong>±365 MB</strong></td></tr>
+  </tbody>
+</table>
+<p>
+  Berapa yang sanggup dilayani satu server? Pakai angka lesson 0003: satu round trip ke database di datacenter ±0,5 ms. <sup class="cite"><a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf#page=24">[1]</a></sup>
+  Anggap satu request memanggil database beberapa kali dan menghabiskan total ±10 ms. Kalau server hanya mengerjakan satu request sekaligus pun, itu 1.000 ms / 10 ms = <strong>100 request per detik</strong>,
+  50 kali di atas puncak 2 QPS. Data 365 MB per tahun muat dengan mudah di satu database.
+</p>
+<p>
+  Kesimpulannya: <strong>1.000 DAU ≈ di bawah 1 QPS rata-rata, satu server + satu database sudah cukup</strong>. Load balancer, cache, queue, atau microservices di sini tidak dibenarkan angka mana pun.
+  Yang dibutuhkan hanya backup dan monitoring, supaya Anda tahu kapan angka itu berubah.
+</p>
+<p class="note">
+  Ini prinsip inti track ini dalam bentuk angka: ukur (atau hitung) dulu, lalu pilih desain termurah yang memenuhi angka. Ucapkan di interview: "Untuk skala ini cukup satu server; kalau puncak naik ke ratusan QPS atau p99 melewati target, saya ukur dulu, lalu mulai dari index atau cache."
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — QPS dan desain v1</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <div class="quiz" data-bank-lesson="0004" data-bank-topic="dasar-estimasi-qps" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Storage, bandwidth, pangkat 2</h2>
+  <div class="quiz" data-bank-lesson="0004" data-bank-topic="dasar-estimasi-storage" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan hitung — Kerjakan di kertas dulu</h2>
+  <p>Tulis asumsi dan hitungan Anda, baru buka kuncinya. Jawaban dalam orde besaran yang sama sudah benar.</p>
+
+  <p><strong>Soal A.</strong> Aplikasi chat: 10 juta DAU, masing-masing mengirim 40 pesan per hari. Berapa QPS tulis rata-rata dan puncaknya (asumsikan puncak 2 kali rata-rata)?</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <p>10⁷ × 40 = 4 × 10⁸ pesan per hari. 4 × 10⁸ / 10⁵ = <strong>4.000 QPS</strong> rata-rata, puncak ±<strong>8.000 QPS</strong>.
+    Angka ini sudah jauh di atas 100 request per detik dari contoh satu server di bagian 4, jadi di sinilah pertanyaan tentang beberapa server dan pembagian beban mulai masuk akal (modul Skalabilitas).</p>
+  </details>
+
+  <p><strong>Soal B.</strong> Masih aplikasi chat yang sama: setiap pesan rata-rata 100 byte termasuk metadata. Berapa storage per hari dan per tahun?</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <p>4 × 10⁸ pesan × 100 byte = 4 × 10¹⁰ byte = <strong>40 GB per hari</strong>. Dikali 365 ≈ 14.600 GB ≈ <strong>15 TB per tahun</strong>, belum termasuk index dan replika.
+    15 TB per tahun adalah sinyal untuk memikirkan masa simpan data dan cara membagi data, bukan sesuatu yang dipasang di desain v1 aplikasi kecil.</p>
+  </details>
+
+  <p><strong>Soal C.</strong> Aplikasi foto: 1 juta DAU, masing-masing melihat 50 foto per hari, setiap foto 200 KB. Berapa QPS baca dan bandwidth keluarnya, dalam MB/s dan Mbps?</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <p>10⁶ × 50 = 5 × 10⁷ tampilan per hari / 10⁵ = <strong>500 QPS</strong> baca. 500 × 200 KB = 10⁵ KB/s = <strong>100 MB/s</strong>, dikali 8 = <strong>800 Mbps</strong>.
+    Bandwidth sebesar itu untuk file statis adalah sinyal untuk menaruh foto lebih dekat ke user (CDN, lesson 0007); QPS-nya sendiri belum menuntut banyak server.</p>
+  </details>
+
+  <p><strong>Soal D.</strong> Sistem absensi 5.000 karyawan, masing-masing check-in dan check-out sekali sehari, semuanya check-in antara 07.30 dan 08.30. Berapa QPS puncaknya, dan apa desain v1-nya?</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <p>5.000 check-in dalam satu jam = 5.000 / 3.600 ≈ <strong>1,4 QPS</strong> puncak. Rata-rata hariannya 10.000 / 10⁵ = 0,1 QPS.
+    Desain v1: <strong>satu app server + satu database</strong>. Puncak harian 14 kali rata-rata pun masih jauh di bawah kapasitas satu server.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+
+  <blockquote>"Rancang aplikasi pemesanan ruang rapat untuk kantor dengan 1.000 karyawan. Lakukan estimasi kasar, lalu sebutkan desain v1 Anda." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Asumsi saya: 1.000 karyawan semuanya aktif, masing-masing sekitar 10 request per hari untuk melihat jadwal, memesan, dan membatalkan. 10.000 dibagi 10⁵ detik per hari ≈ 0,1 QPS rata-rata.
+      Puncaknya pagi hari: kalau 30% request datang dalam satu jam, itu 3.000 / 3.600 ≈ 1 QPS. Storage: sekitar 1.000 pemesanan per hari × 1 KB ≈ 1 MB per hari, ±365 MB per tahun.
+      Satu server yang melayani satu request sekaligus pun mampu sekitar 100 request per detik. Jadi desain v1: satu app server dan satu database, plus backup.
+      Kalau nanti dipakai seluruh grup perusahaan dan puncak naik ke ratusan QPS, atau p99 melewati target, saya ukur dulu dan mulai dari perubahan termurah seperti index atau cache."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>asumsi eksplisit: jumlah DAU dan request per user per hari?</li>
+      <li>QPS rata-rata = total request per hari / 10⁵ detik?</li>
+      <li>QPS puncak dari asumsi jam sibuk, bukan hanya rata-rata?</li>
+      <li>storage = jumlah record × ukuran × masa simpan?</li>
+      <li>kesimpulan satu app server + satu database, dibenarkan dengan angka?</li>
+      <li>sinyal kapan desain berubah (QPS puncak atau p99) dan langkah termurah berikutnya?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf#page=23">Jeff Dean, LADIS 2009 keynote</a>, slide 23–27 ("Designing Efficient Systems" sampai "Back of the Envelope Calculations"), ±10 menit.
+</div>
+
+<p>Berikutnya, <a href="0005-vertical-horizontal-stateless.html">lesson 0005</a>: kalau hitungan seperti Soal A menunjukkan satu server tidak cukup, pilihannya server yang lebih besar atau lebih banyak server. Kapan masing-masing, dan apa syaratnya?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Fondasi") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Beri saya satu soal estimasi lagi untuk aplikasi e-commerce", "Kenapa faktor puncak tidak selalu 2 kali?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[1] Jeff Dean, LADIS 2009 keynote "Designs, Lessons and Advice from Building Large Distributed Systems" (slide 23–27)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0003-latency-dan-throughput.html">← 0003 · Latency vs throughput; angka latency yang perlu dihafal</a>
+  <a href="0005-vertical-horizontal-stateless.html">0005 · Vertical vs horizontal scaling; stateless service →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0004.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
