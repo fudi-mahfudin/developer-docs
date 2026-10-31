@@ -96,6 +96,21 @@ sup.cite a { text-decoration: none; font-size: .7rem; }
 .flow span.box { border: 1px solid var(--ink); padding: .3rem .55rem; background: #fff; }
 .flow span.arrow { color: var(--muted); }
 
+/* Architecture diagram: inline <svg class="diagram"> (ADR 0003). Node = <g class="node service|store|cache|queue|client"> + rect + text */
+figure.diagram-fig { margin: 1.4rem 0; }
+figure.diagram-fig figcaption { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+svg.diagram { display: block; width: 100%; height: auto; font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: 13px; }
+svg.diagram .node rect { fill: #fff; stroke: var(--ink); stroke-width: 1.2; }
+svg.diagram .node text { fill: var(--ink); text-anchor: middle; dominant-baseline: middle; }
+svg.diagram .client rect { stroke-dasharray: 4 3; }
+svg.diagram .store rect { fill: #e9eef5; }
+svg.diagram .cache rect { fill: #f6ecd9; }
+svg.diagram .queue rect { fill: #ece6f3; }
+svg.diagram .edge { stroke: var(--muted); stroke-width: 1.2; fill: none; marker-end: url(#panah); }
+svg.diagram .edge.async { stroke-dasharray: 5 4; }
+svg.diagram .label { fill: var(--muted); font-size: 11px; text-anchor: middle; }
+svg.diagram marker path { fill: var(--muted); }
+
 /* Reveal (retrieval practice) */
 details {
   border: 1px solid var(--rule); padding: .6rem .9rem; margin: 1rem 0; background: #fff;

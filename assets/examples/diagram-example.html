@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contoh: diagram arsitektur inline SVG</title>
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<main>
+<header class="lesson-head">
+  <div class="kicker">Contoh komponen · bukan lesson</div>
+  <h1>Diagram arsitektur (inline SVG)</h1>
+  <p class="subtitle">Pola markup <code>svg.diagram</code> dari <code>assets/style.css</code>. Tanpa library, jalan dari <code>file://</code>, ikut tercetak.</p>
+</header>
+
+<h2>Diagram bercabang</h2>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 260" role="img" aria-label="Client ke load balancer, dua app server, cache, database primary dengan replica, dan queue ke worker">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+
+  <g class="node client"><rect x="10" y="110" width="80" height="36" rx="4"/><text x="50" y="128">Client</text></g>
+  <g class="node service"><rect x="122" y="110" width="106" height="36" rx="4"/><text x="175" y="128">Load balancer</text></g>
+  <g class="node service"><rect x="260" y="60" width="90" height="36" rx="4"/><text x="305" y="78">App 1</text></g>
+  <g class="node service"><rect x="260" y="160" width="90" height="36" rx="4"/><text x="305" y="178">App 2</text></g>
+  <g class="node cache"><rect x="400" y="10" width="90" height="36" rx="4"/><text x="445" y="28">Cache</text></g>
+  <g class="node store"><rect x="400" y="110" width="90" height="36" rx="4"/><text x="445" y="128">DB primary</text></g>
+  <g class="node store"><rect x="530" y="110" width="100" height="36" rx="4"/><text x="580" y="128">Read replica</text></g>
+  <g class="node queue"><rect x="400" y="210" width="90" height="36" rx="4"/><text x="445" y="228">Queue</text></g>
+  <g class="node service"><rect x="530" y="210" width="100" height="36" rx="4"/><text x="580" y="228">Worker</text></g>
+
+  <path class="edge" d="M90,128 H120"/>
+  <path class="edge" d="M228,122 L258,84"/>
+  <path class="edge" d="M228,134 L258,172"/>
+  <path class="edge" d="M350,70 L398,34"/>
+  <path class="edge" d="M350,84 L398,122"/>
+  <path class="edge" d="M350,172 L398,134"/>
+  <path class="edge async" d="M350,186 L398,222"/>
+  <path class="edge async" d="M490,128 H528"/>
+  <text class="label" x="509" y="120">async</text>
+  <path class="edge" d="M490,228 H528"/>
+</svg>
+<figcaption>Garis putus-putus = asinkron. Kelas node: <code>client</code>, <code>service</code>, <code>store</code>, <code>cache</code>, <code>queue</code>.</figcaption>
+</figure>
+
+<h2>Alur linear tetap memakai <code>.flow</code></h2>
+<div class="flow">
+  <span class="box">DNS</span><span class="arrow">→</span>
+  <span class="box">TCP + TLS</span><span class="arrow">→</span>
+  <span class="box">HTTP request</span><span class="arrow">→</span>
+  <span class="box">response</span>
+</div>
+</main>
+</body>
+</html>

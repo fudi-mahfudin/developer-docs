@@ -7,12 +7,13 @@ Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetc
 | `style.css` | Stylesheet bersama untuk lesson, reference, dan indeks (termasuk aturan cetak). |
 | `quiz.js` | Kuis pilihan ganda dari markup `.quiz > .q` (skor + tombol Ulangi). Tidak berubah. |
 | `bank.js` | Bank soal bersama: global `QuestionBank` (logic murni, diuji di `tests/shared/bank.test.js`). |
-| `<track>/assets/questions/NNNN.js` | **Satu file per lesson** yang mendaftarkan soal lesson itu ke bank. Ada di folder track (`dotnet/`, `fhir/`), bukan di sini. |
+| `<track>/assets/questions/NNNN.js` | **Satu file per lesson** yang mendaftarkan soal lesson itu ke bank. Ada di folder track (`dotnet/`, `fhir/`, `sysdesign/`), bukan di sini. |
 | `bank-quiz.js` | Merender soal kuis dari bank ke markup `quiz.js` di halaman lesson. |
 | `review.js` | Review campuran: tarik + acak soal dari beberapa lesson/topik, ringkasan per topik. |
 | `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/shared/order.test.js`. |
 | `hands-on.js` | Komponen hands-on lesson database (0019+): blok skrip `.sql` dengan tombol copy, dan latihan tulis query dengan jawaban di balik tombol "Lihat jawaban". Contoh: `assets/examples/hands-on-example.html`. |
 | `timer.js` | Timer bersegmen untuk latihan dibatasi waktu: `<div class="timer" data-segments="Konsep:20,Live coding:25,STAR:15">`. Mulai/Jeda/Reset, segmen berganti otomatis, tersembunyi saat dicetak. Logic diuji di `tests/shared/timer.test.js`. Contoh: lesson 0018. |
+| `svg.diagram` (CSS di `style.css`) | Diagram arsitektur bercabang sebagai inline SVG (ADR 0003): `<svg class="diagram" viewBox=… role="img" aria-label=…>` berisi `<defs><marker id="panah">`, node `<g class="node service|store|cache|queue|client"><rect/><text/></g>`, dan garis `<path class="edge">` (`edge async` = putus-putus). Bungkus dengan `<figure class="diagram-fig">` + `figcaption` bila perlu. Alur linear tetap memakai `.flow`. Contoh: `assets/examples/diagram-example.html`. |
 
 ## Format soal (`<track>/assets/questions/NNNN.js`)
 
