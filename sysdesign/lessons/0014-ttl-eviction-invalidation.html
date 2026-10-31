@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0014 · TTL, eviction, invalidation</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0014 · System Design · Modul Caching · ±20 menit</div>
+  <h1>TTL, eviction (LRU/LFU), dan invalidation</h1>
+  <p class="subtitle">Tiga cara data keluar dari cache: kedaluwarsa karena waktu, dibuang karena memori penuh, atau dihapus karena sumbernya berubah. Dan apa artinya "stale data"</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0013-pola-cache.html">lesson 0013</a> membahas di mana cache berada dan pola cache-aside, read-through, write-through, write-behind.
+  Semua pola itu menyisakan satu pertanyaan: kapan salinan di cache berhenti dipakai? Lesson ini menjawabnya dengan tiga mekanisme yang sering tertukar di interview.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Harga sudah diubah, tapi user masih melihat harga lama. Kenapa, dan bagaimana memperbaikinya?"</em>
+  tanpa catatan, dalam 60 detik: stale data karena TTL, invalidation saat write (update database dulu, lalu hapus key), TTL sebagai jaring pengaman,
+  lapisan CDN/browser, dan beda TTL dengan eviction.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. TTL: kedaluwarsa karena waktu</h2>
+<p>
+  <strong>TTL (time to live)</strong> adalah umur maksimum satu entri. Di Redis, <code>EXPIRE key detik</code> memasang timeout; setelah lewat, key dihapus otomatis.
+  Redis menghapusnya dengan dua cara: <em>pasif</em> (saat key diakses dan ternyata sudah lewat waktunya) dan <em>aktif</em> (secara berkala menguji sejumlah key ber-TTL secara acak). <sup class="cite"><a href="https://redis.io/docs/latest/commands/expire/#how-redis-expires-keys">[1]</a></sup>
+  Dokumentasi ElastiCache menambahkan TTL ke cache-aside maupun write-through: key yang kedaluwarsa diperlakukan seperti tidak ada, lalu database di-query lagi.
+  TTL "doesn't guarantee that a value isn't stale", tetapi menjaga data tidak terlalu basi. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html">[2]</a></sup>
+</p>
+<p>
+  Di HTTP, TTL ditulis sebagai <code>Cache-Control: max-age=N</code>. RFC 9111 merumuskannya: respons masih segar (<em>fresh</em>) kalau
+  <code>freshness_lifetime &gt; current_age</code>; lewat dari itu, respons menjadi <em>stale</em>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9111.html#section-4.2">[3]</a></sup>
+</p>
+<p>
+  Memilih angkanya: Azure memperingatkan TTL terlalu pendek membuat aplikasi terus mengambil ulang dari data store, dan terlalu panjang membuat data basi;
+  TTL harus mengikuti pola akses. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#problems-and-considerations">[4]</a></sup>
+  Cara mengucapkannya: "TTL = berapa lama bisnis rela melihat data lama". Harga flash sale: detik. Daftar kategori: jam.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Eviction: dibuang karena memori penuh</h2>
+<p>
+  Cache lebih kecil dari database. Saat data melewati batas <code>maxmemory</code>, Redis menjalankan <code>maxmemory-policy</code>
+  untuk memilih key yang dibuang. <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/eviction/#eviction-policies">[5]</a></sup> Yang perlu dikenal:
+</p>
+<table>
+  <thead><tr><th>Policy</th><th>Yang dibuang</th><th>Kapan dipakai</th></tr></thead>
+  <tbody>
+    <tr><td><code>noeviction</code></td><td>tidak ada; write baru mendapat error</td><td>Redis dipakai sebagai penyimpanan, bukan cache</td></tr>
+    <tr><td><code>allkeys-lru</code></td><td>key yang paling lama tidak diakses (<strong>LRU</strong>, least recently used)</td><td>"good default" menurut dokumentasi Redis</td></tr>
+    <tr><td><code>allkeys-lfu</code></td><td>key yang paling jarang diakses (<strong>LFU</strong>, least frequently used)</td><td>sebagian kecil key populer dalam waktu lama</td></tr>
+    <tr><td><code>volatile-lru</code>, <code>volatile-ttl</code>, …</td><td>hanya key yang punya TTL</td><td>cache dan data permanen di satu instance</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Kutipan tabel: <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/eviction/#eviction-policies">[5]</a></sup>. Kebijakan <code>volatile-*</code> berperilaku seperti <code>noeviction</code> kalau tidak ada key ber-TTL.
+  LRU Redis adalah aproksimasi: ia mengambil sampel beberapa key (<code>maxmemory-samples 5</code>) lalu membuang yang paling lama tidak diakses <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/eviction/#apx-lru">[5]</a></sup>;
+  LFU juga aproksimasi, memakai counter probabilistik dengan <em>decay</em> sehingga key yang dulu populer bisa turun peringkat. <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/eviction/#lfu-eviction">[5]</a></sup>
+</p>
+<p>
+  <strong>Jangan tertukar:</strong> TTL dipicu <em>waktu</em> dan berlaku per key. Eviction dipicu <em>memori</em> dan memilih korban dari banyak key. Key tanpa TTL tetap bisa di-evict oleh <code>allkeys-*</code>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — TTL dan eviction</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0019.</p>
+  <div class="quiz" data-bank-lesson="0014" data-bank-topic="cache-ttl-eviction" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Invalidation dan stale data</h2>
+<p>
+  <strong>Stale data</strong> adalah salinan di cache yang sudah berbeda dari sumbernya. <strong>Invalidation</strong> adalah tindakan menghapus atau menandai salinan itu supaya request berikutnya mengambil nilai baru.
+  Cache tidak tahu kapan database berubah: perubahan di data store "doesn't appear in the cache until the item loads again". <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#problems-and-considerations">[4]</a></sup>
+</p>
+
+<p>Alur invalidation yang benar dengan cache-aside:</p>
+<div class="flow">
+  <span class="box">write masuk</span><span class="arrow">→</span>
+  <span class="box">update database</span><span class="arrow">→</span>
+  <span class="box">DEL key di cache</span><span class="arrow">→</span>
+  <span class="box">read berikutnya miss</span><span class="arrow">→</span>
+  <span class="box">muat nilai baru + TTL</span>
+</div>
+<p>Kalau urutannya dibalik (hapus cache dulu), ini yang bisa terjadi <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[4]</a></sup>:</p>
+<div class="flow">
+  <span class="box">A: DEL key</span><span class="arrow">→</span>
+  <span class="box">B: miss, baca DB (nilai lama)</span><span class="arrow">→</span>
+  <span class="box">A: update DB</span><span class="arrow">→</span>
+  <span class="box">B: isi cache nilai lama</span><span class="arrow">→</span>
+  <span class="box">stale sampai TTL habis</span>
+</div>
+
+<p>Empat cara invalidation, dari yang termurah:</p>
+<ol>
+  <li><strong>TTL saja.</strong> Tanpa kode tambahan; data basi paling lama sebesar TTL. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html">[2]</a></sup></li>
+  <li><strong>Hapus saat write</strong> (alur di atas), TTL tetap dipasang sebagai jaring pengaman kalau DEL gagal.</li>
+  <li><strong>Nama/key berversi.</strong> Untuk aset di CDN, CloudFront merekomendasikan <em>versioned file names</em> (mis. <code>app.3f9a.css</code>) untuk file yang sering diperbarui: mengalahkan salinan lama di browser dan proxy perusahaan, memudahkan rollback, dan lebih murah karena invalidation CDN berbayar. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Invalidation.html">[6]</a></sup></li>
+  <li><strong>Push invalidation.</strong> Server mengirim pesan "key ini berubah" ke semua pemegang salinan. Contoh: Redis client-side caching (<em>tracking</em>) mengirim pesan <code>INVALIDATE</code> ke client yang pernah membaca key itu, dan client wajib menghapus salinan lokalnya. <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/client-side-caching/">[7]</a></sup> Di HTTP, cache wajib meng-invalidate URI target setelah request <code>PUT</code>/<code>POST</code>/<code>DELETE</code> yang berhasil lewat cache itu. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9111.html#section-4.4">[3]</a></sup></li>
+</ol>
+<p class="note">Ingat lapisannya: menghapus key di Redis tidak menghapus salinan di CDN atau browser. Setiap lapisan dari lesson 0013 butuh cara invalidation sendiri.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Invalidation</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <div class="quiz" data-bank-lesson="0014" data-bank-topic="cache-invalidation" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal:</strong> mekanisme invalidation eksplisit (hapus saat write, apalagi push ke banyak instance) baru dibenarkan kalau requirement menyebut toleransi staleness
+  yang lebih pendek dari TTL yang masuk akal, mis. "harga harus benar dalam 1 detik" sementara TTL 1 detik membuat hit ratio jatuh. Mengganti eviction policy dari default baru masuk akal kalau hit ratio yang diukur rendah.
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> setiap jalur write harus ingat menghapus key (satu jalur yang lupa = stale data diam-diam); push invalidation menambah koneksi dan memori di server
+  (Redis tracking menyimpan tabel key per client) <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/client-side-caching/">[7]</a></sup>; invalidation CDN dikenai biaya. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Invalidation.html">[6]</a></sup>
+</p>
+<p>
+  <strong>Alternatif lebih murah:</strong> TTL pendek saja untuk data yang boleh basi beberapa detik atau menit; nama file berversi untuk aset statis;
+  <code>allkeys-lru</code> sebagai default eviction <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/eviction/#eviction-policies">[5]</a></sup>;
+  dan untuk data yang tidak boleh basi sama sekali (saldo, stok saat checkout), jangan di-cache: baca dari sumber utama. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#when-to-use-this-pattern">[4]</a></sup>
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Admin mengubah harga produk, tapi halaman produk masih menampilkan harga lama selama beberapa menit. Jelaskan penyebabnya dan cara Anda memperbaikinya tanpa over-engineering." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Penyebabnya stale data: cache masih memegang nilai lama sampai TTL habis, karena write tidak menghapus key. Pertama saya tanya requirement: harga boleh basi berapa lama? Kalau beberapa detik saja, perbaikan termurah adalah invalidation saat write: update database dulu, lalu hapus key; TTL tetap dipasang sebagai jaring pengaman kalau delete gagal. Saya cek juga lapisan lain: kalau halaman di-cache CDN atau browser, saya pakai URL berversi atau invalidation CDN. Push invalidation ke local cache di setiap instance, lewat pub/sub atau Redis tracking, baru saya tambahkan kalau angka menuntut, misalnya puluhan instance dengan local cache dan staleness harus di bawah TTL."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>penyebab: cache memegang nilai lama sampai TTL habis (stale data)?</li>
+      <li>invalidation saat write: update database dulu, lalu hapus key?</li>
+      <li>TTL sebagai jaring pengaman bila delete gagal?</li>
+      <li>lapisan lain (CDN/browser): URL berversi atau invalidation CDN?</li>
+      <li>toleransi staleness dari requirement sebelum memilih mekanisme?</li>
+      <li>push invalidation (pub/sub, tracking) dibenarkan dengan angka, bukan sebagai default?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://redis.io/docs/latest/develop/reference/eviction/">Redis docs: Key eviction</a>, ±10 menit. Daftar lengkap <code>maxmemory-policy</code> dan cara kerja LRU/LFU aproksimasi.
+</div>
+
+<p>Berikutnya, <a href="0015-thundering-herd-hot-key.html">lesson 0015</a>: apa yang terjadi saat key yang sangat populer kedaluwarsa (cache stampede), hot key, dan cache berlapis.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Caching") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan LFU lebih baik dari LRU?", "Berapa TTL yang wajar untuk profil user?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://redis.io/docs/latest/commands/expire/">[1] Redis docs: EXPIRE</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html">[2] Amazon ElastiCache: Caching strategies</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9111.html">[3] RFC 9111: HTTP Caching</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[4] Azure Architecture Center: Cache-Aside pattern</a> ·
+  <a href="https://redis.io/docs/latest/develop/reference/eviction/">[5] Redis docs: Key eviction</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Invalidation.html">[6] Amazon CloudFront: Invalidate files to remove content</a> ·
+  <a href="https://redis.io/docs/latest/develop/reference/client-side-caching/">[7] Redis docs: Client-side caching reference</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0013-pola-cache.html">← 0013 · Pola cache: cache-aside, read-through, write-through, write-behind</a>
+  <a href="0015-thundering-herd-hot-key.html">0015 · Thundering herd, hot key, cache berlapis →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

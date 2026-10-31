@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0028 · Studi kasus: URL shortener</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0028 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Studi kasus: URL shortener</h1>
+  <p class="subtitle">Base62 vs hash, sistem read-heavy, cache untuk link populer, dan redirect 301 vs 302, dikerjakan dengan kerangka 5 langkah</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0027-kerangka-5-langkah.html">lesson 0027</a> memberi kerangka 5 langkah. Lesson ini menjalankannya penuh untuk soal yang paling sering muncul:
+  "rancang layanan seperti bit.ly". Perhatikan urutannya: angka dulu, desain v1 sederhana, lalu setiap komponen tambahan dibenarkan angka.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Rancang URL shortener untuk 1 juta URL baru per hari"</em> tanpa catatan, dalam 90 detik:
+  estimasi QPS dan storage, pilihan base62 dari counter vs hash (dan collision-nya), desain v1, kapan cache ditambahkan, dan kapan memakai 301 atau 302.
+</div>
+
+<!-- ============ LANGKAH 1 ============ -->
+<h2>Langkah 1 — Klarifikasi requirement</h2>
+<ul>
+  <li><strong>Functional:</strong> user mengirim URL panjang dan mendapat URL pendek; membuka URL pendek mengarahkan (redirect) ke URL asli; link boleh punya tanggal kedaluwarsa. Di luar scope: custom alias, akun, dashboard.</li>
+  <li><strong>Skala (asumsi, disetujui interviewer):</strong> 1 juta URL baru per hari; rasio baca:tulis 100:1; data disimpan 5 tahun.</li>
+  <li><strong>Non-functional:</strong> redirect p99 &lt; 100 ms; availability 99,9%; link baru boleh telat terlihat beberapa detik; kode pendek tidak boleh dobel.</li>
+</ul>
+
+<!-- ============ LANGKAH 2 ============ -->
+<h2>Langkah 2 — Estimasi</h2>
+<table>
+  <thead><tr><th>Besaran</th><th>Hitungan</th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td>QPS tulis</td><td>10<sup>6</sup> ÷ 10<sup>5</sup> detik</td><td>±10 QPS, puncak ±30</td></tr>
+    <tr><td>QPS baca</td><td>100 × QPS tulis</td><td>±1.000 QPS, puncak ±3.000 (read-heavy)</td></tr>
+    <tr><td>Jumlah URL 5 tahun</td><td>10<sup>6</sup> × 365 × 5</td><td>±1,8 × 10<sup>9</sup></td></tr>
+    <tr><td>Storage</td><td>1,8 × 10<sup>9</sup> × ±500 byte (URL + kode + metadata)</td><td>±1 TB</td></tr>
+    <tr><td>Panjang kode</td><td>62<sup>6</sup> ≈ 5,7 × 10<sup>10</sup>; 62<sup>7</sup> ≈ 3,5 × 10<sup>12</sup></td><td>7 karakter base62 memberi ruang ±2.000× jumlah URL</td></tr>
+    <tr><td>Cache link populer</td><td>10 juta link terpanas × 500 byte</td><td>±5 GB, muat di satu node cache</td></tr>
+  </tbody>
+</table>
+<p>
+  Kesimpulan angka: tulis sangat kecil, baca 100× lebih besar, data ±1 TB. Ini sistem <strong>read-heavy</strong>, jadi deep dive nanti berfokus pada jalur baca,
+  bukan pada menskalakan tulis.
+</p>
+
+<!-- ============ LANGKAH 3 ============ -->
+<h2>Langkah 3 — API dan data model</h2>
+<pre><code>POST /api/urls            { "longUrl": "https://…", "expiresAt": "2027-01-01" }
+  → 201 Created           { "shortUrl": "https://sho.rt/aZ3kQ9x" }
+
+GET /{kode}
+  → 302 Found             Location: https://… (URL asli)
+  → 404 Not Found         (kode tidak ada atau kedaluwarsa)
+
+Tabel urls
+  kode        varchar(7)  PRIMARY KEY      ← lookup redirect lewat index primary key
+  long_url    text        NOT NULL
+  created_at  timestamptz
+  expires_at  timestamptz NULL</code></pre>
+
+<p><strong>Cara membuat kode.</strong> Dua pilihan yang perlu bisa Anda bandingkan:</p>
+<table>
+  <thead><tr><th></th><th>Counter + base62</th><th>Hash URL dipotong 7 karakter</th></tr></thead>
+  <tbody>
+    <tr><td>Cara</td><td>Ambil angka unik dari sequence database, lalu ubah ke basis 62 (<code>0-9a-zA-Z</code>): 125 = 2×62 + 1 → <code>"21"</code></td><td>Hitung hash (mis. SHA-256) dari URL, ambil 7 karakter base62 pertama</td></tr>
+    <tr><td>Collision</td><td>Tidak ada: setiap angka dipakai sekali</td><td>Pasti terjadi: dengan 1,8 × 10<sup>9</sup> kode di ruang 3,5 × 10<sup>12</sup>, perkiraan birthday n²/2N ≈ 4,6 × 10<sup>5</sup> pasangan bentrok</td></tr>
+    <tr><td>Kelemahan</td><td>Kode berurutan bisa ditebak; butuh satu sumber angka</td><td>Butuh cek dan ulangi (tambah salt) saat bentrok</td></tr>
+    <tr><td>Kelebihan</td><td>Sederhana dan pendek</td><td>URL yang sama menghasilkan kode yang sama (dedupe gratis)</td></tr>
+  </tbody>
+</table>
+<p>
+  Untuk v1, counter cukup: PostgreSQL <code>CREATE SEQUENCE</code> membuat <em>"a new sequence number generator"</em>, dan nilainya diambil dengan <code>nextval</code>. <sup class="cite"><a href="https://www.postgresql.org/docs/current/sql-createsequence.html">[1]</a></sup>
+  Puncak 30 QPS tulis jauh dari batas satu sequence, jadi ID generator terdistribusi (mis. jatah range angka per server) belum dibenarkan.
+  Kalau memilih hash, collision ditangkap oleh unique constraint, yang memastikan nilai kolom <em>"is unique among all the rows in the table"</em>; insert yang bentrok gagal, lalu ulangi dengan salt. <sup class="cite"><a href="https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Kode pendek</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0028" data-bank-topic="kasus-url-kode" data-stack></div>
+</section>
+
+<!-- ============ LANGKAH 4 ============ -->
+<h2>Langkah 4 — High-level design (v1)</h2>
+<p>
+  Desain v1 paling sederhana yang memenuhi angka langkah 2: satu app server stateless dan satu PostgreSQL.
+  Tulis: <code>nextval</code> → base62 → <code>INSERT</code>. Baca: <code>SELECT long_url FROM urls WHERE kode = $1</code> lewat index primary key → 302.
+</p>
+<section class="exercise">
+  <h2>Latihan 2 — Gambar diagram v1 sendiri dulu</h2>
+  <p>Gambar diagram v1 Anda sendiri dulu di kertas: kotak apa saja, panah ke mana, dan jalur satu request tulis serta satu request baca. Setelah selesai, buka jawabannya.</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <figure class="diagram-fig">
+    <svg class="diagram" viewBox="0 0 640 150" role="img" aria-label="Desain v1 URL shortener: client ke satu app server, app server ke satu PostgreSQL">
+      <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g class="node client"><rect x="10" y="50" width="80" height="36" rx="4"/><text x="50" y="68">Client</text></g>
+      <g class="node service"><rect x="150" y="50" width="130" height="36" rx="4"/><text x="215" y="68">App server</text></g>
+      <g class="node store"><rect x="350" y="50" width="130" height="36" rx="4"/><text x="415" y="68">PostgreSQL</text></g>
+      <path class="edge" d="M90,68 H148"/>
+      <path class="edge" d="M280,68 H348"/>
+      <text class="label" x="119" y="40">POST · GET</text>
+      <text class="label" x="314" y="40">sequence</text>
+      <text class="label" x="415" y="110">urls (kode PK), ±1 TB / 5 th</text>
+    </svg>
+    <figcaption>v1: cukup untuk 30 QPS tulis dan, setelah diukur, kemungkinan besar 3.000 QPS baca lewat lookup primary key.</figcaption>
+    </figure>
+    <p>Jalur baca: client → <code>GET /aZ3kQ9x</code> → app server → lookup primary key → 302 + <code>Location</code>. Jalur tulis: <code>POST</code> → <code>nextval</code> → base62 → <code>INSERT</code> → 201.</p>
+  </details>
+</section>
+
+<!-- ============ LANGKAH 5 ============ -->
+<h2>Langkah 5 — Deep dive, bottleneck, trade-off</h2>
+<p>Evolusi dari v1 ke v2, satu komponen per alasan:</p>
+<ol>
+  <li><strong>Availability 99,9%</strong> (jatah ±43 menit/bulan): satu app server adalah single point of failure. Tambah server kedua di belakang load balancer; server stateless, jadi tidak ada session yang harus dipindah.</li>
+  <li><strong>3.000 QPS baca di puncak:</strong> ukur dulu p99 query dan CPU database. Kalau p99 redirect mendekati 100 ms, tambah cache-aside di Redis untuk link populer (±5 GB).
+    Redis menyarankan <code>allkeys-lru</code> <em>"when you expect that a subset of elements will be accessed far more often than the rest"</em>, pola yang cocok dengan link viral. <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/eviction/">[3]</a></sup>
+    Biayanya: satu komponen lagi, dan link yang dihapus atau kedaluwarsa bisa tetap terlayani sampai TTL cache habis.</li>
+  <li><strong>Cache miss masih membebani database:</strong> baru tambah read replica. Link baru yang telat beberapa detik terlihat di replica sudah diizinkan requirement.</li>
+  <li><strong>Sharding belum perlu:</strong> ±1 TB dalam 5 tahun dan 30 QPS tulis masih muat di satu primary. Sebut sinyal kapan naik: storage atau tulis mendekati batas satu node; saat itu shard berdasarkan hash kode.</li>
+</ol>
+
+<p><strong>301 atau 302?</strong> Ini trade-off yang hampir selalu ditanyakan:</p>
+<table>
+  <thead><tr><th></th><th>301 Moved Permanently</th><th>302 Found</th></tr></thead>
+  <tbody>
+    <tr><td>Arti di RFC 9110</td><td>Resource punya URI permanen baru; <em>"any future references to this resource ought to use one of the enclosed URIs"</em>, dan 301 <em>"is heuristically cacheable"</em> <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#status.301">[4]</a></sup></td><td>Resource sementara berada di URI lain; <em>"the client ought to continue to use the target URI for future requests"</em> <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#status.302">[4]</a></sup></td></tr>
+    <tr><td>Efek</td><td>Browser bisa menyimpan redirect, klik berikutnya tidak sampai ke server: beban turun</td><td>Setiap klik sampai ke server: bisa dihitung, tujuan bisa diubah atau dikedaluwarsakan</td></tr>
+    <tr><td>Pilih kalau</td><td>Beban baca adalah masalah utama dan analytics tidak dibutuhkan</td><td>Butuh analytics klik atau link bisa berubah (pilihan v1 di sini)</td></tr>
+  </tbody>
+</table>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 260" role="img" aria-label="Desain v2 URL shortener: client ke load balancer, dua app server, cache Redis, PostgreSQL primary dengan read replica">
+  <g class="node client"><rect x="10" y="110" width="80" height="36" rx="4"/><text x="50" y="128">Client</text></g>
+  <g class="node service"><rect x="122" y="110" width="106" height="36" rx="4"/><text x="175" y="128">Load balancer</text></g>
+  <g class="node service"><rect x="260" y="60" width="90" height="36" rx="4"/><text x="305" y="78">App 1</text></g>
+  <g class="node service"><rect x="260" y="160" width="90" height="36" rx="4"/><text x="305" y="178">App 2</text></g>
+  <g class="node cache"><rect x="400" y="10" width="110" height="36" rx="4"/><text x="455" y="28">Redis (cache)</text></g>
+  <g class="node store"><rect x="400" y="110" width="110" height="36" rx="4"/><text x="455" y="128">DB primary</text></g>
+  <g class="node store"><rect x="530" y="200" width="100" height="36" rx="4"/><text x="580" y="218">Read replica</text></g>
+  <path class="edge" d="M90,128 H120"/>
+  <path class="edge" d="M228,122 L258,84"/>
+  <path class="edge" d="M228,134 L258,172"/>
+  <path class="edge" d="M350,70 L398,34"/>
+  <path class="edge" d="M350,84 L398,122"/>
+  <path class="edge" d="M350,166 L398,40"/>
+  <path class="edge" d="M350,176 L398,138"/>
+  <path class="edge async" d="M510,140 L555,198"/>
+  <text class="label" x="560" y="160">async</text>
+  <text class="label" x="455" y="62">cache-aside</text>
+</svg>
+<figcaption>v2: setiap kotak tambahan punya alasan angka. LB + App 2 untuk availability 99,9%; Redis untuk 3.000 QPS baca setelah p99 diukur; replica hanya kalau cache miss masih membebani primary.</figcaption>
+</figure>
+
+<section class="exercise">
+  <h2>Latihan 3 — Redirect dan jalur baca</h2>
+  <div class="quiz" data-bank-lesson="0028" data-bank-topic="kasus-url-redirect" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Rancang URL shortener untuk 1 juta URL baru per hari. Mulai dari v1, lalu jelaskan evolusinya." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Dengan rasio baca:tulis 100:1, tulisnya sekitar 10 QPS dan baca 1.000 QPS, puncak sekitar 3.000; dalam 5 tahun ada 1,8 miliar URL, sekitar 1 TB. Tujuh karakter base62 memberi 3,5 triliun kombinasi, jadi cukup. Kodenya saya buat dari sequence database lalu di-encode base62, jadi tidak ada collision; kalau pakai hash, saya harus menangkap collision dengan unique constraint dan mengulang dengan salt. v1-nya satu app server dan satu PostgreSQL dengan kode sebagai primary key. Untuk availability 99,9% saya tambah server kedua di belakang load balancer. Setelah mengukur p99 baca di puncak, saya tambah cache-aside di Redis untuk link populer, sekitar 5 GB. Redirect saya pakai 302 supaya setiap klik terhitung; 301 mengurangi beban karena browser menyimpannya, tapi analytics hilang. Sharding belum perlu karena 1 TB dan 30 QPS tulis masih muat di satu node."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>estimasi: ±10 QPS tulis, ±1.000 QPS baca (puncak ±3.000), ±1 TB dalam 5 tahun?</li>
+      <li>kode base62 dari sequence, atau hash dengan penanganan collision, dan 7 karakter cukup?</li>
+      <li>v1: app server dan satu database dengan kode sebagai primary key?</li>
+      <li>301 (cacheable, beban turun) vs 302 (setiap klik terhitung, link bisa diubah)?</li>
+      <li>cache-aside untuk link populer setelah mengukur p99 atau beban database?</li>
+      <li>membenarkan komponen dengan angka (LB untuk availability, cache untuk QPS baca, sharding belum perlu)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#status.3xx">RFC 9110 bagian 15.4: Redirection 3xx</a>, ±15 menit. Beda 301, 302, 307, dan 308.
+</div>
+
+<p>Berikutnya, <a href="0029-kasus-rate-limiter.html">lesson 0029</a>: rate limiter terdistribusi, dengan counter di Redis dan race condition-nya.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana mencegah kode berurutan mudah ditebak?", "bagaimana menghapus link kedaluwarsa dari 1,8 miliar baris?", atau "kapan 308 lebih tepat dari 301?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.postgresql.org/docs/current/sql-createsequence.html">[1] PostgreSQL docs: CREATE SEQUENCE</a> ·
+  <a href="https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS">[2] PostgreSQL docs: Unique Constraints</a> ·
+  <a href="https://redis.io/docs/latest/develop/reference/eviction/">[3] Redis docs: Key eviction</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html">[4] RFC 9110: HTTP Semantics (301, 302)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0027-kerangka-5-langkah.html">← 0027 · Kerangka 5 langkah</a>
+  <a href="0029-kasus-rate-limiter.html">0029 · Studi kasus: rate limiter →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0028.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
