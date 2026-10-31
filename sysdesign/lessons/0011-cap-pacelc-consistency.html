@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0011 · CAP, PACELC, dan consistency model</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0011 · System Design · Modul Data · ±20 menit</div>
+  <h1>CAP, PACELC, dan memilih consistency model</h1>
+  <p class="subtitle">Apa yang sebenarnya dikatakan CAP, kenapa PACELC lebih berguna di interview, dan cara memilih antara strong consistency, eventual consistency, dan read-your-writes</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0010-sharding-dan-consistent-hashing.html">lesson 0010</a> membagi data ke banyak node, dan <a href="0009-index-dan-replication.html">lesson 0009</a> menyalinnya ke replica.
+  Begitu data ada di lebih dari satu node, setiap write harus sampai ke salinan lain lewat jaringan, dan jaringan bisa lambat atau putus.
+  Lesson terakhir modul Data ini memberi bahasa untuk trade-off itu.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Jelaskan CAP. Untuk fitur X, Anda memilih consistency atau availability?"</em>
+  tanpa catatan, dalam 60 detik: CAP hanya berlaku saat partition, PACELC menambah trade-off latency vs consistency saat normal,
+  strong vs eventual consistency dengan contoh fitur, read-your-writes, dan quorum <code>R + W &gt; N</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. CAP: pilihan saat jaringan putus</h2>
+<p>
+  Tiga sifat: <strong>Consistency</strong> (setiap read melihat write terakhir, seolah hanya ada satu salinan data), <strong>Availability</strong> (setiap request ke node yang hidup mendapat jawaban), dan <strong>Partition tolerance</strong> (sistem tetap berjalan walau pesan antar node hilang).
+  Gilbert dan Lynch membuktikan bahwa di jaringan asinkron tidak mungkin membuat objek read/write yang menjamin availability dan atomic consistency sekaligus di semua eksekusi, termasuk eksekusi yang kehilangan pesan. <sup class="cite"><a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer6.pdf">[1]</a></sup>
+</p>
+<p>
+  Karena partition di sistem terdistribusi tidak bisa dihindari, pilihan nyatanya hanya dua <em>saat partition terjadi</em>: tolak sebagian request supaya tetap konsisten (CP), atau tetap menjawab dengan data yang mungkin lama (AP).
+  Abadi menekankan bahwa CAP hanya bicara tentang kegagalan: "CAP allows the system to make the complete set of ACID … guarantees alongside high availability when there are no partitions." <sup class="cite"><a href="https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf">[2]</a></sup>
+</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 230" role="img" aria-label="Dua node replika terputus oleh partition. Client 1 menulis ke node 1. Client 2 membaca dari node 2, yang harus memilih: menolak (CP) atau menjawab data lama (AP)">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="30" width="110" height="36" rx="4"/><text x="65" y="48">Client 1</text></g>
+  <g class="node client"><rect x="520" y="30" width="110" height="36" rx="4"/><text x="575" y="48">Client 2</text></g>
+  <g class="node store"><rect x="150" y="110" width="120" height="36" rx="4"/><text x="210" y="128">Node 1 (x=2)</text></g>
+  <g class="node store"><rect x="370" y="110" width="120" height="36" rx="4"/><text x="430" y="128">Node 2 (x=1)</text></g>
+  <path class="edge" d="M90,66 L180,108"/>
+  <text class="label" x="110" y="100">write x=2</text>
+  <path class="edge" d="M550,66 L460,108"/>
+  <text class="label" x="540" y="100">read x?</text>
+  <path class="edge async" d="M270,128 H310"/>
+  <text class="label" x="320" y="120">✕</text>
+  <text class="label" x="320" y="104">partition</text>
+  <text class="label" x="430" y="180">CP: tolak / error sampai pulih</text>
+  <text class="label" x="430" y="200">AP: jawab x=1 (data lama)</text>
+</svg>
+<figcaption>Saat pesan dari node 1 tidak sampai, node 2 harus memilih: konsisten (menolak) atau available (menjawab data lama).</figcaption>
+</figure>
+
+<h2>2. PACELC: trade-off juga ada saat normal</h2>
+<p>
+  PACELC (dibaca "pass-elk"): "if there is a partition (P), how does the system trade off availability and consistency (A and C); else (E), when the system is running normally in the absence of partitions, how does the system trade off latency (L) and consistency (C)?"
+  Bagian ELC "only applies to systems that replicate data". <sup class="cite"><a href="https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf">[2]</a></sup>
+  Inilah trade-off yang Anda temui setiap hari: replikasi sinkron (konsisten, lebih lambat) vs asinkron (cepat, bisa tertinggal) dari lesson 0009.
+</p>
+
+<div class="flow">
+  <span class="box">ada partition?</span><span class="arrow">→</span>
+  <span class="box">ya: pilih A atau C</span><span class="arrow">→</span>
+  <span class="box">tidak (else): pilih L atau C</span>
+</div>
+
+<table>
+  <thead><tr><th>Kelas</th><th>Contoh (Abadi 2012)</th><th>Artinya</th></tr></thead>
+  <tbody>
+    <tr><td>PA/EL</td><td>Dynamo, Cassandra, Riak (default)</td><td>"if a partition occurs, they give up consistency for availability, and under normal operation they give up consistency for lower latency"</td></tr>
+    <tr><td>PC/EC</td><td>VoltDB/H-Store, Megastore; BigTable, HBase</td><td>"refuse to give up consistency, and will pay the availability and latency costs to achieve it"</td></tr>
+  </tbody>
+</table>
+<p class="note">Kutipan tabel: <sup class="cite"><a href="https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf">[2]</a></sup>. Di interview, menyebut "PA/EL" atau "PC/EC" untuk komponen yang Anda pilih menunjukkan Anda paham bahwa trade-off-nya tidak hanya saat jaringan putus.</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — CAP dan PACELC</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0019.</p>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="data-cap-pacelc" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Consistency model: strong, eventual, read-your-writes</h2>
+<ul>
+  <li><strong>Strong consistency.</strong> Setiap read melihat write terakhir yang sudah di-commit. Wajib untuk saldo, stok saat checkout, username unik, lock.</li>
+  <li><strong>Eventual consistency.</strong> Replika boleh sempat berbeda, tapi kalau write berhenti, semuanya akhirnya sama. Dynamo: "all updates reach all replicas eventually." <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup> Cukup untuk jumlah like, feed, hitungan view.</li>
+  <li><strong>Read-your-writes.</strong> Jaminan di tengah: user selalu melihat tulisannya sendiri, walau user lain mungkin melihat data lama. Dynamo menyebut optimasi yang memilih node yang tadi melayani read sebelumnya untuk "increasing the chances of getting 'read-your-writes' consistency." <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup> Cocok untuk edit profil dan posting komentar (lihat juga penanganan replication lag di 0009).</li>
+</ul>
+
+<h3>Quorum singkat: N, R, W</h3>
+<p>
+  Di sistem leaderless seperti Dynamo, setiap data disalin ke <strong>N</strong> node. "R is the minimum number of nodes that must participate in a successful read operation", W untuk write.
+  "Setting R and W such that R + W &gt; N yields a quorum-like system", dan konfigurasi yang umum di Amazon adalah (N, R, W) = (3, 2, 2). Harganya: "the latency of a get (or put) operation is dictated by the slowest of the R (or W) replicas." <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup>
+  Intuisinya: dengan N=3, W=2, R=2, set node yang ditulis dan yang dibaca pasti beririsan minimal satu node, jadi read biasanya melihat versi terbaru.
+</p>
+<p>
+  Catatan untuk tidak berlebihan di interview: Abadi menulis bahwa sistem seperti ini mendapat konsistensi lebih dengan menaikkan R + W "at the expense of latency (although they cannot achieve full consistency as defined by Gilbert and Lynch, even if R + W &gt; N)." <sup class="cite"><a href="https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf">[2]</a></sup>
+  Dynamo sendiri memakai "sloppy quorum" saat node gagal, demi availability. <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Consistency model dan quorum</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="data-konsistensi" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Kapan tidak perlu</h2>
+<p>Komponen di sini adalah <strong>datastore terdistribusi multi-node dengan consistency yang bisa diatur</strong> (leaderless, quorum, multi-region), dan diskusi CAP yang menyertainya.</p>
+<ul>
+  <li><strong>Sinyal yang membenarkan.</strong> Data memang harus direplikasi ke banyak node atau region dan sistem harus tetap menerima write walau sebagian node atau link putus (mis. keranjang belanja yang tidak boleh menolak write), pada skala yang sudah terukur melampaui satu leader + standby.</li>
+  <li><strong>Biaya dan risiko.</strong> Eventual consistency memindahkan kompleksitas ke aplikasi: versi yang bentrok harus direkonsiliasi (Dynamo memakai vector clock, "a list of (node, counter) pairs" <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup>), data lama terbaca, dan bug yang sulit direproduksi. Quorum menambah latency (yang paling lambat dari R atau W replika).</li>
+  <li><strong>Alternatif lebih murah.</strong> Satu database leader (strong consistency gratis dari satu sumber kebenaran), ditambah standby untuk failover dan read replica untuk beban baca; read-your-writes cukup dengan membaca dari leader setelah write. Untuk 1.000 user aktif harian di satu region, pertanyaan CAP hampir tidak relevan: jawab "satu leader, konsisten".</li>
+</ul>
+<p>Kalimat untuk interview: "Untuk pembayaran saya pilih CP: lebih baik menolak sementara daripada saldo salah. Untuk hitungan like, AP dengan eventual consistency cukup. Pada skala ini keduanya masih bisa dilayani satu PostgreSQL; datastore leaderless baru masuk kalau write harus tetap diterima saat region putus."</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Jelaskan CAP dan PACELC. Untuk sistem e-commerce, bagian mana yang Anda buat strong consistent dan mana yang eventual?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "CAP bilang saat terjadi network partition, sistem yang direplikasi harus memilih: tetap konsisten dengan menolak sebagian request, atau tetap available dengan risiko data lama. Partition tidak bisa dihindari, jadi pilihannya CP atau AP, dan itu hanya berlaku saat partition.
+      PACELC melengkapinya: saat normal pun ada trade-off latency vs consistency, misalnya replikasi sinkron vs asinkron. Dynamo dan Cassandra default-nya PA/EL, BigTable dan HBase PC/EC.
+      Di e-commerce, saldo, pembayaran, dan stok saat checkout harus strong consistent; lebih baik menolak sementara daripada menjual barang yang tidak ada. Jumlah review, rekomendasi, dan feed cukup eventual. Untuk edit profil saya pakai read-your-writes: user membaca dari leader setelah menulis.
+      Kalau memakai datastore leaderless, quorum R + W &gt; N, misalnya 3, 2, 2, membuat read biasanya melihat write terbaru dengan biaya latency.
+      Pada skala kecil, satu database leader sudah memberi strong consistency tanpa diskusi CAP."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>CAP: saat partition, pilih consistency atau availability (CP vs AP), bukan "pilih 2 dari 3" bebas?</li>
+      <li>PACELC: saat normal ada trade-off latency vs consistency (sync vs async replication)?</li>
+      <li>contoh fitur yang butuh strong consistency (saldo, stok, pembayaran)?</li>
+      <li>contoh fitur yang cukup eventual consistency (like, feed, rekomendasi)?</li>
+      <li>read-your-writes atau quorum <code>R + W &gt; N</code> sebagai jalan tengah, dengan biaya latency?</li>
+      <li>membenarkan datastore terdistribusi dengan angka atau kebutuhan (satu leader cukup untuk skala kecil)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf">Abadi 2012, "Consistency Tradeoffs in Modern Distributed Database System Design"</a>, IEEE Computer, 6 halaman (±20 menit). Paling berguna untuk memahami kenapa CAP saja tidak cukup.
+</div>
+
+<p>Berikutnya, <a href="0012-review-fondasi-skalabilitas.html">Review 1</a>: pool Fondasi + Skalabilitas (0001–0007). Modul Data ini diuji di Review 2 (0019), bersama modul Caching.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Data") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa beda consistency di CAP dan consistency di ACID?", "kenapa R + W &gt; N tetap tidak menjamin linearizability?", atau "bagaimana menjelaskan CP vs AP untuk sistem chat?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer6.pdf">[1] Gilbert &amp; Lynch 2002, Brewer's Conjecture and the Feasibility of Consistent, Available, Partition-Tolerant Web Services (SIGACT News)</a> ·
+  <a href="https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf">[2] Abadi 2012, Consistency Tradeoffs in Modern Distributed Database System Design (IEEE Computer)</a> ·
+  <a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3] DeCandia et al. 2007, Dynamo: Amazon's Highly Available Key-value Store (SOSP)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0010-sharding-dan-consistent-hashing.html">← 0010 · Sharding dan consistent hashing</a>
+  <a href="0012-review-fondasi-skalabilitas.html">0012 · Review 1: Fondasi + Skalabilitas →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

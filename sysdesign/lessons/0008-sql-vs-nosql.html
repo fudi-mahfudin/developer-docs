@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0008 · SQL vs NoSQL: kapan memilih yang mana</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0008 · System Design · Modul Data · ±20 menit</div>
+  <h1>SQL vs NoSQL: pilih dari pola akses, bukan dari tren</h1>
+  <p class="subtitle">Lima keluarga database (relasional, key-value, document, wide-column, graph), ACID vs BASE, dan kalimat yang aman diucapkan di interview</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0007-reverse-proxy-dan-cdn.html">lesson 0007</a> menutup modul Skalabilitas: server aplikasi sudah stateless dan bisa diperbanyak di belakang load balancer.
+  Sekarang bottleneck pindah ke tempat state disimpan, yaitu database. Modul Data mulai dari pertanyaan yang hampir selalu muncul di langkah 3 (API + data model):
+  "database apa yang Anda pakai, dan kenapa?"
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Kenapa Anda memilih SQL (atau NoSQL) untuk sistem ini?"</em>
+  tanpa catatan, dalam 60 detik: pola akses data, kebutuhan transaksi (ACID vs BASE), keluarga NoSQL yang cocok kalau memang perlu,
+  dan kenapa database relasional adalah default yang aman.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Lima keluarga database</h2>
+<p>
+  "NoSQL" bukan satu jenis database, tapi payung untuk beberapa model data. Yang membedakan adalah <strong>bentuk data dan cara Anda mengaksesnya</strong>.
+</p>
+
+<table>
+  <thead><tr><th>Keluarga</th><th>Model data</th><th>Akses yang cepat</th><th>Contoh</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Relasional</strong> (SQL)</td><td>tabel, baris, kolom, foreign key</td><td>query bebas, JOIN, transaksi multi-tabel</td><td>PostgreSQL, MySQL</td></tr>
+    <tr><td><strong>Key-value</strong></td><td>key → value (blob)</td><td>get/put satu key</td><td>Dynamo, Redis</td></tr>
+    <tr><td><strong>Document</strong></td><td>dokumen JSON-like bersarang</td><td>ambil/simpan satu dokumen utuh</td><td>MongoDB</td></tr>
+    <tr><td><strong>Wide-column</strong></td><td>row key → banyak kolom, terurut per row key</td><td>scan rentang row key, write volume besar</td><td>Bigtable, HBase, Cassandra</td></tr>
+    <tr><td><strong>Graph</strong></td><td>node, relationship, property</td><td>traversal relasi berlapis (teman dari teman)</td><td>Neo4j</td></tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>Key-value.</strong> Paper Dynamo menulis: "There are many services on Amazon's platform that only need primary-key access to a data store", misalnya shopping cart dan session management; untuk pola itu, "the common pattern of using a relational database would lead to inefficiencies and limit scale and availability." <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[1]</a></sup></li>
+  <li><strong>Document.</strong> MongoDB menyimpan "data records as BSON documents", yaitu representasi biner dari JSON, dan satu dokumen dibatasi 16 mebibytes. <sup class="cite"><a href="https://www.mongodb.com/docs/manual/core/document/">[2]</a></sup> Cocok untuk data yang dibaca utuh sebagai satu objek (profil produk dengan atribut berbeda per kategori).</li>
+  <li><strong>Wide-column.</strong> "A Bigtable is a sparse, distributed, persistent multi-dimensional sorted map", di-index oleh row key, column key, dan timestamp, dan data disimpan "in lexicographic order by row key". <sup class="cite"><a href="https://research.google/pubs/bigtable-a-distributed-storage-system-for-structured-data/">[3]</a></sup> Cocok untuk time series, log event, dan data yang diakses per rentang key.</li>
+  <li><strong>Graph.</strong> Neo4j "stores data as nodes, relationships, and properties instead of in tables or documents". <sup class="cite"><a href="https://neo4j.com/docs/getting-started/graph-database/">[4]</a></sup> Cocok kalau query utamanya traversal (rekomendasi, deteksi fraud lewat relasi).</li>
+</ul>
+
+<p>Cara memilihnya: mulai dari pertanyaan "query apa yang paling sering dan paling penting?", bukan dari nama produk.</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 300" role="img" aria-label="Pohon keputusan: dari pola akses data menuju relasional sebagai default, atau ke key-value, document, wide-column, dan graph bila pola aksesnya khusus">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="132" width="120" height="36" rx="4"/><text x="70" y="150">Pola akses?</text></g>
+  <g class="node store"><rect x="300" y="12" width="200" height="36" rx="4"/><text x="400" y="30">Relasional (default)</text></g>
+  <g class="node store"><rect x="300" y="72" width="200" height="36" rx="4"/><text x="400" y="90">Key-value</text></g>
+  <g class="node store"><rect x="300" y="132" width="200" height="36" rx="4"/><text x="400" y="150">Document</text></g>
+  <g class="node store"><rect x="300" y="192" width="200" height="36" rx="4"/><text x="400" y="210">Wide-column</text></g>
+  <g class="node store"><rect x="300" y="252" width="200" height="36" rx="4"/><text x="400" y="270">Graph</text></g>
+  <path class="edge" d="M130,140 L298,30"/>
+  <path class="edge" d="M130,145 L298,90"/>
+  <path class="edge" d="M130,150 H298"/>
+  <path class="edge" d="M130,155 L298,210"/>
+  <path class="edge" d="M130,160 L298,270"/>
+  <text class="label" x="570" y="30">JOIN, transaksi</text>
+  <text class="label" x="570" y="90">get/put per key</text>
+  <text class="label" x="570" y="150">objek utuh</text>
+  <text class="label" x="570" y="210">scan rentang key</text>
+  <text class="label" x="570" y="270">traversal relasi</text>
+</svg>
+<figcaption>Pilih dari query yang dominan. Kalau belum jelas atau campuran, relasional adalah default.</figcaption>
+</figure>
+
+<section class="exercise">
+  <h2>Latihan 1 — Keluarga database</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0019.</p>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="data-model-db" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. ACID vs BASE</h2>
+<p>
+  <strong>ACID</strong> (Atomicity, Consistency, Isolation, Durability) adalah jaminan transaksi di database relasional.
+  Dokumentasi PostgreSQL merangkum intinya: transaksi "bundles multiple steps into a single, all-or-nothing operation";
+  langkah di tengah tidak terlihat oleh transaksi lain, dan kalau gagal, "none of the steps affect the database at all." <sup class="cite"><a href="https://www.postgresql.org/docs/current/tutorial-transactions.html">[5]</a></sup>
+  Seberapa ketat isolasinya bisa diatur: di PostgreSQL, "Read Committed is the default isolation level", dan Serializable "provides the strictest transaction isolation". <sup class="cite"><a href="https://www.postgresql.org/docs/current/transaction-iso.html">[6]</a></sup>
+</p>
+<p>
+  <strong>BASE</strong> (Basically Available, Soft state, Eventually consistent) adalah singkatan untuk sikap sebaliknya: utamakan ketersediaan, terima bahwa replika boleh sempat berbeda, dan pastikan semuanya akhirnya sama.
+  Dynamo adalah contoh aslinya: "Experience at Amazon has shown that data stores that provide ACID guarantees tend to have poor availability", sehingga Dynamo
+  "does not provide any isolation guarantees and permits only single key updates", dan dirancang sebagai "eventually consistent data store; that is all updates reach all replicas eventually." <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[1]</a></sup>
+</p>
+
+<div class="flow">
+  <span class="box">transfer saldo: debit A + kredit B</span><span class="arrow">→</span>
+  <span class="box">butuh all-or-nothing</span><span class="arrow">→</span>
+  <span class="box">ACID (relasional)</span>
+</div>
+<div class="flow">
+  <span class="box">"like" di postingan, keranjang belanja</span><span class="arrow">→</span>
+  <span class="box">boleh telat sebentar, harus selalu bisa ditulis</span><span class="arrow">→</span>
+  <span class="box">BASE bisa diterima</span>
+</div>
+
+<p>
+  Garis pembagi di interview: <strong>uang, stok, dan apa pun yang tidak boleh dobel atau hilang</strong> butuh transaksi ACID.
+  Counter, feed, dan data yang boleh terlambat beberapa detik bisa hidup dengan eventual consistency. Detail model konsistensinya di <a href="0011-cap-pacelc-consistency.html">lesson 0011</a>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — ACID vs BASE</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="data-acid-base" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Kapan tidak perlu</h2>
+<p>Komponen yang dibahas di sini adalah <strong>database NoSQL tambahan</strong> (atau mengganti database relasional dengan NoSQL).</p>
+<ul>
+  <li><strong>Sinyal yang membenarkan.</strong> Pola akses memang hanya per key atau per dokumen pada volume yang sudah terukur melampaui satu database relasional yang sudah di-tuning (index, query, scale vertical, read replica dari <a href="0009-index-dan-replication.html">0009</a>); atau model datanya memang graph/time series dan query utamanya traversal atau scan rentang. Untuk 1.000 user aktif harian (di bawah 1 QPS rata-rata, lesson 0004), sinyal ini tidak ada.</li>
+  <li><strong>Biaya dan risiko.</strong> Kehilangan JOIN dan transaksi multi-baris: aturan integritas pindah ke kode aplikasi. Database kedua berarti backup, monitoring, dan keahlian operasional kedua. Eventual consistency membawa kelas bug baru (data lama terbaca).</li>
+  <li><strong>Alternatif lebih murah.</strong> Tetap di PostgreSQL. Atribut yang bervariasi bisa disimpan di kolom <code>jsonb</code>, yang "significantly faster to process" daripada <code>json</code> dan "also supports indexing" (GIN index untuk mencari key di dalam dokumen). <sup class="cite"><a href="https://www.postgresql.org/docs/current/datatype-json.html">[7]</a></sup> Satu database relasional + jsonb menutup sebagian besar kebutuhan "fleksibel seperti document store".</li>
+</ul>
+<p>Kalimat untuk interview: "Untuk skala ini saya mulai dengan PostgreSQL karena butuh transaksi untuk order. Kalau write ke tabel event melewati kapasitas satu node setelah tuning, tabel itu kandidat pindah ke wide-column store."</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Untuk sistem e-commerce kecil (order, pembayaran, katalog produk), Anda memilih SQL atau NoSQL? Jelaskan alasannya dan kapan Anda akan berubah pikiran." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saya mulai dari pola akses. Order dan pembayaran butuh transaksi all-or-nothing: kurangi stok, buat order, catat pembayaran harus berhasil semua atau tidak sama sekali. Itu ACID, jadi database relasional seperti PostgreSQL.
+      Katalog punya atribut berbeda per kategori, tapi itu cukup dengan kolom jsonb yang bisa di-index, tanpa database kedua.
+      NoSQL baru masuk kalau ada pola akses khusus yang terukur: misalnya event clickstream yang write-nya melewati kapasitas satu node setelah tuning, cocok ke wide-column; atau session dan cart yang hanya diakses per key, cocok ke key-value.
+      Trade-off-nya: NoSQL melepas JOIN dan transaksi multi-key, dan banyak yang eventual consistent, jadi integritas pindah ke aplikasi. Untuk skala kecil satu PostgreSQL sudah cukup."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>memilih dari pola akses (query dominan), bukan dari nama produk?</li>
+      <li>order/pembayaran butuh transaksi ACID (all-or-nothing)?</li>
+      <li>relasional sebagai default, atribut fleksibel cukup dengan jsonb?</li>
+      <li>minimal satu keluarga NoSQL yang tepat beserta pola aksesnya (key-value, document, wide-column, graph)?</li>
+      <li>biaya NoSQL: tanpa JOIN/transaksi multi-key, eventual consistency, operasional database kedua?</li>
+      <li>membenarkan perubahan dengan angka atau metrik (mis. write melewati kapasitas satu node setelah tuning)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">DeCandia et al. 2007, "Dynamo: Amazon's Highly Available Key-value Store"</a>, bagian 1–2 (±15 menit): alasan Amazon melepas ACID untuk shopping cart.
+</div>
+
+<p>Berikutnya, <a href="0009-index-dan-replication.html">lesson 0009</a>: sebelum mengganti database, perbaiki yang ada dulu. Index B-tree, lalu leader-follower replication dan read replica.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Data") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan Cassandra lebih masuk akal daripada PostgreSQL untuk data time series?", "apa beda isolation level Read Committed dan Serializable dengan contoh?", atau "bagaimana mendesain kolom jsonb supaya query-nya tetap memakai index?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[1] DeCandia et al. 2007, Dynamo: Amazon's Highly Available Key-value Store (SOSP)</a> ·
+  <a href="https://www.mongodb.com/docs/manual/core/document/">[2] MongoDB docs: Documents</a> ·
+  <a href="https://research.google/pubs/bigtable-a-distributed-storage-system-for-structured-data/">[3] Chang et al. 2006, Bigtable: A Distributed Storage System for Structured Data (OSDI)</a> ·
+  <a href="https://neo4j.com/docs/getting-started/graph-database/">[4] Neo4j docs: What is a graph database</a> ·
+  <a href="https://www.postgresql.org/docs/current/tutorial-transactions.html">[5] PostgreSQL docs: Transactions (tutorial)</a> ·
+  <a href="https://www.postgresql.org/docs/current/transaction-iso.html">[6] PostgreSQL docs: Transaction Isolation</a> ·
+  <a href="https://www.postgresql.org/docs/current/datatype-json.html">[7] PostgreSQL docs: JSON Types</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0007-reverse-proxy-dan-cdn.html">← 0007 · Reverse proxy dan CDN</a>
+  <a href="0009-index-dan-replication.html">0009 · Index dan replication →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
