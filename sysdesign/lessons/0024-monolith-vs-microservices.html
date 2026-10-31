@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0024 · Monolith vs microservices</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0024 · System Design · Modul Reliabilitas &amp; API · ±20 menit</div>
+  <h1>Monolith vs microservices</h1>
+  <p class="subtitle">Tiga bentuk aplikasi, harga yang dibayar saat memecahnya, transaksi yang tidak lagi muat di satu database, dan kenapa jawaban default di interview adalah monolith</p>
+</header>
+
+<p>Sebelumnya, di <a href="0023-observability-slo.html">lesson 0023</a>, Anda melihat trace melintasi empat service. Lesson ini bertanya: kenapa ada empat service sejak awal? Ini salah satu tempat kandidat paling sering terlihat over-engineer di interview.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Monolith atau microservices?"</em> dalam 60 detik: membela monolith sebagai default dengan angka, menyebut tiga biaya microservices, menjelaskan saga untuk transaksi lintas service, dan menyebut sinyal yang membenarkan pemecahan.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Tiga bentuk</h2>
+<ul>
+  <li><strong>Monolith</strong>: satu aplikasi yang di-deploy sebagai satu unit, biasanya dengan satu database. Panggilan antar fitur adalah pemanggilan fungsi biasa, dan satu transaksi database bisa mencakup apa saja.</li>
+  <li><strong>Modular monolith</strong>: tetap satu deployable dan satu database, tapi kode dibagi menjadi modul dengan batas tegas: setiap modul punya tabelnya sendiri dan modul lain memanggilnya lewat interface publik, bukan membaca tabelnya langsung. Ini persiapan murah kalau suatu hari satu modul perlu dipisah.</li>
+  <li><strong>Microservices</strong>: kumpulan service kecil dan otonom; setiap service punya codebase sendiri yang bisa dikelola satu tim kecil, di-deploy sendiri, dan bertanggung jawab atas persistensi datanya sendiri. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/microservices">[1]</a></sup></li>
+</ul>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 240" role="img" aria-label="Tiga bentuk: monolith satu aplikasi dan satu database; modular monolith satu deployable berisi tiga modul dan satu database; microservices tiga service masing-masing dengan database sendiri, saling memanggil lewat jaringan">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <text class="label" x="105" y="20">Monolith</text>
+  <g class="node service"><rect x="20" y="40" width="170" height="80" rx="4"/><text x="105" y="80">App (semua kode)</text></g>
+  <g class="node store"><rect x="45" y="180" width="120" height="36" rx="4"/><text x="105" y="198">1 database</text></g>
+  <path class="edge" d="M105,120 V178"/>
+
+  <text class="label" x="320" y="20">Modular monolith</text>
+  <g class="node service"><rect x="225" y="40" width="190" height="80" rx="4"/><text x="320" y="55">1 deployable</text></g>
+  <g class="node service"><rect x="233" y="70" width="55" height="36" rx="4"/><text x="260" y="88">order</text></g>
+  <g class="node service"><rect x="293" y="70" width="55" height="36" rx="4"/><text x="320" y="88">bayar</text></g>
+  <g class="node service"><rect x="353" y="70" width="55" height="36" rx="4"/><text x="380" y="88">user</text></g>
+  <g class="node store"><rect x="245" y="180" width="150" height="36" rx="4"/><text x="320" y="198">1 DB, tabel per modul</text></g>
+  <path class="edge" d="M320,120 V178"/>
+
+  <text class="label" x="540" y="20">Microservices</text>
+  <text class="label" x="540" y="36">panggilan lewat jaringan</text>
+  <g class="node service"><rect x="445" y="50" width="50" height="36" rx="4"/><text x="470" y="68">order</text></g>
+  <g class="node service"><rect x="515" y="50" width="50" height="36" rx="4"/><text x="540" y="68">bayar</text></g>
+  <g class="node service"><rect x="585" y="50" width="50" height="36" rx="4"/><text x="610" y="68">user</text></g>
+  <path class="edge" d="M495,68 H513"/>
+  <path class="edge" d="M565,68 H583"/>
+  <g class="node store"><rect x="445" y="180" width="50" height="36" rx="4"/><text x="470" y="198">DB</text></g>
+  <g class="node store"><rect x="515" y="180" width="50" height="36" rx="4"/><text x="540" y="198">DB</text></g>
+  <g class="node store"><rect x="585" y="180" width="50" height="36" rx="4"/><text x="610" y="198">DB</text></g>
+  <path class="edge" d="M470,86 V178"/>
+  <path class="edge" d="M540,86 V178"/>
+  <path class="edge" d="M610,86 V178"/>
+</svg>
+<figcaption>Dari kiri ke kanan, setiap langkah menambah kebebasan tim dan biaya operasional. Modular monolith memberi batas kode yang jelas tanpa membayar jaringan dan database terpisah.</figcaption>
+</figure>
+
+<!-- ============ 2 ============ -->
+<h2>2. Harga microservices</h2>
+<p>Keuntungannya nyata: tim kecil men-deploy service sendiri tanpa menunggu tim lain, service di-scale terpisah, dan perubahan skema hanya memengaruhi satu service. Azure Architecture Center juga mendaftar tantangannya <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/microservices">[1]</a></sup>:</p>
+<ul>
+  <li><strong>Kompleksitas.</strong> Setiap service lebih sederhana, tapi sistem secara keseluruhan lebih kompleks: service discovery, konsistensi data, manajemen transaksi, komunikasi antar service.</li>
+  <li><strong>Latency dan jaringan.</strong> Pemanggilan fungsi menjadi panggilan jaringan yang bisa lambat atau gagal. Rantai A → B → C menumpuk latency, dan setiap panggilan butuh timeout, retry, dan circuit breaker (<a href="0022-timeout-retry-circuit-breaker.html">lesson 0022</a>).</li>
+  <li><strong>Integritas data.</strong> Karena setiap service memegang datanya sendiri, konsistensi lintas service menjadi tantangan.</li>
+  <li><strong>Testing dan skill.</strong> Menguji service yang bergantung pada service lain lebih sulit, dan tim harus punya pengalaman sistem terdistribusi.</li>
+</ul>
+
+<!-- ============ 3 ============ -->
+<h2>3. Distributed transaction dan saga</h2>
+<p>
+  Di monolith, "buat order, tagih kartu, kurangi stok" adalah satu transaksi database: semua berhasil atau semua dibatalkan. Di microservices, ketiga data itu ada di tiga database berbeda, dan jaminan ACID tradisional tidak langsung berlaku untuk beberapa data store yang dikelola terpisah. Model transaksi tradisional seperti two-phase commit (protokol yang menahan semua peserta sampai semuanya setuju untuk commit) ada, tapi Azure mengarahkan arsitektur seperti ini ke pola saga. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/saga">[2]</a></sup>
+</p>
+<p>
+  Alternatifnya pola <strong>saga</strong>: urutan transaksi lokal, satu per service. Setiap langkah menyelesaikan transaksinya, memperbarui database-nya, lalu memicu langkah berikutnya lewat event atau pesan. Kalau satu langkah gagal, saga menjalankan <strong>compensating transaction</strong> yang membalik langkah yang sudah selesai. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/saga">[2]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">order: buat order (PENDING)</span><span class="arrow">→</span>
+  <span class="box">payment: tagih kartu · gagal</span><span class="arrow">→</span>
+  <span class="box">kompensasi: order dibatalkan</span>
+</div>
+<p>Konsekuensinya: di antara langkah, sistem berada di state sementara (order PENDING terlihat oleh user), dan setiap langkah harus idempotent karena pesannya bisa terkirim ulang (<a href="0017-delivery-semantics-idempotency.html">lesson 0017</a>). Ini biaya yang tidak ada sama sekali di monolith.</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Service discovery, singkat</h2>
+<p>
+  Instance service berganti terus (deploy, autoscaling, crash), jadi alamat IP tidak bisa ditulis di konfigurasi. <strong>Service discovery</strong> memberi nama stabil di depan instance yang berubah. Di Kubernetes (platform yang menjalankan dan mengatur container di banyak mesin), client di dalam cluster menemukan Service lewat environment variable atau DNS; server DNS seperti CoreDNS memantau Service baru dan membuat record DNS untuk masing-masing. <sup class="cite"><a href="https://kubernetes.io/docs/concepts/services-networking/service/#discovering-services">[3]</a></sup>
+  Jadi service A cukup memanggil <code>http://payment</code>. Di interview, cukup sebut namanya dan fungsinya.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Monolith, microservices, discovery</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0026.</p>
+  <div class="quiz" data-bank-lesson="0024" data-bank-topic="rel-monolith-microservices" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Distributed transaction</h2>
+  <div class="quiz" data-bank-lesson="0024" data-bank-topic="rel-distributed-transaction" data-stack></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<h2>5. Kapan tidak perlu</h2>
+<p>
+  Track ini memakai <strong>monolith sebagai default</strong>, dan di interview Anda sebaiknya juga begitu. Ini prinsip inti track (ukur dulu, perubahan termurah dulu), bukan kutipan dari satu sumber: microservices menyelesaikan masalah <em>organisasi</em> dan skala yang berbeda per bagian, dan masalah itu harus terlihat dulu sebelum biayanya dibayar.
+</p>
+<p>
+  <strong>Sinyal yang membenarkan memecah service:</strong> beberapa tim (bukan beberapa engineer) saling menunggu untuk deploy atau sering konflik di codebase yang sama; satu modul punya kebutuhan sumber daya yang sangat berbeda (misalnya pemrosesan video butuh CPU sepuluh kali lipat dari bagian lain dan harus di-scale terpisah); atau satu bagian butuh siklus rilis atau isolasi kegagalan yang berbeda. Jumlah user saja hampir tidak pernah menjadi alasan: 1.000 sampai 100.000 user aktif harian masih di bawah kapasitas beberapa server di belakang load balancer.
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> pipeline deploy, monitoring, dan tracing per service; panggilan jaringan yang bisa gagal; saga dan state sementara untuk transaksi; data yang dulu satu JOIN sekarang dua panggilan API. Batas service yang salah lebih mahal diperbaiki daripada batas modul yang salah.
+</p>
+<p>
+  <strong>Alternatif lebih murah:</strong> modular monolith (batas modul yang dijaga), scale horizontal monolith yang stateless di belakang load balancer (<a href="0005-vertical-horizontal-stateless.html">lesson 0005</a>), dan memindahkan pekerjaan berat ke worker lewat queue (<a href="0016-queue-dan-pubsub.html">lesson 0016</a>). Kalau sinyal di atas muncul, pecah <em>satu</em> modul yang terbukti perlu, bukan semuanya.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0026.</p>
+  <blockquote>"Tim kita 6 engineer dengan 5.000 user aktif harian, dan CTO ingin pindah ke microservices. Apa saran Anda?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Untuk skala ini saya sarankan tetap monolith, tapi dirapikan menjadi modular monolith: satu deployable, satu database, modul dengan batas jelas dan tabel milik masing-masing. 5.000 DAU itu jauh di bawah satu QPS rata-rata, jadi satu server dan satu database cukup, dan 6 engineer adalah satu tim. Microservices menambah biaya nyata: service discovery, latency jaringan antar service, tracing, deploy pipeline per service, dan yang paling berat, transaksi lintas database yang harus diganti saga dengan compensating transaction. Sinyal untuk memecah satu modul: beberapa tim saling menunggu saat deploy, atau satu modul punya kebutuhan skala yang sangat berbeda, misalnya pemrosesan gambar yang butuh CPU sepuluh kali lipat. Kalau sinyal itu muncul, saya pecah satu modul itu dulu, bukan semuanya."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>monolith (modular) sebagai default untuk skala dan tim ini?</li>
+      <li>angka: DAU kecil, satu server + satu database cukup, satu tim?</li>
+      <li>biaya microservices: discovery, latency jaringan, operasional?</li>
+      <li>distributed transaction: saga dengan compensating transaction?</li>
+      <li>sinyal memecah: tim saling menunggu deploy atau kebutuhan skala berbeda?</li>
+      <li>memecah satu modul yang terbukti perlu, bukan semuanya sekaligus?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/microservices">Azure Architecture Center: Microservices architecture style</a>, terutama bagian "Challenges", ±15 menit.
+</div>
+
+<p>Berikutnya, <a href="0025-tangga-skala.html">lesson 0025</a>: memecah service adalah anak tangga <em>terakhir</em>. Lesson penutup modul ini merangkai semua anak tangga sebelumnya, dari mengukur sampai memecah.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Reliabilitas &amp; API") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Apa beda saga choreography dan orchestration?", "Bagaimana menjaga batas modul di modular monolith supaya tidak bocor?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/microservices">[1] Azure Architecture Center: Microservices architecture style</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/saga">[2] Azure Architecture Center: Saga pattern</a> ·
+  <a href="https://kubernetes.io/docs/concepts/services-networking/service/#discovering-services">[3] Kubernetes docs: Service, Discovering services</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0023-observability-slo.html">← 0023 · Observability: metrics, logs, traces; SLI/SLO</a>
+  <a href="0025-tangga-skala.html">0025 · Tangga skala: ukur dulu, arsitektur baru jalan terakhir →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0024.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
