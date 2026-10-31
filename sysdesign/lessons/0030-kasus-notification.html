@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0030 · Studi kasus: notification system</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0030 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Studi kasus: notification system</h1>
+  <p class="subtitle">Push, SMS, dan email: queue per channel, retry dengan backoff, dead letter queue, idempotency, dan preferensi user</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0029-kasus-rate-limiter.html">lesson 0029</a> merancang komponen sinkron yang ada di setiap request. Notification system adalah kebalikannya:
+  hampir semuanya asinkron, bergantung pada provider eksternal yang bisa lambat atau gagal, dan pertanyaan utamanya adalah "bagaimana tidak kehilangan notifikasi tanpa mengirimnya dua kali".
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Rancang notification system untuk push, SMS, dan email"</em> tanpa catatan, dalam 90 detik:
+  estimasi puncak kampanye, desain v1 dengan satu queue, kenapa v2 memisahkan queue per channel, retry dengan exponential backoff + jitter dan dead letter queue,
+  idempotency untuk at-least-once delivery, dan di mana preferensi user dicek.
+</div>
+
+<!-- ============ LANGKAH 1 ============ -->
+<h2>Langkah 1 — Klarifikasi requirement</h2>
+<ul>
+  <li><strong>Functional:</strong> service lain (order, pembayaran) dan tim marketing (kampanye) memicu notifikasi; channel: push iOS/Android, SMS, email; user bisa mematikan channel tertentu (preferensi).
+    Di luar scope: membuat template, A/B test.</li>
+  <li><strong>Skala (asumsi):</strong> 10 juta notifikasi per hari; kampanye terbesar 5 juta user dalam 10 menit.</li>
+  <li><strong>Non-functional:</strong> notifikasi transaksi ("pesanan dikirim") sampai dalam hitungan detik, kampanye boleh menit; tidak boleh hilang; sebisa mungkin tidak dobel; preferensi user wajib dihormati.</li>
+</ul>
+<p class="note">
+  Push ke ponsel tidak dikirim langsung ke perangkat, tetapi lewat layanan platform: APNs (Apple) untuk iOS dan Firebase Cloud Messaging (FCM) untuk Android/web.
+  FCM menyebut dirinya <em>"a cross-platform messaging solution that lets you reliably send messages"</em>, dengan payload pesan sampai 4096 byte. <sup class="cite"><a href="https://firebase.google.com/docs/cloud-messaging">[1]</a></sup>
+  SMS dan email juga lewat provider pihak ketiga. Semua provider ini berada di luar kendali Anda.
+</p>
+
+<!-- ============ LANGKAH 2 ============ -->
+<h2>Langkah 2 — Estimasi</h2>
+<table>
+  <thead><tr><th>Besaran</th><th>Hitungan</th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td>QPS rata-rata</td><td>10<sup>7</sup> ÷ 10<sup>5</sup> detik</td><td>±100 notifikasi/detik</td></tr>
+    <tr><td>QPS puncak kampanye</td><td>5 × 10<sup>6</sup> ÷ 600 detik</td><td>±8.300 notifikasi/detik (±80× rata-rata)</td></tr>
+    <tr><td>Log pengiriman</td><td>10<sup>7</sup> × ±500 byte per hari</td><td>±5 GB/hari; simpan 90 hari ≈ ±450 GB</td></tr>
+    <tr><td>Provider (asumsi, tanyakan)</td><td>kuota akun SMS</td><td>mis. ±100 SMS/detik, jauh di bawah puncak</td></tr>
+  </tbody>
+</table>
+<p>
+  Dua angka ini membenarkan queue sejak v1: puncak 80× rata-rata, dan provider lebih lambat daripada laju masuk.
+  Queue meratakan beban (load leveling): pemanggil langsung mendapat jawaban, worker mengirim secepat yang diizinkan provider.
+  Kalau sistemnya hanya mengirim beberapa ribu email transaksi per hari tanpa kampanye, satu background job sederhana yang memanggil provider sudah cukup.
+</p>
+
+<!-- ============ LANGKAH 3 ============ -->
+<h2>Langkah 3 — API dan data model</h2>
+<pre><code>POST /v1/notifications
+  { "idempotencyKey": "order-8812-shipped", "userId": 42,
+    "type": "order_shipped", "data": { "orderId": 8812 } }
+  → 202 Accepted   { "notificationId": "n_93f…" }      ← diterima, dikirim asinkron
+
+PUT /v1/users/42/preferences   { "push": true, "sms": false, "email": true }
+
+Tabel
+  notifications  (id PK, idempotency_key UNIQUE, user_id, type, created_at)
+  deliveries     (notification_id, channel, status, attempts, PK (notification_id, channel))
+  preferences    (user_id, channel, enabled)
+  device_tokens  (user_id, platform, token)            ← alamat push per perangkat</code></pre>
+<p>
+  <code>idempotencyKey</code> dibuat oleh pemanggil, mengikuti pola yang dipakai API publik seperti Stripe: kunci unik yang
+  <em>"the server uses to recognize subsequent retries of the same request"</em>, sehingga request bisa diulang <em>"without accidentally performing the same operation twice"</em>. <sup class="cite"><a href="https://docs.stripe.com/api/idempotent_requests">[2]</a></sup>
+  Constraint <code>UNIQUE</code> di kolom itu membuat retry dari order service tidak membuat notifikasi kedua.
+</p>
+
+<!-- ============ LANGKAH 4 ============ -->
+<h2>Langkah 4 — High-level design (v1)</h2>
+<p>
+  Desain v1 paling sederhana yang memenuhi angka: notification service menerima request, mengecek preferensi, menyimpan baris di database, lalu memasukkan satu pesan per channel ke <strong>satu</strong> queue.
+  Satu kelompok worker mengambil pesan dan memanggil provider. Preferensi dicek <em>sebelum</em> enqueue, supaya pesan yang dilarang user tidak pernah masuk antrean.
+</p>
+<section class="exercise">
+  <h2>Latihan 1 — Gambar diagram v1 sendiri dulu</h2>
+  <p>Gambar diagram v1 Anda sendiri dulu: siapa memanggil siapa, di mana preferensi dicek, dan bagian mana yang sinkron atau asinkron. Setelah selesai, buka jawabannya.</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <figure class="diagram-fig">
+    <svg class="diagram" viewBox="0 0 680 200" role="img" aria-label="Desain v1 notification system: order service ke notification service, yang membaca database preferensi lalu memasukkan pesan ke satu queue; worker mengambil pesan dan memanggil provider">
+      <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g class="node client"><rect x="10" y="50" width="100" height="36" rx="4"/><text x="60" y="68">Order service</text></g>
+      <g class="node service"><rect x="140" y="50" width="120" height="36" rx="4"/><text x="200" y="68">Notification svc</text></g>
+      <g class="node store"><rect x="140" y="140" width="120" height="36" rx="4"/><text x="200" y="158">DB preferensi</text></g>
+      <g class="node queue"><rect x="300" y="50" width="100" height="36" rx="4"/><text x="350" y="68">Queue</text></g>
+      <g class="node service"><rect x="440" y="50" width="100" height="36" rx="4"/><text x="490" y="68">Worker</text></g>
+      <g class="node client"><rect x="575" y="50" width="96" height="36" rx="4"/><text x="623" y="68">Provider</text></g>
+      <path class="edge" d="M110,68 H138"/>
+      <path class="edge" d="M200,86 V138"/>
+      <path class="edge async" d="M260,68 H298"/>
+      <path class="edge" d="M400,68 H438"/>
+      <path class="edge" d="M540,68 H573"/>
+      <text class="label" x="124" y="40">202</text>
+      <text class="label" x="279" y="40">async</text>
+      <text class="label" x="623" y="110">FCM/APNs, SMS, email</text>
+    </svg>
+    <figcaption>v1: satu queue meratakan puncak ±8.300/detik ke laju yang sanggup diterima provider.</figcaption>
+    </figure>
+    <p>Alur: <code>POST</code> → cek idempotency key dan preferensi → simpan <code>notifications</code> + <code>deliveries</code> → enqueue → 202. Worker: ambil pesan → panggil provider → tandai <code>deliveries.status = sent</code> → hapus pesan dari queue.</p>
+  </details>
+</section>
+
+<!-- ============ LANGKAH 5 ============ -->
+<h2>Langkah 5 — Deep dive, bottleneck, trade-off</h2>
+<p>Evolusi dari v1 ke v2, satu perubahan per masalah yang terlihat di angka atau metrik:</p>
+
+<p><strong>1. Queue per channel.</strong> Di v1, kalau provider SMS melambat (kuota ±100/detik) saat kampanye, pesan SMS menumpuk dan ikut menahan push dan email di queue yang sama.
+  Pisahkan menjadi satu queue + worker per channel. Setiap channel lalu bisa diskalakan dan dibatasi lajunya sesuai kuota provider-nya sendiri, dan gangguan satu provider tidak merembet.
+  Biayanya: tiga queue dan tiga kelompok worker untuk dipantau.</p>
+
+<p><strong>2. Retry dengan exponential backoff + jitter.</strong> Kegagalan provider sering sementara, jadi retry. Tapi retry serentak dari ribuan worker memperparah beban.
+  AWS Builders' Library: <em>"Jitter adds some amount of randomness to the backoff to spread the retries around in time."</em> <sup class="cite"><a href="https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/">[3]</a></sup>
+  Kegagalan permanen (nomor tidak valid, token perangkat kedaluwarsa) tidak di-retry; tandai gagal dan hapus token-nya.</p>
+
+<p><strong>3. Dead letter queue.</strong> Pesan yang terus gagal tidak boleh berputar selamanya. Di Amazon SQS, <code>maxReceiveCount</code> adalah
+  <em>"the number of times a consumer can receive a message from a source queue before it is moved to a dead-letter queue"</em>, dan nilainya perlu cukup tinggi untuk memberi ruang retry. <sup class="cite"><a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html">[4]</a></sup>
+  DLQ dipantau dan bisa diproses ulang setelah penyebabnya diperbaiki.</p>
+
+<p><strong>4. Idempotency di worker.</strong> Queue standar biasanya at-least-once: SQS menyatakan Anda <em>"might get that message copy again"</em> dan meminta aplikasi
+  <em>"to be idempotent (they should not be affected adversely when processing the same message more than once)"</em>. <sup class="cite"><a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html">[5]</a></sup>
+  Worker mengecek <code>deliveries</code> (kunci <code>notification_id + channel</code>) sebelum mengirim, dan melewati pesan yang sudah <code>sent</code>.
+  Trade-off yang perlu Anda ucapkan: kalau worker crash <em>setelah</em> provider menerima tetapi <em>sebelum</em> status ditulis, pesan bisa terkirim dua kali. Menandai sebelum mengirim membalik risikonya menjadi pesan hilang.
+  Untuk notifikasi, dobel sesekali biasanya lebih bisa diterima daripada hilang.</p>
+
+<p><strong>5. Preferensi dan batas per user.</strong> Pada puncak ±8.300/detik, setiap notifikasi membaca preferensi. Ukur dulu; kalau database preferensi menjadi bottleneck, cache preferensi (jarang berubah).
+  Batasi juga kampanye per user (mis. maksimal 3 promosi per hari) dengan counter seperti rate limiter 0029.</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 680 330" role="img" aria-label="Desain v2 notification system: notification service memasukkan pesan ke queue push, SMS, dan email; setiap queue punya worker dan provider sendiri; pesan yang terus gagal masuk dead letter queue">
+  <g class="node client"><rect x="10" y="132" width="100" height="36" rx="4"/><text x="60" y="150">Order service</text></g>
+  <g class="node service"><rect x="140" y="132" width="120" height="36" rx="4"/><text x="200" y="150">Notification svc</text></g>
+  <g class="node store"><rect x="140" y="222" width="120" height="36" rx="4"/><text x="200" y="240">DB preferensi</text></g>
+  <g class="node queue"><rect x="300" y="40" width="100" height="36" rx="4"/><text x="350" y="58">Queue push</text></g>
+  <g class="node queue"><rect x="300" y="132" width="100" height="36" rx="4"/><text x="350" y="150">Queue SMS</text></g>
+  <g class="node queue"><rect x="300" y="224" width="100" height="36" rx="4"/><text x="350" y="242">Queue email</text></g>
+  <g class="node service"><rect x="440" y="40" width="100" height="36" rx="4"/><text x="490" y="58">Worker push</text></g>
+  <g class="node service"><rect x="440" y="132" width="100" height="36" rx="4"/><text x="490" y="150">Worker SMS</text></g>
+  <g class="node service"><rect x="440" y="224" width="100" height="36" rx="4"/><text x="490" y="242">Worker email</text></g>
+  <g class="node client"><rect x="572" y="40" width="104" height="36" rx="4"/><text x="624" y="58">FCM/APNs</text></g>
+  <g class="node client"><rect x="572" y="132" width="104" height="36" rx="4"/><text x="624" y="150">SMS provider</text></g>
+  <g class="node client"><rect x="572" y="224" width="104" height="36" rx="4"/><text x="624" y="242">Email provider</text></g>
+  <g class="node queue"><rect x="300" y="288" width="100" height="32" rx="4"/><text x="350" y="304">DLQ</text></g>
+  <path class="edge" d="M110,150 H138"/>
+  <path class="edge" d="M200,168 V220"/>
+  <path class="edge async" d="M260,144 L298,64"/>
+  <path class="edge async" d="M260,150 H298"/>
+  <path class="edge async" d="M260,156 L298,236"/>
+  <path class="edge" d="M400,58 H438"/>
+  <path class="edge" d="M400,150 H438"/>
+  <path class="edge" d="M400,242 H438"/>
+  <path class="edge" d="M540,58 H570"/>
+  <path class="edge" d="M540,150 H570"/>
+  <path class="edge" d="M540,242 H570"/>
+  <path class="edge async" d="M470,260 L402,296"/>
+  <text class="label" x="490" y="300">gagal &gt; maxReceiveCount</text>
+  <text class="label" x="490" y="110">retry: backoff + jitter</text>
+</svg>
+<figcaption>v2: queue per channel karena satu provider yang lambat tidak boleh menahan channel lain; DLQ untuk pesan yang terus gagal; worker idempotent karena delivery at-least-once.</figcaption>
+</figure>
+
+<section class="exercise">
+  <h2>Latihan 2 — Queue, retry, dan idempotency</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0030" data-bank-topic="kasus-notif-queue" data-stack></div>
+  <div class="quiz" data-bank-lesson="0030" data-bank-topic="kasus-notif-idempotensi" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Rancang notification system untuk push, SMS, dan email: 10 juta notifikasi per hari, kampanye sampai 5 juta user dalam 10 menit." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Rata-ratanya sekitar 100 notifikasi per detik, tapi kampanye membuat puncak sekitar 8.300 per detik, dan provider SMS mungkin hanya menerima sekitar 100 per detik. Karena itu queue sudah dibenarkan di v1: notification service mengecek idempotency key dan preferensi user, menyimpan baris notifikasi, memasukkan pesan ke queue, dan langsung membalas 202; worker memanggil FCM/APNs, provider SMS, dan email. Di v2 saya pisahkan queue dan worker per channel, karena provider SMS yang lambat tidak boleh menahan push. Kegagalan sementara di-retry dengan exponential backoff dan jitter; setelah beberapa kali gagal, pesan masuk dead letter queue. Queue-nya at-least-once, jadi worker harus idempotent: cek status delivery per notifikasi dan channel sebelum mengirim. Trade-off-nya: crash setelah kirim sebelum mencatat bisa menyebabkan dobel, dan untuk notifikasi itu lebih baik daripada hilang."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>estimasi: ±100/detik rata-rata, puncak kampanye ±8.300/detik, kuota provider?</li>
+      <li>queue antara notification service dan worker, dengan respons 202 asinkron?</li>
+      <li>queue per channel supaya satu provider yang lambat tidak menahan channel lain?</li>
+      <li>retry dengan exponential backoff + jitter, lalu dead letter queue?</li>
+      <li>idempotency key dari pemanggil dan worker idempotent karena at-least-once; preferensi dicek sebelum enqueue?</li>
+      <li>membenarkan komponen dengan angka (queue karena puncak 80× dan kuota provider; queue per channel karena gangguan satu provider)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/">AWS Builders' Library: Timeouts, retries, and backoff with jitter</a>, ±20 menit. Kenapa retry bisa memperparah gangguan, dan cara Amazon membatasinya.
+</div>
+
+<p>Berikutnya, <a href="0031-kasus-news-feed-a.html">lesson 0031</a>: news feed, langkah 1–4.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana menjadwalkan notifikasi agar tidak terkirim tengah malam?", "bagaimana menangani token push yang kedaluwarsa?", atau "kapan butuh prioritas antara notifikasi transaksi dan kampanye?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://firebase.google.com/docs/cloud-messaging">[1] Firebase docs: Firebase Cloud Messaging</a> ·
+  <a href="https://docs.stripe.com/api/idempotent_requests">[2] Stripe API reference: Idempotent requests</a> ·
+  <a href="https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/">[3] AWS Builders' Library: Timeouts, retries, and backoff with jitter</a> ·
+  <a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html">[4] Amazon SQS docs: Dead-letter queues</a> ·
+  <a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html">[5] Amazon SQS docs: At-least-once delivery</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0029-kasus-rate-limiter.html">← 0029 · Studi kasus: rate limiter</a>
+  <a href="0031-kasus-news-feed-a.html">0031 · Studi kasus: news feed (A) →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0030.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
