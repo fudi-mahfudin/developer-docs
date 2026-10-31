@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0029 · Studi kasus: rate limiter terdistribusi</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0029 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Studi kasus: rate limiter terdistribusi</h1>
+  <p class="subtitle">Di mana limiter dipasang (gateway atau middleware), counter bersama di Redis, race condition, dan respons 429</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0028-kasus-url-shortener.html">lesson 0028</a> menjalankan kerangka 5 langkah untuk sistem read-heavy. Kali ini soalnya berbeda:
+  komponen kecil yang dipanggil di <em>setiap</em> request, sehingga latency tambahan dan kebenaran counter di banyak server menjadi inti diskusinya.
+  Algoritmanya (token bucket, leaky bucket, fixed/sliding window) sudah dibahas di modul Reliabilitas &amp; API; di sini fokusnya pada penerapan terdistribusi.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Rancang rate limiter untuk API yang berjalan di 10 server"</em> tanpa catatan, dalam 90 detik:
+  posisi limiter, kenapa counter harus bersama (Redis), race condition pada counter dan cara menutupnya, respons <code>429</code> + <code>Retry-After</code>,
+  dan trade-off fixed window vs token bucket.
+</div>
+
+<!-- ============ LANGKAH 1 ============ -->
+<h2>Langkah 1 — Klarifikasi requirement</h2>
+<ul>
+  <li><strong>Functional:</strong> batasi setiap API key ke 100 request per menit; request yang melewati batas ditolak dengan pesan jelas; batas bisa berbeda per paket (gratis vs berbayar).</li>
+  <li><strong>Skala (asumsi):</strong> 1 juta API key aktif per hari; API berjalan di 10 server di belakang load balancer round robin; total ±5.000 QPS rata-rata.</li>
+  <li><strong>Non-functional:</strong> limiter menambah latency sesedikit mungkin (satu round trip jaringan per request); kalau limiter rusak, API tetap jalan; sedikit lebih longgar dari 100 sesekali masih bisa diterima.</li>
+</ul>
+
+<!-- ============ LANGKAH 2 ============ -->
+<h2>Langkah 2 — Estimasi</h2>
+<table>
+  <thead><tr><th>Besaran</th><th>Hitungan</th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td>QPS API</td><td>±5.000 rata-rata × 3</td><td>±15.000 QPS puncak</td></tr>
+    <tr><td>Operasi counter</td><td>1 operasi per request</td><td>±15.000 operasi/detik di puncak</td></tr>
+    <tr><td>Memori counter</td><td>1 juta key × ±100 byte (nama key + angka + TTL)</td><td>±100 MB</td></tr>
+    <tr><td>Kalau counter per server</td><td>round robin membagi request ke 10 server</td><td>setiap server melihat ±1/10, limit efektif ±1.000/menit</td></tr>
+  </tbody>
+</table>
+<p>
+  Baris terakhir adalah angka yang membenarkan komponen pertama: counter harus <strong>bersama</strong> untuk semua server.
+  ±100 MB dan ±15.000 operasi/detik adalah beban kecil untuk satu instance Redis (tetap ukur dengan benchmark sebelum memutuskan apa pun).
+  Kalau API hanya berjalan di satu server, counter in-memory atau modul nginx sudah cukup dan Redis tidak perlu.
+</p>
+
+<!-- ============ LANGKAH 3 ============ -->
+<h2>Langkah 3 — API dan data model</h2>
+<pre><code>Request ke API apa pun:   GET /v1/orders   X-API-Key: k_123
+
+Lolos  → diteruskan ke handler seperti biasa
+Ditolak → HTTP/1.1 429 Too Many Requests
+          Retry-After: 17                    ← detik sampai window berikutnya
+
+Redis (counter fixed window per menit)
+  key   rl:k_123:202610311405     ← API key + menit saat ini
+  value 37                        ← jumlah request di menit ini
+  TTL   60 detik                  ← dihapus otomatis setelah window lewat
+
+Aturan (tabel kecil / file config, dibaca berkala)
+  paket gratis: 100/menit · paket berbayar: 1.000/menit</code></pre>
+<p>
+  Respons penolakan mengikuti RFC 6585: <code>429</code> berarti <em>"the user has sent too many requests in a given amount of time ("rate limiting")"</em>,
+  dan respons itu <em>"MAY include a Retry-After header indicating how long to wait"</em>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6585.html#section-4">[1]</a></sup>
+  Nilai <code>Retry-After</code> boleh berupa jumlah detik atau HTTP-date. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#field.retry-after">[2]</a></sup>
+</p>
+
+<p><strong>Di mana limiter dipasang?</strong></p>
+<table>
+  <thead><tr><th>Posisi</th><th>Kelebihan</th><th>Kekurangan</th></tr></thead>
+  <tbody>
+    <tr><td>Client</td><td>Mengurangi request sia-sia</td><td>Tidak bisa dipercaya: siapa pun bisa memanggil API langsung</td></tr>
+    <tr><td>API gateway / reverse proxy</td><td>Satu tempat untuk semua service; tersedia siap pakai. AWS API Gateway, misalnya, memakai <em>"the token bucket algorithm, where a token counts for a request"</em> dan client bisa menerima 429 <sup class="cite"><a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html">[3]</a></sup></td><td>Aturan yang butuh konteks bisnis (paket user) lebih sulit; satu komponen lagi kalau belum punya gateway</td></tr>
+    <tr><td>Middleware di app server</td><td>Tahu konteks bisnis (paket, user); tidak menambah hop</td><td>Setiap service harus memasangnya; counter harus disimpan di luar server</td></tr>
+  </tbody>
+</table>
+<p>
+  Hati-hati dengan default: modul <code>limit_req</code> nginx memakai metode <em>"leaky bucket"</em> dan secara default menolak dengan status 503,
+  jadi set <code>limit_req_status 429</code> kalau Anda memakainya. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">[4]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Posisi, algoritma, respons</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0029" data-bank-topic="kasus-rl-posisi" data-stack></div>
+</section>
+
+<!-- ============ LANGKAH 4 ============ -->
+<h2>Langkah 4 — High-level design (v1)</h2>
+<p>
+  Desain v1 paling sederhana yang memenuhi angka: middleware di setiap API server dan <strong>satu</strong> Redis sebagai counter bersama, dengan fixed window per menit.
+  Redis docs memberi pola ini langsung: <code>INCR</code> + <code>EXPIRE</code> dibungkus <code>MULTI</code>/<code>EXEC</code>
+  <em>"in order to make sure that we'll both increment and set the expire at every API call"</em>. <sup class="cite"><a href="https://redis.io/docs/latest/commands/incr/#pattern-rate-limiter">[5]</a></sup>
+</p>
+<section class="exercise">
+  <h2>Latihan 2 — Gambar diagram v1 sendiri dulu</h2>
+  <p>Gambar diagram v1 Anda sendiri dulu: dari client sampai handler, di mana counter disimpan, dan apa yang terjadi pada request ke-101. Setelah selesai, buka jawabannya.</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <figure class="diagram-fig">
+    <svg class="diagram" viewBox="0 0 640 250" role="img" aria-label="Desain v1 rate limiter: client ke load balancer, dua dari sepuluh API server dengan middleware limiter, semuanya memakai satu Redis sebagai counter bersama">
+      <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g class="node client"><rect x="10" y="100" width="80" height="36" rx="4"/><text x="50" y="118">Client</text></g>
+      <g class="node service"><rect x="122" y="100" width="106" height="36" rx="4"/><text x="175" y="118">Load balancer</text></g>
+      <g class="node service"><rect x="260" y="50" width="150" height="36" rx="4"/><text x="335" y="68">API 1 + limiter</text></g>
+      <g class="node service"><rect x="260" y="150" width="150" height="36" rx="4"/><text x="335" y="168">API 10 + limiter</text></g>
+      <g class="node cache"><rect x="470" y="100" width="150" height="36" rx="4"/><text x="545" y="118">Redis (counter)</text></g>
+      <path class="edge" d="M90,118 H120"/>
+      <path class="edge" d="M228,112 L258,74"/>
+      <path class="edge" d="M228,124 L258,162"/>
+      <path class="edge" d="M410,74 L468,112"/>
+      <path class="edge" d="M410,162 L468,124"/>
+      <text class="label" x="545" y="90">INCR + EXPIRE</text>
+      <text class="label" x="335" y="118">…</text>
+      <text class="label" x="175" y="215">request ke-101 dalam menit yang sama → 429 + Retry-After</text>
+    </svg>
+    <figcaption>v1: satu Redis karena counter harus bersama untuk 10 server; ±100 MB dan ±15.000 operasi/detik muat di satu node.</figcaption>
+    </figure>
+    <p>Alur: middleware membentuk key <code>rl:{apiKey}:{menit}</code>, menjalankan <code>INCR</code> (+ <code>EXPIRE</code> 60 detik), lalu membandingkan nilai <em>setelah</em> increment dengan batas. Lebih dari 100 → 429; selain itu → handler.</p>
+  </details>
+</section>
+
+<!-- ============ LANGKAH 5 ============ -->
+<h2>Langkah 5 — Deep dive, bottleneck, trade-off</h2>
+<p><strong>1. Race condition pada counter.</strong> Dua bentuk yang perlu Anda sebut:</p>
+<ul>
+  <li><em>Check-then-act:</em> <code>v = GET(key); if v &lt; 100 then INCR(key)</code>. Dua server membaca 99 pada saat yang sama, keduanya lolos, counter menjadi 101.
+    Perbaikan: jangan membaca dulu. <code>INCR</code> adalah operasi atomic yang mengembalikan nilai baru, jadi bandingkan hasil <code>INCR</code> itu dengan batas.</li>
+  <li><em>Key bocor:</em> Redis docs mencatat varian single counter (<code>INCR</code>, lalu <code>EXPIRE</code> kalau nilainya 1) punya race condition:
+    <em>"If for some reason the client performs the INCR command but does not perform the EXPIRE the key will be leaked"</em>.
+    Perbaikannya: jadikan keduanya satu Lua script yang dikirim dengan <code>EVAL</code>. <sup class="cite"><a href="https://redis.io/docs/latest/commands/incr/#pattern-rate-limiter">[5]</a></sup>
+    Redis <em>"guarantees the script's atomic execution"</em>, jadi tidak ada server lain yang menyisip di tengah. <sup class="cite"><a href="https://redis.io/docs/latest/develop/programmability/eval-intro/">[6]</a></sup></li>
+</ul>
+<pre><code>-- Lua script (dijalankan atomic di Redis)
+local current = redis.call("incr", KEYS[1])
+if current == 1 then redis.call("expire", KEYS[1], 60) end
+return current</code></pre>
+
+<p><strong>2. Burst di batas window.</strong> Fixed window membolehkan 100 request pukul 10:00:59 dan 100 lagi pukul 10:01:00: 200 request dalam dua detik.
+  Kalau requirement melarang burst seperti itu, evolusi ke sliding window counter atau token bucket (keduanya bisa ditulis sebagai Lua script, tetap satu round trip).
+  Kalau requirement "sedikit longgar masih bisa diterima" seperti di langkah 1, fixed window cukup dan lebih murah dipahami.</p>
+
+<p><strong>3. Redis gagal.</strong> Requirement bilang API harus tetap jalan, jadi limiter <em>fail-open</em>: pakai timeout pendek ke Redis; kalau gagal, loloskan request dan catat metrik.
+  Untuk availability counter, tambah replica Redis. Trade-off: Redis <em>"uses by default asynchronous replication"</em> <sup class="cite"><a href="https://redis.io/docs/latest/operate/oss_and_stack/management/replication/">[7]</a></sup>, jadi saat failover sebagian counter bisa hilang dan beberapa API key sesaat mendapat jatah lebih.</p>
+
+<p><strong>4. Bottleneck berikutnya (belum sekarang).</strong> Kalau CPU Redis mendekati batas pada puncak, langkah berikutnya memecah key ke beberapa node (shard berdasarkan API key).
+  Pada ±15.000 operasi/detik ini belum dibenarkan; sebut sinyalnya saja.</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 680 270" role="img" aria-label="Desain v2 rate limiter: API server memanggil Redis primary lewat Lua script, Redis primary direplikasi ke replica, aturan limit dibaca berkala dari config">
+  <g class="node client"><rect x="10" y="110" width="80" height="36" rx="4"/><text x="50" y="128">Client</text></g>
+  <g class="node service"><rect x="122" y="110" width="106" height="36" rx="4"/><text x="175" y="128">Load balancer</text></g>
+  <g class="node service"><rect x="260" y="110" width="160" height="36" rx="4"/><text x="340" y="128">API ×10 + limiter</text></g>
+  <g class="node store"><rect x="260" y="10" width="160" height="36" rx="4"/><text x="340" y="28">Aturan limit (config)</text></g>
+  <g class="node cache"><rect x="470" y="110" width="190" height="36" rx="4"/><text x="565" y="128">Redis primary (Lua)</text></g>
+  <g class="node cache"><rect x="470" y="210" width="190" height="36" rx="4"/><text x="565" y="228">Redis replica</text></g>
+  <path class="edge" d="M90,128 H120"/>
+  <path class="edge" d="M228,128 H258"/>
+  <path class="edge async" d="M340,46 V108"/>
+  <path class="edge" d="M420,128 H468"/>
+  <path class="edge async" d="M565,146 V208"/>
+  <text class="label" x="380" y="80">dibaca berkala</text>
+  <text class="label" x="600" y="180">async</text>
+  <text class="label" x="444" y="160">timeout pendek, fail-open</text>
+</svg>
+<figcaption>v2: Lua script menutup race condition; replica untuk availability counter; aturan per paket dibaca dari config. Sharding Redis baru kalau CPU-nya mendekati batas.</figcaption>
+</figure>
+
+<section class="exercise">
+  <h2>Latihan 3 — Counter dan race condition</h2>
+  <div class="quiz" data-bank-lesson="0029" data-bank-topic="kasus-rl-counter" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Rancang rate limiter: 100 request per menit per API key, untuk API yang berjalan di 10 server." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Limiter saya pasang di server, sebagai middleware atau di API gateway, bukan di client karena client tidak bisa dipercaya. Karena ada 10 server di belakang round robin, counter per server membuat limit efektif sekitar 1.000 per menit, jadi counter harus bersama: satu Redis. Estimasinya sekitar 15.000 operasi per detik dan 100 MB untuk 1 juta key, masih muat di satu node. v1-nya fixed window: key berisi API key dan menit, INCR lalu EXPIRE 60 detik, dan saya bandingkan nilai hasil INCR, bukan GET dulu, supaya tidak ada race check-then-act. INCR dan EXPIRE saya gabung dalam Lua script supaya atomic dan key tidak bocor tanpa TTL. Request yang ditolak mendapat 429 dengan Retry-After. Fixed window membolehkan burst dua kali lipat di batas menit; kalau itu tidak boleh, saya ganti sliding window atau token bucket. Kalau Redis down, limiter fail-open dengan timeout pendek."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>posisi di server (middleware atau gateway), bukan client, beserta alasannya?</li>
+      <li>counter bersama di Redis karena counter per server membuat limit efektif 10×?</li>
+      <li>race condition: bandingkan hasil <code>INCR</code>, dan <code>INCR</code> + <code>EXPIRE</code> atomic lewat <code>MULTI</code> atau Lua script?</li>
+      <li>respons <code>429</code> dengan <code>Retry-After</code>?</li>
+      <li>trade-off fixed window (burst di batas window) vs sliding window atau token bucket?</li>
+      <li>membenarkan komponen dengan angka (Redis karena 10 server; ±15.000 operasi/detik dan ±100 MB muat di satu node; sharding belum perlu)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://redis.io/docs/latest/commands/incr/#pattern-rate-limiter">Redis docs: INCR, bagian "Pattern: Rate limiter"</a>, ±10 menit. Tiga varian rate limiter dan race condition masing-masing.
+</div>
+
+<p>Berikutnya, <a href="0030-kasus-notification.html">lesson 0030</a>: notification system, dengan queue per channel, retry, dan idempotency.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana menulis token bucket sebagai Lua script?", "kapan fail-closed lebih tepat dari fail-open?", atau "bagaimana memberi limit berbeda per endpoint?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.rfc-editor.org/rfc/rfc6585.html#section-4">[1] RFC 6585 bagian 4: 429 Too Many Requests</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#field.retry-after">[2] RFC 9110 bagian 10.2.3: Retry-After</a> ·
+  <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html">[3] AWS docs: Throttle requests to your REST APIs (API Gateway)</a> ·
+  <a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">[4] nginx docs: ngx_http_limit_req_module</a> ·
+  <a href="https://redis.io/docs/latest/commands/incr/#pattern-rate-limiter">[5] Redis docs: INCR, Pattern: Rate limiter</a> ·
+  <a href="https://redis.io/docs/latest/develop/programmability/eval-intro/">[6] Redis docs: Scripting with Lua</a> ·
+  <a href="https://redis.io/docs/latest/operate/oss_and_stack/management/replication/">[7] Redis docs: Replication</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0028-kasus-url-shortener.html">← 0028 · Studi kasus: URL shortener</a>
+  <a href="0030-kasus-notification.html">0030 · Studi kasus: notification system →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0029.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
