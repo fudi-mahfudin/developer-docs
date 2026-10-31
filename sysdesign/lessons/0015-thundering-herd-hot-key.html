@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0015 · Thundering herd, hot key, cache berlapis</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0015 · System Design · Modul Caching · ±20 menit</div>
+  <h1>Cache stampede, hot key, dan cache berlapis</h1>
+  <p class="subtitle">Saat cache justru menjadi sumber lonjakan: key populer yang kedaluwarsa, satu key yang membebani satu node, dan cara menumpuk cache supaya origin tetap tenang</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0014-ttl-eviction-invalidation.html">lesson 0014</a> membahas TTL, eviction, dan invalidation. TTL punya efek samping: saat key yang sangat populer kedaluwarsa,
+  semua request untuk key itu tiba-tiba miss bersamaan. Lesson ini menutup modul Caching dengan tiga masalah yang muncul hanya di traffic tinggi, dan kapan Anda tidak perlu memikirkannya.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Setiap kali TTL halaman utama habis, CPU database melonjak. Kenapa, dan bagaimana memperbaikinya?"</em>
+  tanpa catatan, dalam 60 detik: menamai cache stampede, request coalescing/lock, serve stale while revalidate, jitter atau early expiration,
+  dan angka QPS yang membenarkan semua itu.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Cache stampede (thundering herd)</h2>
+<p>
+  <strong>Cache stampede</strong> (juga disebut dog-piling atau <em>thundering herd</em>) terjadi ketika item cache yang populer kedaluwarsa, sehingga banyak request
+  melihat miss dan meregenerasi item yang sama pada saat bersamaan. <sup class="cite"><a href="https://www.vldb.org/pvldb/vol8/p886-vattani.pdf">[1]</a></sup>
+  Penyebabnya justru pola cache-aside biasa: cek cache, kalau miss hitung ulang dan simpan. Selama hitung ulang berlangsung, setiap request baru juga miss.
+</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 200" role="img" aria-label="Tiga request sekaligus mendapat miss di cache yang key-nya kedaluwarsa, lalu ketiganya menghitung ulang ke database">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="20" width="100" height="36" rx="4"/><text x="60" y="38">Request 1</text></g>
+  <g class="node client"><rect x="10" y="82" width="100" height="36" rx="4"/><text x="60" y="100">Request 2</text></g>
+  <g class="node client"><rect x="10" y="144" width="100" height="36" rx="4"/><text x="60" y="162">Request 3 … N</text></g>
+  <g class="node cache"><rect x="220" y="82" width="140" height="36" rx="4"/><text x="290" y="100">Cache: key expired</text></g>
+  <g class="node store"><rect x="500" y="82" width="120" height="36" rx="4"/><text x="560" y="100">Database</text></g>
+  <path class="edge" d="M110,38 L218,92"/>
+  <path class="edge" d="M110,100 H218"/>
+  <path class="edge" d="M110,162 L218,108"/>
+  <path class="edge" d="M360,92 L498,88"/>
+  <path class="edge" d="M360,100 H498"/>
+  <path class="edge" d="M360,108 L498,112"/>
+  <text class="label" x="290" y="66">semua miss</text>
+  <text class="label" x="430" y="70">N × hitung ulang</text>
+</svg>
+<figcaption>Tanpa proteksi: N request yang miss bersamaan menjadi N query identik ke database.</figcaption>
+</figure>
+
+<p>
+  Angkanya cepat membesar. Paper yang sama memberi contoh item yang hitung ulangnya butuh satu menit dan diakses 10.000 proses per menit. <sup class="cite"><a href="https://www.vldb.org/pvldb/vol8/p886-vattani.pdf">[1]</a></sup>
+  Hitung sendiri: key dibaca 5.000 kali per detik, hitung ulang 2 detik → sekitar 10.000 request bisa miss sebelum nilai baru tersimpan.
+</p>
+
+<h3>Empat mitigasi</h3>
+<ol>
+  <li><strong>Request coalescing.</strong> Gabungkan banyak miss untuk key yang sama menjadi satu request ke origin. RFC 9111 menyebutnya "collapse requests": menggabungkan beberapa request masuk menjadi satu request ke depan saat miss, sehingga beban origin turun. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9111.html#section-4">[2]</a></sup>
+    Di nginx: <code>proxy_cache_lock on</code> mengizinkan hanya satu request pada satu waktu mengisi elemen cache baru; yang lain menunggu sampai respons ada di cache atau <code>proxy_cache_lock_timeout</code>. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock">[3]</a></sup></li>
+  <li><strong>Lock di cache terdistribusi.</strong> Di level aplikasi, request yang miss mencoba mengambil lock dan hanya pemegang lock yang menghitung ulang. Redis <code>SET lock:key 1 NX EX 10</code>: <code>NX</code> hanya menulis kalau key belum ada <sup class="cite"><a href="https://redis.io/docs/latest/commands/set/">[4]</a></sup>, <code>EX</code> memberi lock TTL.
+    Paper Vattani mencatat kelemahannya: request lain tidak punya nilai untuk dikembalikan (harus menunggu atau memakai nilai basi), ada write tambahan untuk lock, dan kalau pemegang lock gagal, tidak ada yang mengisi ulang sampai lock kedaluwarsa. <sup class="cite"><a href="https://www.vldb.org/pvldb/vol8/p886-vattani.pdf">[1]</a></sup></li>
+  <li><strong>Serve stale while revalidate.</strong> Sajikan nilai lama sambil satu proses me-refresh di belakang. HTTP: <code>Cache-Control: max-age=600, stale-while-revalidate=30</code> berarti segar 600 detik, lalu boleh disajikan basi sampai 30 detik lagi sementara validasi asinkron dicoba. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc5861.html#section-3">[5]</a></sup>
+    nginx: <code>proxy_cache_use_stale updating</code> plus <code>proxy_cache_background_update on</code>. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_background_update">[3]</a></sup></li>
+  <li><strong>Early expiration dan jitter.</strong> Setiap request boleh memutuskan secara acak untuk menghitung ulang sedikit <em>sebelum</em> TTL habis, dengan peluang yang naik saat TTL mendekati habis; paper Vattani membuktikan versi eksponensialnya (XFetch) optimal. <sup class="cite"><a href="https://www.vldb.org/pvldb/vol8/p886-vattani.pdf">[1]</a></sup>
+    Versi paling sederhana: tambahkan acak kecil pada TTL (TTL 300 ± 30 detik) supaya ribuan key yang diisi bersamaan tidak kedaluwarsa pada detik yang sama.</li>
+</ol>
+
+<section class="exercise">
+  <h2>Latihan 1 — Cache stampede</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0019.</p>
+  <div class="quiz" data-bank-lesson="0015" data-bank-topic="cache-stampede" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Hot key</h2>
+<p>
+  <strong>Hot key</strong> adalah satu key yang menerima traffic jauh di atas key lain (profil selebritas, produk flash sale). Di cache terdistribusi, setiap key dipetakan ke satu node
+  (hashing, lesson 0010), jadi menambah node tidak memecah beban satu key: node pemiliknya tetap kewalahan sementara node lain santai.
+</p>
+<ul>
+  <li><strong>Deteksi dulu.</strong> <code>redis-cli --hotkeys</code> mengambil sampel key untuk mencari hot key; opsi ini hanya bekerja bila <code>maxmemory-policy</code> memakai LFU. <sup class="cite"><a href="https://redis.io/docs/latest/develop/tools/cli/">[6]</a></sup></li>
+  <li><strong>Local cache di depan Redis.</strong> Simpan key panas di memori aplikasi dengan TTL pendek. Dokumentasi Redis: sebagian kecil data biasanya diakses jauh lebih sering, dan menyimpannya di memori lokal menurunkan latency sekaligus beban server; pasang TTL maksimum pada setiap key lokal. <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/client-side-caching/">[7]</a></sup></li>
+  <li><strong>Pecah key dengan suffix.</strong> Simpan N salinan (<code>profil:42#1</code> … <code>profil:42#8</code>) yang tersebar ke node berbeda, baca salah satunya secara acak. Ide yang sama dipakai DynamoDB untuk write yang terkonsentrasi: tambahkan angka acak (mis. 1–200) sebagai suffix partition key supaya beban tersebar. <sup class="cite"><a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-sharding.html#bp-partition-key-sharding-random">[8]</a></sup> Biayanya: setiap update harus menulis ke N salinan.</li>
+</ul>
+
+<!-- ============ 3 ============ -->
+<h2>3. Cache berlapis</h2>
+<p>
+  <strong>Cache berlapis</strong> (multi-level cache) menumpuk beberapa cache, dari yang terdekat dan terkecil ke yang terjauh dan terbesar. Setiap lapisan menyaring miss sebelum sampai ke lapisan berikutnya.
+</p>
+<div class="flow">
+  <span class="box">L1: local cache (µs)</span><span class="arrow">→</span>
+  <span class="box">L2: Redis bersama (ms)</span><span class="arrow">→</span>
+  <span class="box">Database</span>
+</div>
+<div class="flow">
+  <span class="box">CDN edge</span><span class="arrow">→</span>
+  <span class="box">regional edge cache</span><span class="arrow">→</span>
+  <span class="box">Origin Shield</span><span class="arrow">→</span>
+  <span class="box">origin</span>
+</div>
+<p>
+  CloudFront memakai regional edge cache sebagai lapisan tengah, dan Origin Shield menambah satu lapisan lagi: request untuk objek yang belum ada di cache-nya digabung dengan request lain
+  untuk objek yang sama, sehingga bisa hanya satu request yang sampai ke origin. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html">[9]</a></sup>
+  Harganya: setiap lapisan menambah satu tempat data bisa basi. Local cache per instance cepat menjadi tidak konsisten antar-instance, sehingga perlu TTL lebih pendek. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#problems-and-considerations">[10]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Hot key dan cache berlapis</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <div class="quiz" data-bank-lesson="0015" data-bank-topic="cache-hot-key" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal:</strong> proteksi stampede dibenarkan kalau <em>QPS satu key × waktu hitung ulang</em> menghasilkan banyak query serentak (5.000 QPS × 2 detik ≈ 10.000), atau metrik database
+  menunjukkan lonjakan tepat saat TTL habis. Pada 10 QPS dengan hitung ulang 50 ms, miss bersamaan paling banyak satu atau dua query: biarkan saja. Pecah hot key hanya setelah
+  <code>--hotkeys</code> atau metrik per node menunjukkan satu node jauh lebih sibuk dari yang lain.
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> lock menambah write dan titik gagal baru (pemegang lock crash) <sup class="cite"><a href="https://www.vldb.org/pvldb/vol8/p886-vattani.pdf">[1]</a></sup>;
+  salinan hot key harus diperbarui semuanya; setiap lapisan cache tambahan menambah tempat data basi dan jalur invalidation yang harus dijaga. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#problems-and-considerations">[10]</a></sup>
+</p>
+<p>
+  <strong>Alternatif lebih murah:</strong> jitter pada TTL (satu baris kode); <code>stale-while-revalidate</code> atau <code>proxy_cache_lock</code> di proxy yang sudah ada (konfigurasi, bukan komponen baru)
+  <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache_lock">[3]</a></sup>; dan untuk konten publik, biarkan CDN yang menyerap traffic sebelum memikirkan local cache sendiri.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Halaman utama Anda di-cache dengan TTL 60 detik. Setiap kali TTL habis, CPU database melonjak ke 100% selama beberapa detik. Apa yang terjadi, dan bagaimana Anda memperbaikinya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Ini cache stampede atau thundering herd: key populer kedaluwarsa, ribuan request miss bersamaan dan semuanya menghitung ulang ke database. Angkanya: kalau key dibaca 5.000 kali per detik dan hitung ulang 2 detik, ribuan query datang serentak. Perbaikan pertama adalah request coalescing: hanya satu request yang mengisi ulang, misalnya dengan lock SET NX EX di Redis atau proxy_cache_lock di nginx, sementara yang lain menunggu atau memakai nilai lama. Lebih baik lagi serve stale while revalidate, jadi user tetap dapat nilai lama sambil satu proses me-refresh di belakang. Saya tambahkan jitter pada TTL atau early expiration probabilistik supaya key tidak kedaluwarsa bersamaan. Lock wajib punya TTL, karena kalau pemegangnya crash, tidak ada yang mengisi ulang. Di QPS rendah semua ini tidak perlu."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>nama masalahnya: cache stampede/thundering herd, banyak miss bersamaan untuk key yang sama?</li>
+      <li>request coalescing atau lock: hanya satu request yang mengisi ulang?</li>
+      <li>serve stale while revalidate atau refresh di background supaya user tidak menunggu?</li>
+      <li>jitter pada TTL atau early expiration probabilistik supaya tidak kedaluwarsa serentak?</li>
+      <li>risiko lock: pemegang lock gagal, jadi lock butuh TTL (mis. SET NX EX)?</li>
+      <li>angka yang membenarkan: QPS key × waktu hitung ulang; di QPS rendah proteksi tidak perlu?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.vldb.org/pvldb/vol8/p886-vattani.pdf">Vattani, Chierichetti, Lowenstein, "Optimal Probabilistic Cache Stampede Prevention", PVLDB 8(8), 2015</a>, ±15 menit untuk bagian 1–2 (definisi dan perbandingan solusi). Bagian bukti matematisnya boleh dilewati.
+</div>
+
+<p>Berikutnya, <a href="0016-queue-dan-pubsub.html">lesson 0016</a>: modul Asinkron dimulai dengan message queue vs pub/sub. Modul Data dan Caching diuji bersama di review 0019.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Caching") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Apa beda request coalescing dan lock?", "Bagaimana XFetch memutuskan kapan refresh lebih awal?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.vldb.org/pvldb/vol8/p886-vattani.pdf">[1] Vattani et al. 2015, "Optimal Probabilistic Cache Stampede Prevention", PVLDB 8(8)</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9111.html">[2] RFC 9111: HTTP Caching</a> ·
+  <a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html">[3] nginx: Module ngx_http_proxy_module</a> ·
+  <a href="https://redis.io/docs/latest/commands/set/">[4] Redis docs: SET</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc5861.html">[5] RFC 5861: HTTP Cache-Control Extensions for Stale Content</a> ·
+  <a href="https://redis.io/docs/latest/develop/tools/cli/">[6] Redis docs: redis-cli</a> ·
+  <a href="https://redis.io/docs/latest/develop/reference/client-side-caching/">[7] Redis docs: Client-side caching reference</a> ·
+  <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-sharding.html">[8] Amazon DynamoDB: Using write sharding to distribute workloads evenly</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html">[9] Amazon CloudFront: Use Origin Shield</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[10] Azure Architecture Center: Cache-Aside pattern</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0014-ttl-eviction-invalidation.html">← 0014 · TTL, eviction, invalidation</a>
+  <a href="0016-queue-dan-pubsub.html">0016 · Message queue vs pub/sub →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0015.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

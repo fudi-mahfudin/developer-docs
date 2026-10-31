@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0007 · Reverse proxy dan CDN</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0007 · System Design · Modul Skalabilitas · ±20 menit</div>
+  <h1>Reverse proxy, API gateway singkat, dan CDN</h1>
+  <p class="subtitle">Apa yang bisa dikerjakan di depan server Anda, dan kapan konten sebaiknya dilayani dari edge yang dekat dengan user</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0006-load-balancer.html">lesson 0006</a> membahas load balancer yang membagi request ke beberapa instance.
+  Load balancer sebenarnya satu jenis <strong>reverse proxy</strong>. Lesson ini melengkapi gambarnya: reverse proxy secara umum, API gateway sekilas, dan CDN yang memindahkan konten statis sedekat mungkin ke user.
+  Ini lesson terakhir modul Skalabilitas.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Apa beda reverse proxy, API gateway, dan CDN, dan kapan Anda memakai CDN?"</em>
+  tanpa catatan, dalam 60 detik: peran masing-masing, alur cache hit dan miss di edge, push vs pull CDN, cara memperbarui konten, dan angka yang membenarkan CDN.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Reverse proxy: server di depan server</h2>
+<p>
+  RFC 9110 mendefinisikannya: <em>"A "gateway" (a.k.a. "reverse proxy") is an intermediary that acts as an origin server for the outbound connection but translates received requests and forwards them inbound to another server or servers."</em>
+  Bagi client, reverse proxy terlihat seperti server aslinya. RFC yang sama menyebut kegunaannya: <em>"accelerator" caching</em> dan <em>"partitioning or load balancing of HTTP services across multiple machines"</em>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#section-3.7">[1]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Client</span><span class="arrow">→</span>
+  <span class="box">Reverse proxy (TLS, cache, kompresi)</span><span class="arrow">→</span>
+  <span class="box">App server 1..N</span><span class="arrow">→</span>
+  <span class="box">Database</span>
+</div>
+<p>Pekerjaan yang biasa dipindah ke reverse proxy supaya app server tidak mengerjakannya:</p>
+<ul>
+  <li><strong>TLS termination</strong>: sertifikat cukup dipasang di satu tempat (lesson 0006).</li>
+  <li><strong>Cache respons</strong>: nginx punya <code>proxy_cache</code> yang menyimpan respons dari server di belakangnya, sehingga request yang sama tidak sampai ke app. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache">[2]</a></sup></li>
+  <li><strong>Load balancing</strong>: <code>proxy_pass</code> ke sebuah server group, persis seperti lesson 0006. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_pass">[2]</a></sup></li>
+  <li><strong>Menyembunyikan server</strong>: hanya proxy yang punya alamat publik; app server dan database ada di jaringan privat.</li>
+</ul>
+
+<!-- ============ 2 ============ -->
+<h2>2. API gateway, singkat</h2>
+<p>
+  <strong>API gateway</strong> adalah reverse proxy yang menjadi pintu masuk tunggal ke banyak service. Azure Architecture Center: ia <em>"acts as a reverse proxy and routes clients requests to the appropriate services"</em>
+  dan bisa mengerjakan urusan lintas service (cross-cutting) seperti autentikasi, SSL/TLS termination, dan rate limiting (membatasi jumlah request per client, lesson 0021). Routing-nya memakai layer 7. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/microservices/design/gateway">[3]</a></sup>
+</p>
+<p>
+  Biayanya disebut terang-terangan di pola Gateway Offloading: gateway menambah satu hop jaringan di setiap request, bisa menjadi bottleneck kalau kapasitasnya kurang,
+  dan harus dijalankan dalam beberapa instance supaya tidak menjadi single point of failure.
+  Pola ini juga <em>"might not be suitable"</em> kalau urusan yang dipindah ringan dan workload-nya sensitif terhadap latency. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/gateway-offloading">[4]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Komponen</th><th>Pertanyaan yang dijawab</th></tr></thead>
+  <tbody>
+    <tr><td>Load balancer</td><td>Instance mana yang melayani request ini?</td></tr>
+    <tr><td>Reverse proxy</td><td>Apa yang dikerjakan sebelum request sampai ke server (TLS, cache, kompresi)?</td></tr>
+    <tr><td>API gateway</td><td>Service mana yang dituju, dan apakah client ini boleh masuk?</td></tr>
+    <tr><td>CDN</td><td>Bisakah respons ini dilayani dari lokasi dekat user tanpa menyentuh origin?</td></tr>
+  </tbody>
+</table>
+<p class="note">Satu produk bisa memainkan beberapa peran sekaligus: nginx bisa menjadi reverse proxy, load balancer, dan cache. Di interview, sebut perannya, bukan merek produknya.</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Reverse proxy dan API gateway</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0012.</p>
+  <div class="quiz" data-bank-lesson="0007" data-bank-topic="skala-reverse-proxy" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. CDN: cache di edge</h2>
+<p>
+  <strong>CDN</strong> (content delivery network) adalah jaringan server yang tersebar dan menyimpan salinan konten di <strong>edge</strong>, server yang dekat dengan user, untuk memperkecil latency.
+  Biasanya dipakai untuk konten statis (gambar, CSS, JavaScript, dokumen), dan sekaligus mengurangi beban aplikasi karena request itu tidak lagi sampai ke server Anda. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/best-practices/cdn">[5]</a></sup>
+  Dalam istilah RFC 9111, CDN adalah <em>shared cache</em>: cache yang menyimpan respons untuk dipakai ulang oleh lebih dari satu user. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9111.html#shared.and.private.caches">[6]</a></sup>
+</p>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 230" role="img" aria-label="User Jakarta dan user Tokyo masing-masing ke edge terdekat; cache hit dilayani di edge, cache miss diteruskan ke origin lalu disimpan di edge">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="37" width="110" height="36" rx="4"/><text x="65" y="55">User Jakarta</text></g>
+  <g class="node client"><rect x="10" y="157" width="110" height="36" rx="4"/><text x="65" y="175">User Tokyo</text></g>
+  <g class="node cache"><rect x="210" y="37" width="140" height="36" rx="4"/><text x="280" y="55">Edge Jakarta</text></g>
+  <g class="node cache"><rect x="210" y="157" width="140" height="36" rx="4"/><text x="280" y="175">Edge Tokyo</text></g>
+  <g class="node service"><rect x="470" y="97" width="150" height="36" rx="4"/><text x="545" y="115">Origin (server Anda)</text></g>
+  <path class="edge" d="M120,55 H208"/>
+  <path class="edge" d="M120,175 H208"/>
+  <path class="edge" d="M350,170 L468,124"/>
+  <text class="label" x="165" y="45">hit: dilayani edge</text>
+  <text class="label" x="410" y="172">miss: ambil, simpan</text>
+</svg>
+<figcaption>Edge Jakarta sudah punya salinan (cache hit) dan tidak menghubungi origin. Edge Tokyo belum punya (cache miss): ia meminta ke origin sekali, meneruskan ke user, dan menyimpannya untuk request berikutnya.</figcaption>
+</figure>
+<p>
+  Alur di CloudFront (CDN milik AWS): DNS mengarahkan request ke edge location (POP) yang biasanya paling dekat dari sisi latency. Kalau objek ada di cache, edge langsung mengembalikannya.
+  Kalau tidak, edge meneruskan request ke origin, mulai mengirim ke user begitu byte pertama tiba, dan menyimpan objek itu <em>"for the next time someone requests it"</em>. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HowCloudFrontWorks.html">[7]</a></sup>
+</p>
+
+<h3>Push vs pull</h3>
+<table>
+  <thead><tr><th></th><th>Pull CDN</th><th>Push CDN</th></tr></thead>
+  <tbody>
+    <tr><td>Cara konten masuk</td><td>Edge mengambil dari origin saat request pertama (cache miss)</td><td>Anda mengunggah file ke storage CDN lebih dulu</td></tr>
+    <tr><td>Contoh</td><td>CloudFront dengan origin server atau bucket (alur di atas) <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HowCloudFrontWorks.html">[7]</a></sup></td><td>KeyCDN Push Zone: unggah ke storage cluster mereka <sup class="cite"><a href="https://www.keycdn.com/support/zones/push-zone">[8]</a></sup></td></tr>
+    <tr><td>Cocok untuk</td><td>Default: situs dan aset yang sering berubah, tanpa langkah deploy tambahan</td><td>File besar yang jarang berubah; KeyCDN menyarankan push untuk file &gt; 10 MB dan mewajibkannya di atas 100 MB <sup class="cite"><a href="https://www.keycdn.com/support/zones/push-zone">[8]</a></sup></td></tr>
+    <tr><td>Kelemahan</td><td>Request pertama per edge lambat (miss); origin harus hidup</td><td>Anda yang mengatur upload dan pembaruan; lupa unggah = konten lama</td></tr>
+  </tbody>
+</table>
+
+<h3>Berapa lama disimpan, dan cara memperbaruinya</h3>
+<p>
+  Lama penyimpanan diatur header <code>Cache-Control: max-age=&lt;detik&gt;</code> dari origin, atau pengaturan TTL di CDN. Di CloudFront tanpa cache policy, default TTL adalah 24 jam. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html">[9]</a></sup>
+  Untuk mengganti file sebelum TTL habis ada dua cara: <strong>invalidation</strong> (minta edge membuang file itu) atau <strong>nama file berversi</strong> (mis. <code>app.3f9a.js</code>), sehingga file baru adalah URL baru. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Invalidation.html">[10]</a></sup>
+  Nama berversi biasanya lebih disukai untuk aset statis: TTL bisa dibuat panjang tanpa takut user melihat versi lama.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — CDN</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <div class="quiz" data-bank-lesson="0007" data-bank-topic="skala-cdn" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Kapan tidak perlu</h2>
+<p>
+  <strong>Reverse proxy.</strong> Sinyal: lebih dari satu instance, atau TLS dan kompresi ingin diurus di satu tempat. Hosting managed dan load balancer L7 sering sudah menjadi reverse proxy Anda, jadi jangan menambah lapisan kedua tanpa alasan.
+</p>
+<p>
+  <strong>API gateway.</strong> Sinyal: beberapa service terpisah yang dipanggil client dan urusan bersama (auth, rate limiting) yang diulang di setiap service.
+  Untuk satu monolith, aplikasinya sendiri sudah menjadi pintu masuk tunggal; gateway hanya menambah hop, bottleneck potensial, dan komponen yang harus redundan. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/gateway-offloading">[4]</a></sup>
+</p>
+<p>
+  <strong>CDN.</strong> Sinyal: user tersebar jauh dari origin (RTT lintas benua puluhan sampai ratusan milidetik, lesson 0003), atau estimasi bandwidth konten statis besar (lesson 0004), atau origin sibuk melayani file yang sama berulang kali.
+  Biaya dan risiko: konten basi selama TTL, invalidation yang harus diingat setiap deploy, debugging lebih sulit ("di edge mana yang salah?"), dan respons per user yang tidak bisa di-cache di shared cache sehingga manfaatnya kecil untuk API yang personal.
+  Alternatif lebih murah: header <code>Cache-Control</code> yang benar supaya browser (private cache) menyimpan aset, kompresi, dan nama file berversi. Untuk aplikasi internal dengan user di satu kota, CDN hampir tidak memberi apa-apa.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+  <blockquote>"Situs e-commerce Anda punya banyak gambar produk dan user di seluruh Asia. Apakah Anda memakai CDN? Jelaskan cara kerjanya dan cara memperbarui gambar." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Ya, dan ini alasannya dengan angka: user tersebar di Asia sementara origin di satu region, jadi RTT ke origin bisa ratusan milidetik, dan gambar produk adalah bagian terbesar bandwidth. CDN menyimpan salinan di edge dekat user. Saya pakai pull CDN: request pertama di setiap edge adalah cache miss, edge mengambil dari origin dan menyimpannya; request berikutnya cache hit dan tidak menyentuh origin, jadi beban origin juga turun. Push CDN saya pakai hanya untuk file besar yang jarang berubah, misalnya video. TTL saya atur dengan Cache-Control max-age yang panjang, dan untuk memperbarui gambar saya pakai nama file berversi, bukan invalidation setiap deploy. Data per user seperti keranjang tidak lewat cache CDN. Kalau user-nya hanya di satu kota, saya cukup pakai Cache-Control di browser dulu."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>CDN menyimpan salinan konten statis di edge dekat user?</li>
+      <li>alur cache hit dilayani edge dan cache miss diambil dari origin lalu disimpan?</li>
+      <li>pull sebagai default dan push untuk file besar yang jarang berubah?</li>
+      <li>TTL lewat Cache-Control dan pembaruan lewat nama berversi atau invalidation?</li>
+      <li>konten per user atau dinamis tidak di-cache di CDN?</li>
+      <li>membenarkan CDN dengan angka (jarak/RTT user, bandwidth gambar, beban origin)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HowCloudFrontWorks.html">Amazon CloudFront, "How CloudFront delivers content"</a>, ±5 menit. Alur edge, origin, dan regional edge cache dengan bahasa yang sederhana.
+</div>
+
+<p>Berikutnya, <a href="0008-sql-vs-nosql.html">lesson 0008</a>: modul Data dimulai. Setelah app server bisa di-scale out, bottleneck berikutnya biasanya database: relasional atau NoSQL, dan kapan memilih yang mana.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Skalabilitas") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Apa bedanya reverse proxy dan forward proxy?", "Kenapa nama file berversi lebih baik daripada invalidation?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#section-3.7">[1] RFC 9110: HTTP Semantics, 3.7 Intermediaries</a> ·
+  <a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html">[2] nginx: Module ngx_http_proxy_module</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/microservices/design/gateway">[3] Azure Architecture Center: API gateways</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/gateway-offloading">[4] Azure Architecture Center: Gateway Offloading pattern</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/best-practices/cdn">[5] Azure Architecture Center: CDN guidance</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9111.html#shared.and.private.caches">[6] RFC 9111: HTTP Caching, shared and private caches</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HowCloudFrontWorks.html">[7] Amazon CloudFront: How CloudFront delivers content</a> ·
+  <a href="https://www.keycdn.com/support/zones/push-zone">[8] KeyCDN Support: Push Zone</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html">[9] Amazon CloudFront: Manage how long content stays in the cache (expiration)</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Invalidation.html">[10] Amazon CloudFront: Invalidate files to remove content</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0006-load-balancer.html">← 0006 · Load balancer: L4 vs L7, algoritma, health check</a>
+  <a href="0008-sql-vs-nosql.html">0008 · SQL vs NoSQL: kapan memilih yang mana →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0007.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

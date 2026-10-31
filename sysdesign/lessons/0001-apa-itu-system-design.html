@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0001 · Apa itu system design; functional vs non-functional requirement</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0001 · System Design · Modul Fondasi · ±20 menit</div>
+  <h1>Apa itu system design; functional vs non-functional requirement</h1>
+  <p class="subtitle">Apa yang dinilai di ronde system design, cara menulis requirement dengan angka, dan prinsip inti track ini</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa memisahkan functional dan non-functional requirement dari sebuah soal desain,
+  menulis non-functional requirement sebagai angka (mis. availability 99,9% = ±43 menit downtime per bulan),
+  dan menjelaskan kenapa desain pertama Anda sengaja dibuat sederhana.
+</div>
+
+<h2>1. Apa yang sebenarnya dinilai</h2>
+<p>
+  Soal system design berbentuk terbuka: "rancang URL shortener", "rancang aplikasi chat". Tidak ada satu jawaban benar.
+  Yang dinilai adalah <strong>cara Anda memilih</strong>: requirement apa yang Anda tanyakan, angka apa yang Anda hitung, dan alasan di balik setiap komponen.
+</p>
+<p>
+  Jeff Dean (Google) merumuskannya begini: dari satu definisi masalah, "best" bisa berarti <em>"simplest, highest performance, easiest to extend, etc."</em>,
+  dan keterampilan pentingnya adalah <em>"ability to estimate performance of a system design – without actually having to build it!"</em> <sup class="cite"><a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[1]</a></sup>
+  Perhatikan urutannya: <em>simplest</em> disebut pertama.
+</p>
+
+<h2>2. Functional vs non-functional requirement</h2>
+<p>Requirement adalah titik awal setiap soal. Pisahkan dua jenis:</p>
+<table>
+  <thead><tr><th></th><th>Functional</th><th>Non-functional</th></tr></thead>
+  <tbody>
+    <tr><td>Pertanyaan</td><td>Sistem <strong>melakukan apa</strong>?</td><td>Sistem harus <strong>seberapa baik</strong>?</td></tr>
+    <tr><td>Contoh (URL shortener)</td><td>Membuat link pendek; redirect ke URL asli; link bisa kedaluwarsa</td><td>Redirect cepat; jarang down; berapa user; boleh telat konsisten?</td></tr>
+    <tr><td>Bentuk yang baik</td><td>Kalimat kerja: "user bisa …"</td><td><strong>Angka</strong>: latency, availability, jumlah user, ukuran data</td></tr>
+  </tbody>
+</table>
+<p>
+  Non-functional requirement tanpa angka tidak bisa dipakai untuk memilih desain. "Harus cepat" tidak memberi tahu apa-apa;
+  "p99 redirect di bawah 100 ms" (99% request selesai di bawah 100 ms, dibahas di <a href="0003-latency-dan-throughput.html">lesson 0003</a>) langsung menentukan apakah perlu cache.
+  Google SRE Book menyebut ukuran seperti ini <strong>SLI</strong> (service level indicator), <em>"a carefully defined quantitative measure"</em> dari layanan, dengan latency sebagai SLI utama di kebanyakan layanan. <sup class="cite"><a href="https://sre.google/sre-book/service-level-objectives/">[2]</a></sup>
+</p>
+<p>Availability juga ditulis sebagai angka. Setiap "sembilan" tambahan memangkas jatah downtime 10 kali lipat: <sup class="cite"><a href="https://sre.google/sre-book/availability-table/">[3]</a></sup></p>
+<table>
+  <thead><tr><th>Availability</th><th>Downtime per tahun</th><th>per bulan</th><th>per hari</th></tr></thead>
+  <tbody>
+    <tr><td>99%</td><td>3,65 hari</td><td>7,2 jam</td><td>14,4 menit</td></tr>
+    <tr><td>99,9%</td><td>8,76 jam</td><td>43,2 menit</td><td>1,44 menit</td></tr>
+    <tr><td>99,99%</td><td>52,6 menit</td><td>4,32 menit</td><td>8,64 detik</td></tr>
+  </tbody>
+</table>
+<p>
+  Kenapa penting: 99,99% berarti sistem harus pulih sendiri dalam hitungan detik, tanpa menunggu orang bangun tengah malam. Itu mahal.
+  Jadi tanyakan dulu ke interviewer berapa yang dibutuhkan, jangan langsung menjanjikan angka tertinggi.
+</p>
+
+<h2>3. Prinsip inti: ukur dulu, mulai dari yang paling murah</h2>
+<p>
+  Seluruh track ini memegang satu prinsip: <strong>ukur dulu, lalu mulai dari perubahan yang paling murah dan paling kecil risikonya. Arsitektur baru adalah jalan terakhir.</strong>
+  Di interview, prinsip ini berbentuk <strong>desain v1</strong>: desain paling sederhana yang memenuhi angka requirement.
+</p>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 460 70" role="img" aria-label="Desain v1: client ke satu app server ke satu database">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="17" width="90" height="36" rx="4"/><text x="55" y="35">Client</text></g>
+  <g class="node service"><rect x="170" y="17" width="110" height="36" rx="4"/><text x="225" y="35">App server</text></g>
+  <g class="node store"><rect x="350" y="17" width="100" height="36" rx="4"/><text x="400" y="35">Database</text></g>
+  <path class="edge" d="M100,35 H168"/>
+  <path class="edge" d="M280,35 H348"/>
+</svg>
+<figcaption>Desain v1 untuk hampir semua soal: satu app server, satu database. Komponen lain ditambah hanya kalau angka menuntut.</figcaption>
+</figure>
+<p>
+  Kenapa tidak langsung memasang semuanya? Setiap komponen tambahan punya biaya tetap, terpakai atau tidak:
+  satu lagi yang harus di-deploy, dipantau, dan diperbaiki saat rusak. Memecah aplikasi menjadi banyak service
+  (<strong>microservices</strong>: aplikasi dipecah menjadi service kecil yang di-deploy terpisah dan saling memanggil lewat jaringan)
+  mengubah pemanggilan fungsi biasa menjadi panggilan jaringan yang lebih lambat dan bisa gagal.
+  Biaya itu layak dibayar kalau angka menuntutnya, bukan sebelumnya. Urutannya selalu: ukur dulu, perbaiki yang termurah, dan pecah arsitektur sebagai jalan terakhir.
+</p>
+<table>
+  <thead><tr><th>Soal: aplikasi internal, 1.000 user</th><th>Terdengar over-engineer</th><th>Terdengar terukur</th></tr></thead>
+  <tbody>
+    <tr><td>Arsitektur</td><td>"Saya pakai microservices, Kafka, dan Kubernetes."</td><td>"Satu app server dan satu database cukup. Ini hitungannya."</td></tr>
+    <tr><td>Kapan berubah</td><td>Tidak disebut; semuanya dipasang dari awal.</td><td>"Kalau p99 naik melewati target, saya cek query dan index dulu, baru cache."</td></tr>
+  </tbody>
+</table>
+<p>
+  Kolom kanan bukan berarti tidak tahu komponen canggih. Kolom kanan tahu <strong>kapan</strong> komponen itu dibutuhkan.
+  Hitungan "1.000 user cukup satu server" ada di <a href="0004-estimasi-back-of-envelope.html">lesson 0004</a>, dan urutan lengkap perubahan dari yang termurah ada di lesson 0025 (tangga skala).
+  Setiap lesson komponen sesudah ini punya bagian "Kapan tidak perlu".
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Functional atau non-functional?</h2>
+  <div class="quiz" data-bank-lesson="0001" data-bank-topic="dasar-requirement" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Desain v1 dan prinsip inti</h2>
+  <div class="quiz" data-bank-lesson="0001" data-bank-topic="dasar-prinsip-sederhana" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras seolah sedang interview, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+
+  <blockquote>"Interviewer: rancang aplikasi absensi untuk kantor dengan 1.000 karyawan. Apa yang Anda lakukan di dua menit pertama, dan kenapa Anda tidak langsung memilih microservices?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Saya mulai dari requirement. Functional: karyawan check-in dan check-out, HR melihat rekap. Non-functional saya minta dalam angka: berapa user aktif, kapan puncaknya (mungkin jam 8 pagi),
+      berapa latency yang bisa diterima, dan availability yang dibutuhkan, misalnya 99,9% berarti boleh down sekitar 43 menit sebulan.
+      Lalu saya hitung kasar: 1.000 karyawan dengan beberapa request per hari itu sangat kecil, jadi desain v1 saya satu app server dan satu database.
+      Microservices menambah biaya mengelola banyak service: deploy, monitoring, dan panggilan jaringan antar-service yang bisa gagal. Kalau nanti metrik menunjukkan bottleneck, saya mulai dari perubahan termurah seperti index atau cache."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>mulai dari requirement sebelum menggambar komponen?</li>
+      <li>minimal dua functional requirement dalam bentuk "user bisa …"?</li>
+      <li>non-functional requirement sebagai angka (user, puncak, latency, atau availability)?</li>
+      <li>hitungan kasar yang menunjukkan bebannya kecil?</li>
+      <li>desain v1: satu app server dan satu database?</li>
+      <li>alasan menolak microservices (biaya mengelola banyak service) dan langkah termurah kalau nanti lambat?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://sre.google/sre-book/service-level-objectives/">Google SRE Book, bab 4 "Service Level Objectives"</a>: cara menulis non-functional requirement sebagai SLI (ukuran) dan SLO (target untuk ukuran itu), ±20 menit.
+</div>
+
+<p>Berikutnya, lesson 0002: sebelum memasang komponen apa pun, apa saja yang terjadi saat browser mengirim satu request ke server?</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke agent. Agent adalah guru Anda di track ini.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Prinsip dan kerangka", "Fondasi") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[1] Jeff Dean, LADIS 2009 keynote (slide "Designing Efficient Systems")</a> ·
+  <a href="https://sre.google/sre-book/service-level-objectives/">[2] Google SRE Book, bab 4 Service Level Objectives</a> ·
+  <a href="https://sre.google/sre-book/availability-table/">[3] Google SRE Book, Availability Table</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="../index.html">← Indeks</a>
+  <a href="0002-perjalanan-request.html">0002 · Perjalanan request: client-server, DNS, HTTP →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0001.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

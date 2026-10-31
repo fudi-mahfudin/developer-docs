@@ -19,13 +19,164 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003). Agent lesson menambah
 
 ### Fondasi
 
+- [Jeff Dean, LADIS 2009 keynote "Designs, Lessons and Advice from Building Large Distributed Systems"](https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf)
+  Use for: slide 23 "Designing Efficient Systems" (estimasi tanpa membangun, lesson 0001, 0004), slide 24 "Numbers Everyone Should Know" (angka latency 2009, disk berputar, lesson 0002, 0003, 0004), slide 25–27 "Back of the Envelope Calculations" (lesson 0004).
+- [Google SRE Book, bab 4 Service Level Objectives](https://sre.google/sre-book/service-level-objectives/)
+  Use for: SLI/SLO, latency dan throughput sebagai SLI, percentile vs rata-rata, tail latency (lesson 0001, 0003).
+- [Google SRE Book, Availability Table](https://sre.google/sre-book/availability-table/)
+  Use for: availability 99%/99,9%/99,99% → jatah downtime per tahun/bulan/hari (lesson 0001).
+- [RFC 9110 HTTP Semantics, §3 dan §3.3](https://www.rfc-editor.org/rfc/rfc9110.html#section-3.3)
+  Use for: client-server, request/response, HTTP stateless (lesson 0002).
+- [RFC 1034 Domain Names: Concepts and Facilities, §2.4 dan §3.6](https://www.rfc-editor.org/rfc/rfc1034.html#section-3.6)
+  Use for: resolver, resource record, TTL cache DNS (lesson 0002).
+- [RFC 9293 TCP, §3.5](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.5)
+  Use for: three-way handshake, satu RTT sebelum data (lesson 0002).
+- [RFC 8446 TLS 1.3, §2.3](https://www.rfc-editor.org/rfc/rfc8446.html#section-2.3)
+  Use for: handshake penuh TLS 1.3 = "1-RTT handshake" (lesson 0002).
+- [RFC 9112 HTTP/1.1, §9.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-9.3)
+  Use for: persistent connection, koneksi dipakai ulang (lesson 0002).
+
 ### Skalabilitas
+
+- [Azure Architecture Center: Autoscaling](https://learn.microsoft.com/en-us/azure/architecture/best-practices/auto-scaling)
+  Use for: definisi vertical vs horizontal scaling, vertical sering butuh downtime (lesson 0005).
+- [Azure Architecture Center: Design to scale out](https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out)
+  Use for: "any instance can handle any request", hindari stickiness, temukan bottleneck dulu, design for scale in (lesson 0005, 0006).
+- [Redis docs: Redis session store](https://redis.io/docs/latest/develop/use-cases/session-store/)
+  Use for: session di memori server vs database vs Redis, sticky routing = hot spot + tanpa failover, TTL per session (lesson 0005).
+- [RFC 7519: JSON Web Token (JWT)](https://www.rfc-editor.org/rfc/rfc7519.html)
+  Use for: penjelasan singkat JWT sebagai token session di client (lesson 0005).
+- [AWS: What is a Network Load Balancer?](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/introduction.html) · [AWS: What is an Application Load Balancer?](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html)
+  Use for: L4 vs L7 (layer OSI), routing berdasarkan isi trafik (lesson 0006).
+- [AWS: How Elastic Load Balancing works](https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html)
+  Use for: flow hash NLB, round robin default ALB, X-Forwarded-For (lesson 0006).
+- [AWS: Create an HTTPS listener for your Application Load Balancer](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html)
+  Use for: TLS termination di L7 vs TCP passthrough di L4 (lesson 0006).
+- [AWS: Edit target group attributes](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-target-group-attributes.html)
+  Use for: round robin vs least outstanding requests, deregistration delay 300 detik, sticky sessions berbasis cookie (lesson 0006).
+- [AWS: Health checks for Application Load Balancer target groups](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html)
+  Use for: interval default 30 detik, threshold 2/5, fail open (lesson 0006).
+- [nginx: Using nginx as HTTP load balancer](https://nginx.org/en/docs/http/load_balancing.html) · [nginx: ngx_http_upstream_module](https://nginx.org/en/docs/http/ngx_http_upstream_module.html)
+  Use for: round robin default, least_conn, ip_hash, weight, health check pasif (max_fails), `hash … consistent` (ketama) (lesson 0006).
+- [Google SRE Book, bab 20: Load Balancing in the Datacenter](https://sre.google/sre-book/load-balancing-datacenter/)
+  Use for: round robin bisa timpang hingga 2x CPU, least-loaded round robin, lame duck (lesson 0006).
+- [Google SRE Book, bab 19: Load Balancing at the Frontend](https://sre.google/sre-book/load-balancing-frontend/)
+  Use for: DNS load balancing sebagai alternatif sederhana dan keterbatasannya (lesson 0006).
+- [RFC 9110 §3.7: Intermediaries](https://www.rfc-editor.org/rfc/rfc9110.html#section-3.7)
+  Use for: definisi reverse proxy (gateway) (lesson 0007).
+- [RFC 9111 §1: shared and private caches](https://www.rfc-editor.org/rfc/rfc9111.html#shared.and.private.caches)
+  Use for: CDN sebagai shared cache, browser sebagai private cache (lesson 0007).
+- [nginx: ngx_http_proxy_module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
+  Use for: proxy_pass, proxy_cache (lesson 0007).
+- [Azure Architecture Center: API gateways](https://learn.microsoft.com/en-us/azure/architecture/microservices/design/gateway) · [Gateway Offloading pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/gateway-offloading)
+  Use for: definisi API gateway, biaya hop/bottleneck/SPOF, kapan pola tidak cocok (lesson 0007).
+- [Azure Architecture Center: CDN guidance](https://learn.microsoft.com/en-us/azure/architecture/best-practices/cdn)
+  Use for: definisi CDN, edge, konten statis, tantangan versioning (lesson 0007).
+- [Amazon CloudFront: How CloudFront delivers content](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HowCloudFrontWorks.html) · [Expiration](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html) · [Invalidation](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Invalidation.html)
+  Use for: alur cache hit/miss di edge (pull), default TTL 24 jam, invalidation vs nama file berversi (lesson 0007).
+- [KeyCDN Support: Push Zone](https://www.keycdn.com/support/zones/push-zone)
+  Use for: push CDN; disarankan untuk file > 10 MB, wajib > 100 MB (lesson 0007).
 
 ### Data
 
+- [PostgreSQL: Transactions (tutorial)](https://www.postgresql.org/docs/current/tutorial-transactions.html) · [Transaction Isolation](https://www.postgresql.org/docs/current/transaction-iso.html)
+  Use for: transaksi all-or-nothing (ACID), Read Committed default (lesson 0008).
+- [PostgreSQL: JSON Types](https://www.postgresql.org/docs/current/datatype-json.html)
+  Use for: jsonb + GIN index sebagai alternatif murah document store (lesson 0008).
+- [MongoDB: Documents](https://www.mongodb.com/docs/manual/core/document/)
+  Use for: document store, BSON, batas dokumen 16 MiB (lesson 0008).
+- [Neo4j: What is a graph database](https://neo4j.com/docs/getting-started/graph-database/)
+  Use for: model graph (node, relationship, property) (lesson 0008).
+- [DeCandia et al. 2007, Dynamo (SOSP)](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf)
+  Use for: key-value store, ACID vs availability, consistent hashing ring, virtual node, quorum (N, R, W) = (3, 2, 2), sloppy quorum, vector clock, read-your-writes (lesson 0008, 0010, 0011).
+- [Chang et al. 2006, Bigtable (OSDI)](https://research.google/pubs/bigtable-a-distributed-storage-system-for-structured-data/)
+  Use for: wide-column (sorted map per row key), range partitioning menjadi tablet 100–200 MB (lesson 0008, 0010).
+- [PostgreSQL: Indexes, Introduction](https://www.postgresql.org/docs/current/indexes-intro.html) · [Index Types](https://www.postgresql.org/docs/current/indexes-types.html) · [Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)
+  Use for: Seq Scan vs index, B-tree default (equality + range), overhead write, EXPLAIN ANALYZE (lesson 0009).
+- [PostgreSQL: Log-Shipping Standby Servers](https://www.postgresql.org/docs/current/warm-standby.html#STREAMING-REPLICATION) · [Hot Standby](https://www.postgresql.org/docs/current/hot-standby.html)
+  Use for: streaming replication async default, synchronous replication dan biayanya, pg_stat_replication, read replica read-only (lesson 0009).
+- [PostgreSQL: Table Partitioning](https://www.postgresql.org/docs/current/ddl-partitioning.html)
+  Use for: range/list/hash partitioning, patokan "tabel melebihi RAM server" (lesson 0010).
+- [Karger et al. 1997, Consistent Hashing and Random Trees (STOC)](https://www.cs.princeton.edu/courses/archive/fall09/cos518/papers/chash.pdf)
+  Use for: kenapa hash mod N gagal saat jumlah node berubah, definisi consistent hashing (lesson 0010).
+- [Gilbert & Lynch 2002, Brewer's Conjecture (SIGACT News)](https://groups.csail.mit.edu/tds/papers/Gilbert/Brewer6.pdf)
+  Use for: bukti formal CAP (lesson 0011). PDF hasil scan, teks tidak bisa di-grep.
+- [Abadi 2012, Consistency Tradeoffs in Modern Distributed Database System Design (IEEE Computer)](https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf)
+  Use for: CAP hanya saat partition, PACELC, kelas PA/EL vs PC/EC, batas R + W > N (lesson 0011).
+
 ### Caching
 
+- [Azure Architecture Center: Cache-Aside pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside)
+  Use for: alur cache-aside, urutan update database lalu hapus cache, konsistensi, local vs shared cache, kapan pola ini tidak cocok (lesson 0013, 0014, 0015).
+- [Amazon ElastiCache: Caching strategies](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html)
+  Use for: lazy loading (miss = 3 trip), write-through (dua trip per write, cache churn), menambah TTL (lesson 0013, 0014).
+- [Oracle Coherence 14.1.1: Caching Data Sources](https://docs.oracle.com/en/middleware/standalone/coherence/14.1.1.0/develop-applications/caching-data-sources.html)
+  Use for: definisi read-through, write-through, write-behind (write-coalescing, cache sebagai system of record), refresh-ahead (lesson 0013).
+- [RFC 9111: HTTP Caching](https://www.rfc-editor.org/rfc/rfc9111.html)
+  Use for: private vs shared cache, freshness (`max-age`), invalidation setelah unsafe method, "collapse requests" (lesson 0013, 0014, 0015).
+- [Amazon CloudFront: Increase the cache hit ratio](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cache-hit-ratio.html)
+  Use for: definisi cache hit ratio, `Cache-Control max-age` dari origin (lesson 0013).
+- [nginx: Module ngx_http_proxy_module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
+  Use for: `proxy_cache`, `proxy_cache_lock`, `proxy_cache_use_stale updating`, `proxy_cache_background_update` (lesson 0013, 0015).
+- [Redis docs: Client-side caching reference](https://redis.io/docs/latest/develop/reference/client-side-caching/)
+  Use for: local cache vs jaringan, tracking + pesan `INVALIDATE`, TTL maksimum di local cache (lesson 0013, 0014, 0015).
+- [PostgreSQL: Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)
+  Use for: alternatif lebih murah sebelum cache, yaitu membaca query plan (lesson 0013).
+- [Redis docs: EXPIRE](https://redis.io/docs/latest/commands/expire/)
+  Use for: TTL, expiry pasif dan aktif (lesson 0014).
+- [Redis docs: Key eviction](https://redis.io/docs/latest/develop/reference/eviction/)
+  Use for: `maxmemory`, `maxmemory-policy` (noeviction, allkeys-lru, allkeys-lfu, volatile-*), LRU/LFU aproksimasi (lesson 0014).
+- [Amazon CloudFront: Invalidate files to remove content](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Invalidation.html)
+  Use for: versioned file names vs invalidation, biaya invalidation (lesson 0014).
+- [Vattani, Chierichetti, Lowenstein 2015, "Optimal Probabilistic Cache Stampede Prevention", PVLDB 8(8)](https://www.vldb.org/pvldb/vol8/p886-vattani.pdf)
+  Paper asli. Use for: definisi cache stampede, kelemahan locking, probabilistic early expiration (XFetch) (lesson 0015).
+- [RFC 5861: HTTP Cache-Control Extensions for Stale Content](https://www.rfc-editor.org/rfc/rfc5861.html)
+  Use for: `stale-while-revalidate`, `stale-if-error` (lesson 0015).
+- [Redis docs: SET](https://redis.io/docs/latest/commands/set/)
+  Use for: `SET … NX EX` sebagai lock sederhana dengan TTL (lesson 0015).
+- [Redis docs: redis-cli](https://redis.io/docs/latest/develop/tools/cli/)
+  Use for: `--hotkeys` (butuh policy LFU) untuk mendeteksi hot key (lesson 0015).
+- [Amazon DynamoDB: Using write sharding to distribute workloads evenly](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-sharding.html)
+  Use for: suffix acak untuk menyebar key panas (lesson 0015).
+- [Amazon CloudFront: Use Origin Shield](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html)
+  Use for: cache berlapis, regional edge cache, request ke origin yang digabung (lesson 0015).
+
 ### Asinkron
+
+- [Apache Kafka 4.4 docs: Introduction](https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology)
+  Use for: topic, partition, key → partition yang sama, urutan per partition, event tidak dihapus setelah dibaca (lesson 0016, 0017).
+- [Apache Kafka 4.4 docs: Design](https://kafka.apache.org/44/design/design/#message-delivery-semantics)
+  Use for: consumer group + offset (`#consumer-position`), at-most/at-least/exactly-once, default at-least-once, idempotent producer (lesson 0016, 0017).
+- [RabbitMQ: AMQP 0-9-1 Model Explained](https://www.rabbitmq.com/tutorials/amqp-concepts)
+  Use for: exchange, binding, fanout/direct, pesan dihapus setelah ack (lesson 0016).
+- [RabbitMQ: Consumer Acknowledgements and Publisher Confirms](https://www.rabbitmq.com/docs/confirms)
+  Use for: automatic requeueing, requeue/redelivery loop, prefetch sebagai batas in-flight (lesson 0017, 0018).
+- [RabbitMQ: Dead Letter Exchanges](https://www.rabbitmq.com/docs/dlx)
+  Use for: empat kondisi dead-lettering, `delivery-limit` (lesson 0017).
+- [Redis docs: Pub/Sub](https://redis.io/docs/latest/develop/pubsub/)
+  Use for: Redis Pub/Sub at-most-once (lesson 0016).
+- [PostgreSQL docs: SELECT, locking clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE)
+  Use for: `SKIP LOCKED` untuk tabel mirip queue, alternatif murah sebelum broker (lesson 0016).
+- [Azure Architecture Center: Publisher-Subscriber pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/publisher-subscriber)
+  Use for: alasan asinkron (sender tidak blocking), salinan per subscriber, urutan tidak dijamin (lesson 0016).
+- [Azure Architecture Center: Competing Consumers pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/competing-consumers)
+  Use for: setiap pesan ke satu consumer, idempotent, poison message (lesson 0016).
+- [Amazon SQS: At-least-once delivery](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html)
+  Use for: standard queue bisa mengantar duplikat, desain idempotent (lesson 0017).
+- [Amazon SQS: Using dead-letter queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
+  Use for: `maxReceiveCount`, DLQ untuk debugging, DLQ merusak urutan FIFO (lesson 0017).
+- [Amazon SQS: Exactly-once processing (FIFO)](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-exactly-once-processing.html)
+  Use for: deduplication interval 5 menit di FIFO queue (lesson 0017).
+- [Stripe API Reference: Idempotent requests](https://docs.stripe.com/api/idempotent_requests)
+  Use for: idempotency key, UUID v4, maks 255 karakter, respons tersimpan termasuk 500, key dibuang setelah ≥ 24 jam (lesson 0017).
+- [Azure Architecture Center: Event-driven architecture style](https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/event-driven)
+  Use for: producer/consumer/channel, decoupling, eventual consistency, observability (lesson 0018).
+- [AWS Prescriptive Guidance: Transactional outbox pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html)
+  Use for: dual write, outbox dalam satu transaksi, duplikat dan urutan, CDC (lesson 0018).
+- [Azure Architecture Center: Queue-Based Load Leveling pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling)
+  Use for: queue sebagai buffer, tidak cocok untuk respons sinkron latency rendah, autoscaling memindahkan overload (lesson 0018).
+- [AWS Builders' Library: Avoiding insurmountable queue backlogs](https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/)
+  Use for: perilaku bimodal, umur pesan sebagai metrik, back-pressure ke producer, TTL/sidelining (lesson 0018).
 
 ### Reliabilitas & API
 
@@ -77,6 +228,43 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003). Agent lesson menambah
   Use for: biaya/risiko anak tangga cache dan queue (lesson 0025).
 
 ### Studi kasus
+
+- [Google SRE Book, bab 4: Service Level Objectives](https://sre.google/sre-book/service-level-objectives/)
+  Use for: non-functional requirement sebagai angka (SLI: availability, latency, throughput) di langkah 1 kerangka (lesson 0027).
+- [Google SRE Book, Appendix A: Availability Table](https://sre.google/sre-book/availability-table/)
+  Use for: jatah downtime per "sembilan" saat klarifikasi availability (lesson 0027).
+- [Google SRE Book, bab 9: Simplicity](https://sre.google/sre-book/simplicity/)
+  Use for: menolak accidental complexity, dasar desain v1 sederhana (lesson 0027).
+- [PostgreSQL docs: CREATE SEQUENCE](https://www.postgresql.org/docs/current/sql-createsequence.html)
+  Use for: sumber ID unik untuk kode base62 (lesson 0028).
+- [PostgreSQL docs: Unique Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS)
+  Use for: menangkap hash collision dan duplikasi idempotency key (lesson 0028, 0030).
+- [Redis docs: Key eviction](https://redis.io/docs/latest/develop/reference/eviction/)
+  Use for: `allkeys-lru` untuk cache link populer (lesson 0028).
+- [RFC 9110: HTTP Semantics, 301 dan 302](https://www.rfc-editor.org/rfc/rfc9110.html#status.301)
+  Use for: 301 heuristically cacheable vs 302 sementara (lesson 0028); `Retry-After` di `#field.retry-after` (lesson 0029).
+- [RFC 6585 bagian 4: 429 Too Many Requests](https://www.rfc-editor.org/rfc/rfc6585.html#section-4)
+  Use for: respons penolakan rate limiter (lesson 0029).
+- [AWS docs: Throttle requests to your REST APIs (API Gateway)](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html)
+  Use for: rate limiting di gateway dengan token bucket, 429 (lesson 0029).
+- [nginx docs: ngx_http_limit_req_module](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html)
+  Use for: leaky bucket di reverse proxy; default `limit_req_status 503` (lesson 0029).
+- [Redis docs: INCR, Pattern: Rate limiter](https://redis.io/docs/latest/commands/incr/#pattern-rate-limiter)
+  Use for: counter fixed window dengan `MULTI`/`EXEC`, race condition key bocor (lesson 0029).
+- [Redis docs: Scripting with Lua](https://redis.io/docs/latest/develop/programmability/eval-intro/)
+  Use for: eksekusi script atomic (lesson 0029).
+- [Redis docs: Replication](https://redis.io/docs/latest/operate/oss_and_stack/management/replication/)
+  Use for: replication asinkron secara default, risiko counter hilang saat failover (lesson 0029).
+- [Firebase docs: Firebase Cloud Messaging](https://firebase.google.com/docs/cloud-messaging)
+  Use for: push lewat provider platform, batas payload 4096 byte (lesson 0030).
+- [Stripe API reference: Idempotent requests](https://docs.stripe.com/api/idempotent_requests)
+  Use for: idempotency key dari pemanggil (lesson 0030).
+- [AWS Builders' Library: Timeouts, retries, and backoff with jitter](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/)
+  Use for: retry dengan exponential backoff + jitter di worker notifikasi (lesson 0030).
+- [Amazon SQS docs: Dead-letter queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
+  Use for: `maxReceiveCount` dan DLQ (lesson 0030).
+- [Amazon SQS docs: At-least-once delivery](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html)
+  Use for: worker harus idempotent (lesson 0030).
 
 ### Penutup
 

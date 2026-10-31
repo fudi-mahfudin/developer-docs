@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0006 · Load balancer: L4 vs L7, algoritma, health check</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0006 · System Design · Modul Skalabilitas · ±20 menit</div>
+  <h1>Load balancer: L4 vs L7, algoritma, health check, sticky session</h1>
+  <p class="subtitle">Komponen yang membagi request ke banyak instance: di layer mana ia bekerja, bagaimana memilih server, dan bagaimana ia tahu server mana yang sehat</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0005-vertical-horizontal-stateless.html">lesson 0005</a> membuat app server stateless supaya bisa ditambah menjadi beberapa instance.
+  Lesson ini membahas komponen di depan instance-instance itu. Di interview, "saya taruh load balancer" saja tidak cukup; interviewer akan bertanya layer apa, algoritma apa, dan apa yang terjadi saat satu server mati.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Jelaskan load balancer di desain Anda."</em>
+  tanpa catatan, dalam 60 detik: L4 atau L7 dan alasannya, algoritma (round robin, least connections, hash), cara health check mengeluarkan server yang mati, dan kenapa sticky session sebaiknya dihindari.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. L4 vs L7: melihat koneksi atau melihat request</h2>
+<p>
+  "L4" dan "L7" merujuk ke layer model OSI, model tujuh lapis untuk jaringan: layer 4 adalah transport (TCP/UDP: alamat IP dan port), layer 7 adalah aplikasi (HTTP: URL, header, cookie).
+  Dokumentasi AWS memakai pembagian yang sama:
+</p>
+<ul>
+  <li><strong>L4</strong>: Network Load Balancer <em>"functions at the fourth layer of the Open Systems Interconnection (OSI) model. It can handle millions of requests per second."</em> <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/network/introduction.html">[1]</a></sup>
+    Ia memilih target dengan flow hash (protokol, IP dan port sumber/tujuan, nomor urut TCP) dan mengirim setiap koneksi TCP ke satu target selama koneksi itu hidup. <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html">[3]</a></sup></li>
+  <li><strong>L7</strong>: Application Load Balancer <em>"functions at the application layer, the seventh layer"</em>; ia mengevaluasi listener rule dan bisa merutekan request ke target group berbeda berdasarkan isi trafik (mis. path <code>/api</code> vs <code>/images</code>). <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html">[2]</a></sup>
+    Karena membaca HTTP, ia juga menambahkan header <code>X-Forwarded-For</code> supaya server tahu IP client asli. <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html">[3]</a></sup></li>
+</ul>
+<p>
+  Untuk membaca HTTP, load balancer L7 harus membuka enkripsinya dulu. TLS adalah protokol yang mengenkripsi koneksi HTTPS (lesson 0002).
+  ALB memakai sertifikat server untuk <em>"terminate the front-end connection and then decrypt requests from clients before sending them to the targets"</em> (TLS termination).
+  Kalau trafik harus tetap terenkripsi sampai target, AWS menyarankan load balancer L4 dengan listener TCP di port 443, yang meneruskan trafik tanpa mendekripsinya. <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html">[4]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th>L4</th><th>L7</th></tr></thead>
+  <tbody>
+    <tr><td>Melihat</td><td>IP, port, koneksi TCP</td><td>URL, header, cookie</td></tr>
+    <tr><td>Bisa</td><td>Sangat cepat, protokol apa pun di atas TCP/UDP</td><td>Routing per path/host, TLS termination, sticky cookie</td></tr>
+    <tr><td>Pilih kalau</td><td>Throughput sangat tinggi, protokol bukan HTTP, TLS harus sampai server</td><td>Default untuk web/API HTTP</td></tr>
+  </tbody>
+</table>
+
+<section class="exercise">
+  <h2>Latihan 1 — L4 atau L7?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0012.</p>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="skala-lb-layer" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Algoritma: round robin, least connections, hash</h2>
+<p>nginx mendukung tiga metode dasar, dan round robin adalah default kalau tidak dikonfigurasi apa-apa: <sup class="cite"><a href="https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_methods">[5]</a></sup></p>
+<table>
+  <thead><tr><th>Algoritma</th><th>Cara memilih server</th><th>Cocok untuk</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Round robin</strong></td><td>Bergiliran: server 1, 2, 3, 1, 2, 3, …</td><td>Request yang biayanya mirip dan server yang setara</td></tr>
+    <tr><td><strong>Least connections</strong></td><td>Server dengan koneksi aktif paling sedikit</td><td>Request yang durasinya bervariasi (ada yang lama)</td></tr>
+    <tr><td><strong>Hash</strong></td><td>Hash dari sebuah key (IP client, user ID, URL) menentukan server</td><td>Request dengan key yang sama harus ke server yang sama, mis. cache per server</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>Round robin</strong> sederhana, tapi Google SRE Book mencatat bahwa round robin bisa menghasilkan selisih <em>"up to 2x in CPU consumption from the least to the most loaded task"</em>, antara lain karena biaya query yang bervariasi dan mesin yang berbeda. <sup class="cite"><a href="https://sre.google/sre-book/load-balancing-datacenter/#simple-round-robin-AVsVtbCD">[6]</a></sup></li>
+  <li><strong>Least connections</strong> (<code>least_conn</code> di nginx) mengatur beban <em>"more fairly in a situation when some of the requests take longer to complete"</em>. <sup class="cite"><a href="https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_with_least_connected">[5]</a></sup>
+    Padanannya di ALB disebut <em>least outstanding requests</em>: request dikirim ke target dengan request in-progress paling sedikit. <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-target-group-attributes.html#modify-routing-algorithm">[7]</a></sup></li>
+  <li><strong>Hash</strong> biasa punya kelemahan: menambah atau mengurangi satu server bisa memindahkan sebagian besar key ke server lain. Dengan <code>hash … consistent</code>, nginx memakai consistent hashing (ketama) sehingga <em>"only a few keys will be remapped"</em>; ini menjaga cache hit ratio. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_upstream_module.html#hash">[8]</a></sup> Consistent hashing dibahas lengkap di lesson 0010.</li>
+</ul>
+<p class="note">Semua algoritma bisa diberi bobot (weight): di nginx, <code>weight=3</code> pada satu server dari tiga berarti dari setiap 5 request, 3 ke server itu. <sup class="cite"><a href="https://nginx.org/en/docs/http/load_balancing.html#nginx_weighted_load_balancing">[5]</a></sup> Berguna saat mesin tidak setara.</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Health check: mengeluarkan server yang mati</h2>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 230" role="img" aria-label="Client ke load balancer; load balancer mengirim request ke App 1 dan App 2 yang sehat, dan hanya mengirim health check ke App 3 yang gagal">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="97" width="80" height="36" rx="4"/><text x="50" y="115">Client</text></g>
+  <g class="node service"><rect x="150" y="97" width="130" height="36" rx="4"/><text x="215" y="115">Load balancer</text></g>
+  <g class="node service"><rect x="400" y="22" width="120" height="36" rx="4"/><text x="460" y="40">App 1 · sehat</text></g>
+  <g class="node service"><rect x="400" y="97" width="120" height="36" rx="4"/><text x="460" y="115">App 2 · sehat</text></g>
+  <g class="node service"><rect x="400" y="172" width="120" height="36" rx="4"/><text x="460" y="190">App 3 · gagal</text></g>
+  <path class="edge" d="M90,115 H148"/>
+  <path class="edge" d="M280,108 L398,45"/>
+  <path class="edge" d="M280,115 H398"/>
+  <path class="edge async" d="M280,124 L398,185"/>
+  <text class="label" x="300" y="184">health check saja</text>
+  <text class="label" x="580" y="190">keluar dari rotasi</text>
+</svg>
+<figcaption>Garis penuh = request user. Garis putus-putus = health check. App 3 gagal beberapa health check berturut-turut, jadi tidak lagi menerima request user sampai sehat kembali.</figcaption>
+</figure>
+<p>Ada dua cara load balancer tahu server mana yang sehat:</p>
+<ul>
+  <li><strong>Aktif</strong>: load balancer sendiri mengirim request (mis. <code>GET /health</code>) secara berkala. Di ALB, interval default 30 detik (rentang 5–300); target dianggap tidak sehat setelah 2 kegagalan berturut-turut (default) dan sehat kembali setelah 5 keberhasilan (default). <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html#health-check-settings">[9]</a></sup></li>
+  <li><strong>Pasif</strong>: nginx open source menilai dari request asli. Kalau respons gagal, server ditandai gagal dan dihindari selama <code>fail_timeout</code>; <code>max_fails</code> default 1. <sup class="cite"><a href="https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_health_checks">[5]</a></sup></li>
+</ul>
+<p>
+  Dua detail yang sering ditanyakan. Pertama, kalau <em>semua</em> target gagal health check, ALB <em>fail open</em>: tetap mengirim trafik ke semua target, karena mematikan semuanya pasti lebih buruk. <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html">[9]</a></sup>
+  Kedua, saat deploy, server tidak langsung dimatikan: ELB berhenti mengirim request baru ke target yang sedang di-deregister dan menunggu 300 detik (default) supaya request yang sedang berjalan selesai (connection draining). <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-target-group-attributes.html#deregistration-delay">[7]</a></sup>
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Sticky session: kenapa sebaiknya dihindari</h2>
+<p>
+  Sticky session (session affinity) mengikat session user ke satu target. Di ALB caranya lewat cookie: algoritma hanya dipakai untuk request pertama, dan request berikutnya dari client yang sama langsung ke target yang sama.
+  AWS menyebutnya berguna <em>"for servers that maintain state information"</em>. <sup class="cite"><a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-target-group-attributes.html#sticky-sessions">[7]</a></sup>
+  Di nginx, <code>ip_hash</code> memberi efek serupa berdasarkan IP client. <sup class="cite"><a href="https://nginx.org/en/docs/http/load_balancing.html#nginx_load_balancing_with_ip_hash">[5]</a></sup>
+</p>
+<p>
+  Masalahnya: <em>"Stickiness limits the application's ability to scale out"</em>; trafik user yang sangat aktif tidak bisa dibagi ke instance lain. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[10]</a></sup>
+  Server mati juga berarti session user di server itu hilang. Jawaban yang lebih baik di interview: buat server stateless dan simpan session di luar server (lesson 0005), lalu pakai round robin atau least connections biasa.
+  Sticky session tetap masuk akal untuk aplikasi lama yang belum bisa diubah, sebagai langkah sementara.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Algoritma, health check, sticky session</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="skala-lb-algoritma" data-stack></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<h2>5. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal yang membenarkan load balancer.</strong> Anda sudah punya, atau butuh, lebih dari satu instance: satu server tidak cukup menurut metrik (lesson 0005),
+  atau target availability menuntut server bisa mati atau di-deploy tanpa downtime. Dengan satu app server, load balancer hanya menambah satu hop tanpa ada yang dibagi.
+</p>
+<p>
+  <strong>Biaya dan risiko.</strong> Satu hop jaringan tambahan, biaya bulanan, dan satu komponen lagi yang bisa salah konfigurasi (health check path yang salah bisa mengeluarkan semua server).
+  Load balancer yang Anda jalankan sendiri dalam satu mesin adalah single point of failure baru; layanan managed (ALB/NLB) menyelesaikannya dengan biaya.
+</p>
+<p>
+  <strong>Alternatif lebih murah.</strong> Untuk satu server: tidak ada load balancer, cukup scale up. Untuk pembagian kasar tanpa health check: DNS dengan beberapa record A,
+  yang menurut SRE Book <em>"conceptually simple and trivial to implement"</em> tapi memberi kontrol sangat sedikit atas perilaku client. <sup class="cite"><a href="https://sre.google/sre-book/load-balancing-frontend/">[11]</a></sup>
+  Kalau load balancer memang perlu: mulai dari L7 managed dengan round robin dan satu endpoint health check. L4, consistent hashing, dan bobot baru ditambahkan kalau angka menuntut.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+  <blockquote>"Anda menaruh load balancer di depan tiga app server. Jelaskan pilihan Anda: layer, algoritma, dan apa yang terjadi kalau satu server mati." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Load balancer ini dibenarkan karena satu server tidak cukup di jam sibuk dan target availability kita 99,9%, jadi deploy tidak boleh berarti downtime. Saya pilih L7 karena ini API HTTP: bisa routing per path dan melakukan TLS termination. L4 saya pakai kalau protokolnya bukan HTTP atau throughput-nya sangat tinggi. Algoritmanya round robin kalau request seragam; kalau ada request yang lama seperti upload, least connections. Hash saya pakai hanya kalau key yang sama harus ke server yang sama, misalnya cache per server, dan sebaiknya consistent hashing. Load balancer mengirim health check berkala; server yang gagal beberapa kali berturut-turut keluar dari rotasi, dan saat deploy saya pakai connection draining. Saya tidak pakai sticky session karena server-nya stateless dan session ada di Redis."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>L4 atau L7, beserta alasannya (HTTP, routing per path, TLS termination)?</li>
+      <li>algoritma yang dipilih dan kapan memakai yang lain (round robin vs least connections)?</li>
+      <li>hash atau consistent hashing hanya kalau key yang sama harus ke server yang sama?</li>
+      <li>health check yang mengeluarkan server gagal dari rotasi?</li>
+      <li>menghindari sticky session karena server stateless (session di luar server)?</li>
+      <li>membenarkan load balancer dengan angka (beban, jumlah instance, target availability)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://sre.google/sre-book/load-balancing-datacenter/">Google SRE Book, bab 20 "Load Balancing in the Datacenter"</a>, ±25 menit. Cara Google menangani server tidak sehat (lame duck) dan kenapa round robin sederhana boros.
+</div>
+
+<p>Berikutnya, <a href="0007-reverse-proxy-dan-cdn.html">lesson 0007</a>: load balancer adalah satu jenis reverse proxy. Apa lagi yang bisa dilakukan di depan server, dan kapan konten sebaiknya dilayani dari CDN?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Skalabilitas") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa round robin bisa timpang?", "Apa beda health check aktif dan pasif?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/network/introduction.html">[1] AWS: What is a Network Load Balancer?</a> ·
+  <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html">[2] AWS: What is an Application Load Balancer?</a> ·
+  <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html">[3] AWS: How Elastic Load Balancing works</a> ·
+  <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/create-https-listener.html">[4] AWS: Create an HTTPS listener for your Application Load Balancer</a> ·
+  <a href="https://nginx.org/en/docs/http/load_balancing.html">[5] nginx: Using nginx as HTTP load balancer</a> ·
+  <a href="https://sre.google/sre-book/load-balancing-datacenter/">[6] Google SRE Book, bab 20 Load Balancing in the Datacenter</a> ·
+  <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-target-group-attributes.html">[7] AWS: Edit target group attributes (routing algorithm, deregistration delay, sticky sessions)</a> ·
+  <a href="https://nginx.org/en/docs/http/ngx_http_upstream_module.html">[8] nginx: Module ngx_http_upstream_module</a> ·
+  <a href="https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html">[9] AWS: Health checks for Application Load Balancer target groups</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[10] Azure Architecture Center: Design to scale out</a> ·
+  <a href="https://sre.google/sre-book/load-balancing-frontend/">[11] Google SRE Book, bab 19 Load Balancing at the Frontend</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0005-vertical-horizontal-stateless.html">← 0005 · Vertical vs horizontal scaling; stateless service</a>
+  <a href="0007-reverse-proxy-dan-cdn.html">0007 · Reverse proxy dan CDN →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
