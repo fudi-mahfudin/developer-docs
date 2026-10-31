@@ -10,19 +10,19 @@ const { ROOT, forTrack } = require("../helpers.js");
 
 const TRACK = "sysdesign";
 const sd = forTrack(TRACK);
-const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i).padStart(4, "0"));
+const lessonRange = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i).padStart(4, "0"));
 const lessonFile = num => fs.readdirSync(path.join(ROOT, TRACK, "lessons")).find(f => f.startsWith(`${num}-`));
 
 // Satu entri per review. Ticket 08, 10, 13: hapus "// " di baris review Anda saja (baris kosong di antaranya
 // sengaja dipertahankan supaya branch paralel tidak bentrok saat merge).
 const REVIEWS = [
-  { num: "0012", sources: range(1, 7), prefixes: ["dasar-", "skala-"] },
+  { num: "0012", sources: lessonRange(1, 7), prefixes: ["dasar-", "skala-"] },
 
-  { num: "0019", sources: [...range(8, 11), ...range(13, 15)], prefixes: ["data-", "cache-"] },
+  { num: "0019", sources: [...lessonRange(8, 11), ...lessonRange(13, 15)], prefixes: ["data-", "cache-"] },
 
-  { num: "0026", sources: [...range(16, 18), ...range(20, 25)], prefixes: ["async-", "rel-"] },
+  { num: "0026", sources: [...lessonRange(16, 18), ...lessonRange(20, 25)], prefixes: ["async-", "rel-"] },
 
-  { num: "0035", sources: range(27, 34), prefixes: ["kasus-"], allBanks: true },
+  { num: "0035", sources: lessonRange(27, 34), prefixes: ["kasus-"], allBanks: true },
 ];
 
 REVIEWS.forEach(({ num, sources, prefixes, allBanks }) => {

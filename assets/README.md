@@ -121,7 +121,7 @@ Satu baris `<li>` per lesson. Saat lesson selesai, ganti hanya baris lesson itu 
 ## Test
 
 ```sh
-node --test      # dari root repo; menjalankan semua *.test.js di tests/{shared,dotnet,fhir}/, tanpa npm
+node --test      # dari root repo; menjalankan semua *.test.js di tests/{shared,dotnet,fhir,sysdesign}/, tanpa npm
 ```
 
-Test bank soal per lesson (`tests/<track>/questions-NNNN.test.js`) dan review (`tests/<track>/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal track .NET ke bank baru (`forTrack("fhir")` untuk track lain), `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`), dan untuk lesson database `scriptBlocks(html)` / `assertScriptsMatchFiles(html, { min })` (blok skrip identik dengan file `.sql`-nya). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.
+Test bank soal per lesson (`tests/<track>/questions-NNNN.test.js`) dan review (`tests/<track>/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal track .NET ke bank baru (`forTrack("fhir")` untuk track lain), `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`, `assertCitesNumbered(html, label)`), untuk test modul `readLesson(num)` (halaman lesson dari nomornya) dan `assertModuleTopics(lessons, prefix)` (topik milik lesson, berprefiks modul, >= 2 kuis per topik, >= 1 lisan per lesson), dan untuk lesson database `scriptBlocks(html)` / `assertScriptsMatchFiles(html, { min })` (blok skrip identik dengan file `.sql`-nya). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.

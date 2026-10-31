@@ -78,3 +78,14 @@ lessons.forEach(({ num, href }) => {
     if (num !== LAST) assert.match(nav, new RegExp(`href="${next}-[\\w-]+\\.html"`), `nav belum menautkan ${next}`);
   });
 });
+
+// Sitasi hanya ke sumber primer (dokumentasi resmi, RFC, paper), bukan blog atau buku pihak ketiga.
+const NOT_PRIMARY = /martinfowler\.com|microservices\.io|bytebytego|medium\.com|dataintensive|developer\.mozilla\.org/;
+const references = fs.readdirSync(path.join(ROOT, TRACK, "reference")).filter(f => f.endsWith(".html")).map(f => `reference/${f}`);
+[...lessons.map(l => l.href), ...references].forEach(page => {
+  test(`sysdesign ${page}: cites and Sumber list point at primary sources only`, () => {
+    const html = read(page);
+    const urls = [...html.matchAll(/<sup class="cite"><a href="([^"]+)"/g), ...html.matchAll(/<a href="([^"]+)">\[\d+\] /g)].map(m => m[1]);
+    urls.forEach(u => assert.doesNotMatch(u, NOT_PRIMARY, `${page}: ${u} bukan sumber primer`));
+  });
+});

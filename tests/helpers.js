@@ -115,13 +115,51 @@ function assertScriptsMatchFiles(htmlFile, { min = 1 } = {}) {
   });
 }
 
+// A lesson page of a track: <track>/lessons/NNNN-slug.html, found by its number.
+function readLesson(num, track = DEFAULT_TRACK) {
+  const dir = path.join(ROOT, track, "lessons");
+  const files = fs.readdirSync(dir).filter(f => f.startsWith(`${num}-`) && f.endsWith(".html"));
+  assert.equal(files.length, 1, `${track}/lessons: butuh tepat satu file ${num}-*.html, ada ${files.length}`);
+  return fs.readFileSync(path.join(dir, files[0]), "utf8");
+}
+
+// Teach rule: every <sup class="cite">[n]</sup> points into the Sumber list, which is numbered
+// [1]..[n] in order and lists exactly the cited sources. `label` names the page in messages.
+function assertCitesNumbered(html, label) {
+  const cites = [...html.matchAll(/<sup class="cite"><a [^>]*>\[(\d+)\]<\/a><\/sup>/g)].map(m => Number(m[1]));
+  const listed = [...html.matchAll(/<a href="[^"]+">\[(\d+)\] /g)].map(m => Number(m[1]));
+  assert.ok(cites.length >= 1, `${label}: butuh >= 1 .cite`);
+  assert.deepEqual(listed, listed.map((_, i) => i + 1), `${label}: daftar Sumber harus [1]..[n] berurutan`);
+  assert.deepEqual([...new Set(cites)].sort((a, b) => a - b), listed, `${label}: Sumber harus persis yang disitasi`);
+}
+
+// Module rule: lessons = { NNNN: { topics: [...] } }. Every question of a lesson uses one of that
+// lesson's topics, each slug starts with the module `prefix`, every topic has >= 2 quiz questions,
+// and every lesson has >= 1 oral question.
+function assertModuleTopics(lessons, prefix, track = DEFAULT_TRACK) {
+  const mc = [];
+  Object.entries(lessons).forEach(([n, { topics }]) => {
+    const { qs, mc: lessonMc, oral } = lessonQuestions(n, track);
+    qs.forEach(q => {
+      assert.ok(q.topic.startsWith(prefix), `${q.id}: topik harus berprefiks ${prefix}`);
+      assert.ok(topics.includes(q.topic), `${q.id}: topik ${q.topic} bukan milik ${n}`);
+    });
+    assert.ok(oral.length >= 1, `${n}: butuh >= 1 soal lisan`);
+    mc.push(...lessonMc);
+  });
+  Object.values(lessons).flatMap(l => l.topics).forEach(t =>
+    assert.ok(mc.filter(q => q.topic === t).length >= 2, `butuh >= 2 soal kuis untuk ${t}`));
+}
+
 // The same loaders bound to one track's question files.
 function forTrack(track) {
   return {
     loadLesson: (...nums) => loadTrackLesson(track, nums),
     runAsBrowserScripts: nums => runAsBrowserScripts(nums, track),
     lessonQuestions: num => lessonQuestions(num, track),
+    readLesson: num => readLesson(num, track),
+    assertModuleTopics: (lessons, prefix) => assertModuleTopics(lessons, prefix, track),
   };
 }
 
-module.exports = { ROOT, forTrack, loadLesson, runAsBrowserScripts, lessonQuestions, words, assertEqualOptionWords, assertAnswerPositionsVary, assertOralFormat, scriptBlocks, assertScriptsMatchFiles };
+module.exports = { ROOT, forTrack, loadLesson, runAsBrowserScripts, lessonQuestions, readLesson, words, assertEqualOptionWords, assertAnswerPositionsVary, assertOralFormat, assertCitesNumbered, assertModuleTopics, scriptBlocks, assertScriptsMatchFiles };

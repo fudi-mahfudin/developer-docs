@@ -7,7 +7,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { ROOT, forTrack } = require("../helpers.js");
+const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const sd = forTrack("sysdesign");
 const read = f => fs.readFileSync(path.join(ROOT, "sysdesign", f), "utf8");
@@ -28,20 +28,9 @@ const REFS = {
   },
 };
 
-const citesOk = (html, label) => {
-  const cites = [...html.matchAll(/<sup class="cite"><a [^>]*>\[(\d+)\]<\/a><\/sup>/g)].map(m => Number(m[1]));
-  const listed = [...html.matchAll(/<a href="[^"]+">\[(\d+)\] /g)].map(m => Number(m[1]));
-  assert.ok(cites.length >= 1, `${label}: butuh >= 1 .cite`);
-  assert.deepEqual(listed, listed.map((_, i) => i + 1), `${label}: Sumber bernomor urut`);
-  assert.deepEqual([...new Set(cites)].sort((a, b) => a - b), listed, `${label}: sitasi = daftar Sumber`);
-};
-
 test("0036 bank: mock- topics, >=2 mc per topic, oral checklist rewards v1 first and numbers", () => {
-  const { qs, mc, oral } = sd.lessonQuestions("0036");
-  qs.forEach(q => assert.ok(TOPICS.includes(q.topic), `${q.id}: topik ${q.topic} bukan milik 0036`));
-  TOPICS.forEach(t => assert.ok(mc.filter(q => q.topic === t).length >= 2, t));
-  assert.ok(oral.length >= 1);
-  oral.forEach(q => {
+  sd.assertModuleTopics({ "0036": { topics: TOPICS } }, "mock-");
+  sd.lessonQuestions("0036").oral.forEach(q => {
     assert.ok(q.checklist.some(c => /v1 sederhana dulu/.test(c)), `${q.id}: checklist tanpa "v1 sederhana dulu"`);
     assert.ok(q.checklist.some(c => /setiap komponen dibenarkan dengan angka/.test(c)), `${q.id}: checklist tanpa poin angka`);
   });
@@ -55,11 +44,10 @@ test("0036 is an optional 45-minute mock on a new problem with a 5-segment timer
   assert.match(html, /typeahead/i);
   assert.match(html, /autocomplete/i);
   ["0028", "0029", "0030", "0031", "0033"].forEach(n => {
-    const f = fs.readdirSync(path.join(ROOT, "sysdesign", "lessons")).find(x => x.startsWith(n));
-    assert.doesNotMatch(read(`lessons/${f}`), /typeahead|autocomplete/i, `${n} sudah membahas soal mock`);
+    assert.doesNotMatch(sd.readLesson(n), /typeahead|autocomplete/i, `${n} sudah membahas soal mock`);
   });
   assert.equal((html.match(/<div class="win">/g) || []).length, 1);
-  citesOk(html, "0036");
+  assertCitesNumbered(html, "0036");
   assert.match(html, /<svg class="diagram"|<div class="flow">/, "butuh diagram");
   assert.doesNotMatch(html, /hands-on\.js|class="script"|sql-exercise/, "tanpa lab");
 });
@@ -111,7 +99,7 @@ Object.entries(REFS).forEach(([file, { backlinks, facts }]) => {
     backlinks.concat([...html.matchAll(/href="\.\.\/lessons\/([\w-]+\.html)"/g)].map(m => m[1])).forEach(l =>
       assert.ok(fs.existsSync(path.join(ROOT, "sysdesign", "lessons", l)), `${l} tidak ada`));
     assert.doesNotMatch(html, /href="[^"]*\.\.\/(dotnet|fhir)\//, "track mandiri");
-    citesOk(html, file);
+    assertCitesNumbered(html, file);
   });
 });
 
