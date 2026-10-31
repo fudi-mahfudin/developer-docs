@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0003 · Latency vs throughput; angka latency yang perlu dihafal</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0003 · System Design · Modul Fondasi · ±20 menit</div>
+  <h1>Latency vs throughput; angka latency yang perlu dihafal</h1>
+  <p class="subtitle">Dua ukuran yang sering tertukar, kenapa p99 lebih jujur daripada rata-rata, dan enam angka yang menentukan di mana bottleneck berada</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa membedakan latency dan throughput, menjelaskan kenapa SLO latency ditulis sebagai p99 dan bukan rata-rata,
+  dan menyebut urutan orde besaran: memori (±100 ns) ≪ round trip di datacenter (±0,5 ms) ≪ disk seek (±10 ms) ≪ antarbenua (±150 ms).
+</div>
+
+<p>Sebelumnya, di <a href="0002-perjalanan-request.html">lesson 0002</a>: request pertama butuh ±3 round trip, dan round trip antarbenua ±150 ms. Lesson ini memberi nama dan ukuran untuk "cepat".</p>
+
+<h2>1. Latency vs throughput</h2>
+<p>
+  <strong>Latency</strong> adalah <em>"how long it takes to return a response to a request"</em>. <strong>Throughput</strong> adalah berapa banyak request yang bisa dilayani, biasanya dalam request per detik.
+  Google SRE Book menyebut keduanya sebagai SLI yang umum. <sup class="cite"><a href="https://sre.google/sre-book/service-level-objectives/">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th>Latency</th><th>Throughput</th></tr></thead>
+  <tbody>
+    <tr><td>Analogi jalan tol</td><td>Waktu tempuh satu mobil</td><td>Jumlah mobil yang lewat per jam</td></tr>
+    <tr><td>Satuan</td><td>ms per request</td><td>request per detik (QPS/RPS)</td></tr>
+    <tr><td>Menambah server</td><td>Biasanya tidak mempercepat satu request</td><td>Bisa menaikkan kapasitas total</td></tr>
+  </tbody>
+</table>
+<p>
+  Menambah lajur tol tidak membuat satu mobil lebih cepat sampai. Begitu juga menambah server: kapasitasnya naik, tapi request yang lambat karena query buruk atau jarak antarbenua tetap lambat.
+  Jadi saat sistem "lambat", tanyakan dulu: latency satu request yang tinggi, atau throughput yang tidak cukup? Obatnya berbeda.
+</p>
+
+<h2>2. Kenapa p99, bukan rata-rata</h2>
+<p>
+  <strong>Percentile</strong> ke-<em>n</em> (p<em>n</em>) adalah nilai yang tidak dilampaui oleh <em>n</em>% request. p50 adalah median; p99 berarti 99% request lebih cepat dari angka itu.
+  SRE Book: <em>"Most metrics are better thought of as distributions rather than averages"</em>, karena <em>"a simple average can obscure these tail latencies"</em>.
+  Contohnya di buku itu: request tipikal selesai sekitar 50 ms, tapi 5% request 20 kali lebih lambat. Percentile tinggi seperti p99 atau p99,9 <em>"shows you a plausible worst-case value"</em>. <sup class="cite"><a href="https://sre.google/sre-book/service-level-objectives/">[1]</a></sup>
+</p>
+<p>
+  Ekor lambat makin penting kalau satu halaman memanggil banyak service. Hitungan sederhana: kalau satu panggilan punya peluang 1% lambat (melewati p99),
+  halaman yang memanggil 100 service sekaligus punya peluang 1 − 0,99<sup>100</sup> ≈ <strong>63%</strong> terkena minimal satu panggilan lambat.
+  Yang tadinya "1% user" menjadi mayoritas user.
+</p>
+
+<h2>3. Angka yang perlu dihafal</h2>
+<p>Jeff Dean menyebut tabel ini "Numbers Everyone Should Know" (2009). <sup class="cite"><a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[2]</a></sup> Yang perlu Anda ingat bukan angka persisnya, tapi <strong>jaraknya</strong>: setiap baris kira-kira berbeda satu atau dua orde besaran.</p>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 700 230" role="img" aria-label="Grafik batang skala log: main memory 100 ns, baca 1 MB dari memori 250 mikrodetik, round trip dalam datacenter 0,5 ms, disk seek 10 ms, baca 1 MB dari disk 20 ms, paket antarbenua 150 ms">
+  <g class="node cache"><rect x="200" y="10" width="60" height="24"/></g><text x="190" y="22" text-anchor="end" dominant-baseline="middle">Main memory reference</text><text class="label" x="270" y="26" text-anchor="start">100 ns</text>
+  <g class="node cache"><rect x="200" y="45" width="264" height="24"/></g><text x="190" y="57" text-anchor="end" dominant-baseline="middle">Baca 1 MB dari memori</text><text class="label" x="474" y="61" text-anchor="start">250 µs</text>
+  <g class="node service"><rect x="200" y="80" width="282" height="24"/></g><text x="190" y="92" text-anchor="end" dominant-baseline="middle">Round trip di datacenter</text><text class="label" x="492" y="96" text-anchor="start">0,5 ms</text>
+  <g class="node store"><rect x="200" y="115" width="360" height="24"/></g><text x="190" y="127" text-anchor="end" dominant-baseline="middle">Disk seek</text><text class="label" x="570" y="131" text-anchor="start">10 ms</text>
+  <g class="node store"><rect x="200" y="150" width="378" height="24"/></g><text x="190" y="162" text-anchor="end" dominant-baseline="middle">Baca 1 MB dari disk</text><text class="label" x="588" y="166" text-anchor="start">20 ms</text>
+  <g class="node client"><rect x="200" y="185" width="431" height="24"/></g><text x="190" y="197" text-anchor="end" dominant-baseline="middle">Paket antarbenua, bolak-balik</text><text class="label" x="641" y="201" text-anchor="start">150 ms</text>
+</svg>
+<figcaption>Skala logaritmik: setiap 60 px = 10 kali lebih lambat. Angka dari Jeff Dean (2009); disk di sini adalah hard disk berputar.</figcaption>
+</figure>
+<table>
+  <thead><tr><th>Operasi</th><th>Waktu</th><th>Kesimpulan untuk desain</th></tr></thead>
+  <tbody>
+    <tr><td>Main memory reference</td><td>100 ns</td><td>Membaca dari memori jauh lebih murah daripada apa pun lewat jaringan: dasar cache (lesson 0013).</td></tr>
+    <tr><td>Round trip di dalam datacenter</td><td>500.000 ns = 0,5 ms</td><td>Satu panggilan ke service atau database lain ±0,5 ms. Sepuluh panggilan berurutan = 5 ms.</td></tr>
+    <tr><td>Disk seek</td><td>10 ms</td><td>Akses acak ke hard disk mahal; baca berurutan jauh lebih efisien. Index (lesson 0009) menghindari baca acak yang tidak perlu.</td></tr>
+    <tr><td>Paket California → Belanda → California</td><td>150 ms</td><td>Jarak fisik tidak bisa dikalahkan kode. Dekatkan data ke user (CDN, lesson 0007).</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Tabel ini dari 2009. Perangkat keras sudah berubah (SSD jauh lebih cepat daripada hard disk berputar), jadi jangan mengutip angka disk itu sebagai angka hari ini.
+  Yang tetap berlaku untuk interview adalah urutannya: memori ≪ jaringan di datacenter ≪ disk acak ≪ antarbenua.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Latency, throughput, percentile</h2>
+  <div class="quiz" data-bank-lesson="0003" data-bank-topic="dasar-latency-percentile" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Orde besaran</h2>
+  <div class="quiz" data-bank-lesson="0003" data-bank-topic="dasar-angka-latency" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+
+  <blockquote>"Rata-rata latency API kami 80 ms, tapi user tetap mengeluh lambat. Apa yang Anda periksa, dan bagaimana Anda menulis target latency-nya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Rata-rata menyembunyikan ekor. Latency itu distribusi, jadi saya lihat percentile: p50, p95, p99. Bisa saja p50-nya 50 ms tapi 5% request 20 kali lebih lambat; rata-rata tetap terlihat wajar.
+      Kalau satu halaman memanggil banyak service, ekor itu kena hampir semua user: dengan 100 panggilan, peluang minimal satu melewati p99 sekitar 63%.
+      Jadi target saya tulis sebagai percentile, misalnya p99 di bawah 300 ms. Lalu saya cari sumber ekornya dengan orde besaran: panggilan jaringan di datacenter ±0,5 ms, akses disk acak jauh lebih mahal, antarbenua ±150 ms.
+      Saya juga pisahkan apakah masalahnya latency per request atau throughput yang kurang, karena menambah server tidak mempercepat request yang lambat karena query buruk."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>rata-rata menyembunyikan tail latency; latency adalah distribusi?</li>
+      <li>lihat percentile (p50, p95, p99) dan arti p99?</li>
+      <li>target ditulis sebagai percentile, mis. "p99 &lt; 300 ms"?</li>
+      <li>fan-out ke banyak service memperbesar dampak ekor (mis. 100 panggilan → ±63%)?</li>
+      <li>orde besaran untuk mencari sumber lambat (memori, jaringan datacenter, disk, antarbenua)?</li>
+      <li>membedakan masalah latency dan throughput (menambah server tidak mempercepat satu request)?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama</span>
+  <a href="https://sre.google/sre-book/service-level-objectives/">Google SRE Book, bab 4 "Service Level Objectives"</a>, bagian "Indicators" dan "Aggregation". ±15 menit. Opsional, tidak dihitung dalam durasi.
+</div>
+
+<p>Berikutnya, lesson 0004: dengan angka-angka ini, bagaimana menghitung kasar berapa request per detik, storage, dan bandwidth yang dibutuhkan, dan membuktikan bahwa 1.000 user cukup dilayani satu server?</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke agent. Agent adalah guru Anda di track ini.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Fondasi") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://sre.google/sre-book/service-level-objectives/">[1] Google SRE Book, bab 4 Service Level Objectives</a> ·
+  <a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[2] Jeff Dean, LADIS 2009 ("Numbers Everyone Should Know")</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0002-perjalanan-request.html">← 0002 · Perjalanan request: client-server, DNS, HTTP</a>
+  <a href="0004-estimasi-back-of-envelope.html">0004 · Estimasi back-of-envelope: QPS, storage, bandwidth →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

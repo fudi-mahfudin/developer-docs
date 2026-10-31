@@ -19,6 +19,23 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003). Agent lesson menambah
 
 ### Fondasi
 
+- [Jeff Dean, LADIS 2009 keynote "Designs, Lessons and Advice from Building Large Distributed Systems"](https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf)
+  Use for: slide 23 "Designing Efficient Systems" (estimasi tanpa membangun, lesson 0001, 0004), slide 24 "Numbers Everyone Should Know" (angka latency 2009, disk berputar, lesson 0002, 0003, 0004), slide 25–27 "Back of the Envelope Calculations" (lesson 0004).
+- [Google SRE Book, bab 4 Service Level Objectives](https://sre.google/sre-book/service-level-objectives/)
+  Use for: SLI/SLO, latency dan throughput sebagai SLI, percentile vs rata-rata, tail latency (lesson 0001, 0003).
+- [Google SRE Book, Availability Table](https://sre.google/sre-book/availability-table/)
+  Use for: availability 99%/99,9%/99,99% → jatah downtime per tahun/bulan/hari (lesson 0001).
+- [RFC 9110 HTTP Semantics, §3 dan §3.3](https://www.rfc-editor.org/rfc/rfc9110.html#section-3.3)
+  Use for: client-server, request/response, HTTP stateless (lesson 0002).
+- [RFC 1034 Domain Names: Concepts and Facilities, §2.4 dan §3.6](https://www.rfc-editor.org/rfc/rfc1034.html#section-3.6)
+  Use for: resolver, resource record, TTL cache DNS (lesson 0002).
+- [RFC 9293 TCP, §3.5](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.5)
+  Use for: three-way handshake, satu RTT sebelum data (lesson 0002).
+- [RFC 8446 TLS 1.3, §2.3](https://www.rfc-editor.org/rfc/rfc8446.html#section-2.3)
+  Use for: handshake penuh TLS 1.3 = "1-RTT handshake" (lesson 0002).
+- [RFC 9112 HTTP/1.1, §9.3](https://www.rfc-editor.org/rfc/rfc9112.html#section-9.3)
+  Use for: persistent connection, koneksi dipakai ulang (lesson 0002).
+
 ### Skalabilitas
 
 ### Data
