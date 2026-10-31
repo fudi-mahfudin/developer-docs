@@ -193,6 +193,33 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003). Agent lesson menambah
   Use for: `maxReceiveCount` dan DLQ (lesson 0030).
 - [Amazon SQS docs: At-least-once delivery](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html)
   Use for: worker harus idempotent (lesson 0030).
+- [Bronson et al., "TAO: Facebook's Distributed Data Store for the Social Graph", USENIX ATC 2013](https://www.usenix.org/conference/atc13/technical-sessions/presentation/bronson)
+  Use for: graf sosial read-heavy, "a billion reads and millions of writes each second" (lesson 0031).
+- [PostgreSQL docs: LIMIT and OFFSET](https://www.postgresql.org/docs/current/queries-limit.html)
+  Use for: OFFSET besar tetap dihitung server, alasan cursor pagination (lesson 0031).
+- [PostgreSQL docs: Multicolumn Indexes](https://www.postgresql.org/docs/current/indexes-multicolumn.html)
+  Use for: index (author_id, created_at) untuk query feed v1 (lesson 0031).
+- [Redis docs: Lists](https://redis.io/docs/latest/develop/data-types/lists/)
+  Use for: feed cache, capped list dengan `LTRIM`, "latest updates posted by users into a social network" (lesson 0032).
+- [Apache Kafka 4.4 docs: Introduction, main concepts](https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology)
+  Use for: urutan per key/partition: fan-out per author_id (lesson 0032), pesan per conversation_id (lesson 0034).
+- [RFC 6202: Long Polling and Streaming in Bidirectional HTTP](https://www.rfc-editor.org/rfc/rfc6202.html#section-1)
+  Use for: definisi long polling (lesson 0033).
+- [RFC 6455: The WebSocket Protocol](https://www.rfc-editor.org/rfc/rfc6455.html)
+  Use for: masalah polling (`#section-1.1`), handshake 101 (lesson 0033); Ping sebagai keepalive (`#section-5.5.2`, lesson 0034).
+- [AWS docs: API Gateway WebSocket APIs](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api.html)
+  Use for: server mendorong data tanpa request, chat sebagai contoh (lesson 0033).
+- [Apache Cassandra docs: Introduction to data modeling](https://cassandra.apache.org/doc/latest/cassandra/developing/data-modeling/intro.html)
+  Use for: partition key + clustering key untuk tabel messages (lesson 0033).
+- [nginx docs: WebSocket proxying](https://nginx.org/en/docs/http/websocket.html)
+  Use for: header Upgrade hop-by-hop, koneksi diam ditutup setelah 60 detik (lesson 0034).
+- [AWS docs: Quotas for configuring and running a WebSocket in API Gateway](https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-execution-service-websocket-limits-table.html)
+  Use for: durasi koneksi 2 jam, idle timeout 10 menit; reconnect sebagai jalur normal (lesson 0034).
+- [Redis docs: Pub/Sub](https://redis.io/docs/latest/develop/pubsub/)
+  Use for: routing antar chat server, at-most-once (lesson 0034).
+- [Redis docs: EXPIRE](https://redis.io/docs/latest/commands/expire/)
+  Use for: presence dengan TTL (lesson 0034).
+- Firebase Cloud Messaging (di atas) juga dipakai untuk push notification ke user chat yang offline (lesson 0034).
 
 ### Penutup
 

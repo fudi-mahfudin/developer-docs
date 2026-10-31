@@ -2,7 +2,7 @@
 // Track System Design, modul Studi kasus (0027–0034): kerangka 5 langkah, cakupan topik, sitasi, diagram,
 // latihan "gambar sendiri dulu, lalu Lihat jawaban", v1 sederhana dulu, checklist "membenarkan komponen dengan angka".
 // Aturan teach umum (kata opsi, posisi jawaban, format lisan, kicker, nav ke tetangga) diuji track.test.js.
-// Issue 11 membuat 0027–0030; issue 12 menambah 0031–0034 ke LESSONS, KEYWORDS, dan NAV_AFTER.
+// Issue 11 membuat 0027–0030; issue 12 menambah 0031–0034 (news feed dan chat, masing-masing A = langkah 1–4, B = langkah 5).
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -10,21 +10,29 @@ const path = require("node:path");
 const { ROOT, forTrack } = require("../helpers.js");
 
 const sd = forTrack("sysdesign");
-// kasus: lesson studi kasus yang mengikuti kerangka 5 langkah dengan heading per langkah.
+// kasus: true = satu lesson memuat langkah 1–5; "A" = langkah 1–4 lalu "lanjut di lesson B"; "B" = ringkasan diagram dari A lalu langkah 5.
 const LESSONS = {
   "0027": { file: "0027-kerangka-5-langkah.html", topics: ["kasus-kerangka-langkah", "kasus-kerangka-waktu"], kasus: false },
   "0028": { file: "0028-kasus-url-shortener.html", topics: ["kasus-url-kode", "kasus-url-redirect"], kasus: true },
   "0029": { file: "0029-kasus-rate-limiter.html", topics: ["kasus-rl-posisi", "kasus-rl-counter"], kasus: true },
   "0030": { file: "0030-kasus-notification.html", topics: ["kasus-notif-queue", "kasus-notif-idempotensi"], kasus: true },
+  "0031": { file: "0031-kasus-news-feed-a.html", topics: ["kasus-feed-estimasi", "kasus-feed-v1"], kasus: "A", pair: "0032" },
+  "0032": { file: "0032-kasus-news-feed-b.html", topics: ["kasus-feed-fanout", "kasus-feed-hybrid"], kasus: "B", pair: "0031" },
+  "0033": { file: "0033-kasus-chat-a.html", topics: ["kasus-chat-protokol", "kasus-chat-data"], kasus: "A", pair: "0034" },
+  "0034": { file: "0034-kasus-chat-b.html", topics: ["kasus-chat-koneksi", "kasus-chat-ordering"], kasus: "B", pair: "0033" },
 };
 const KEYWORDS = {
   "0027": ["functional", "non-functional", "estimasi", "API", "data model", "high-level", "deep dive", "v1", "45 menit", "class=\"order\""],
   "0028": ["base62", "hash", "read-heavy", "cache", "301", "302", "collision"],
   "0029": ["gateway", "middleware", "Redis", "INCR", "race condition", "429", "Retry-After", "token bucket"],
   "0030": ["queue", "channel", "retry", "idempotency", "preferensi", "dead letter queue", "backoff"],
+  "0031": ["follow", "read-heavy", "fan-out on read", "index", "cursor", "v1"],
+  "0032": ["fan-out on write", "fan-out on read", "hybrid", "akun besar", "LTRIM", "queue", "evolusi"],
+  "0033": ["WebSocket", "polling", "long polling", "conversation_id", "partition key", "clustering", "v1"],
+  "0034": ["stateful", "presence", "heartbeat", "ordering", "sequence", "offline", "Pub/Sub", "push notification"],
 };
 const NAV_BEFORE = "0026-review-asinkron-reliabilitas.html";
-const NAV_AFTER = "0031-kasus-news-feed-a.html";
+const NAV_AFTER = "0035-review-studi-kasus.html";
 const NUMS = Object.keys(LESSONS);
 const read = n => fs.readFileSync(path.join(ROOT, "sysdesign", "lessons", LESSONS[n].file), "utf8");
 
@@ -85,7 +93,7 @@ test("0027 teaches the 5-step frame with an order exercise and starts step 4 fro
 });
 
 test("each case study: heading per langkah 1–5, v1 before evolution, numbers, draw-first reveal with svg", () => {
-  NUMS.filter(n => LESSONS[n].kasus).forEach(n => {
+  NUMS.filter(n => LESSONS[n].kasus === true).forEach(n => {
     const html = read(n);
     const steps = [1, 2, 3, 4, 5].map(i => {
       const m = html.match(new RegExp(`<h2>[^<]*Langkah ${i}\\b[^<]*</h2>`));
@@ -104,7 +112,45 @@ test("each case study: heading per langkah 1–5, v1 before evolution, numbers, 
   });
 });
 
-test("modul Studi kasus nav: 0026 → 0027 → … → 0030 → 0031", () => {
+const reveals = html => html.match(/<details>\s*<summary>Lihat jawaban<\/summary>([\s\S]*?)<\/details>/g) || [];
+const stepAt = (html, i) => { const m = html.match(new RegExp(`<h2>[^<]*Langkah ${i}\\b[^<]*</h2>`)); return m ? m.index : -1; };
+
+test("case study A (0031, 0033): langkah 1–4 only, v1 with numbers, draw-first reveal, closes with 'lanjut di lesson B'", () => {
+  NUMS.filter(n => LESSONS[n].kasus === "A").forEach(n => {
+    const html = read(n);
+    const steps = [1, 2, 3, 4].map(i => stepAt(html, i));
+    steps.forEach((s, i) => assert.ok(s >= 0, `${n}: butuh h2 Langkah ${i + 1}`));
+    assert.deepEqual(steps, [...steps].sort((a, b) => a - b), `${n}: langkah berurutan`);
+    assert.equal(stepAt(html, 5), -1, `${n}: langkah 5 ada di lesson B`);
+    assert.match(html.slice(steps[1], steps[2]), /QPS/, `${n}: estimasi memuat QPS`);
+    assert.match(html.slice(steps[3]), /v1/, `${n}: langkah 4 memulai dari desain v1`);
+    assert.ok(reveals(html).some(d => d.includes('<svg class="diagram"')), `${n}: Lihat jawaban berisi svg.diagram`);
+    assert.match(html, /[Gg]ambar[^<]*sendiri/, `${n}: instruksi gambar sendiri dulu`);
+    const b = LESSONS[LESSONS[n].pair].file;
+    assert.match(html, new RegExp(`[Ll]anjut di <a href="${b}">lesson ${LESSONS[n].pair}</a>`), `${n}: ditutup dengan "lanjut di lesson ${LESSONS[n].pair}"`);
+  });
+});
+
+test("case study B (0032, 0034): opens with a diagram summary of A, then langkah 5 with v2, draw-first reveal", () => {
+  NUMS.filter(n => LESSONS[n].kasus === "B").forEach(n => {
+    const html = read(n);
+    [1, 2, 3, 4].forEach(i => assert.equal(stepAt(html, i), -1, `${n}: langkah ${i} ada di lesson A`));
+    const step5 = stepAt(html, 5);
+    assert.ok(step5 >= 0, `${n}: butuh h2 Langkah 5`);
+    const intro = html.slice(0, step5);
+    const a = LESSONS[n].pair;
+    assert.match(intro, new RegExp(`<h2>[^<]*Ringkasan[^<]*</h2>`), `${n}: butuh h2 Ringkasan sebelum langkah 5`);
+    assert.ok(intro.includes(`href="${LESSONS[a].file}"`), `${n}: ringkasan menautkan lesson ${a}`);
+    assert.match(intro, /<svg class="diagram"/, `${n}: ringkasan memuat diagram v1 dari ${a}`);
+    const deep = html.slice(step5);
+    assert.match(deep, /v2/, `${n}: langkah 5 menunjukkan v2`);
+    assert.match(deep, /evolusi/, `${n}: langkah 5 menunjukkan evolusi`);
+    assert.ok(reveals(deep).some(d => d.includes('<svg class="diagram"')), `${n}: Lihat jawaban v2 berisi svg.diagram`);
+    assert.match(deep, /[Gg]ambar[^<]*sendiri/, `${n}: instruksi gambar sendiri dulu`);
+  });
+});
+
+test("modul Studi kasus nav: 0026 → 0027 → … → 0034 → 0035", () => {
   const files = [NAV_BEFORE, ...NUMS.map(n => LESSONS[n].file), NAV_AFTER];
   NUMS.forEach((n, i) => {
     const nav = (read(n).match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
@@ -112,7 +158,7 @@ test("modul Studi kasus nav: 0026 → 0027 → … → 0030 → 0031", () => {
   });
 });
 
-test("index lists 0027–0030 as tersedia and glossary records the new topic slugs", () => {
+test("index lists 0027–0034 as tersedia and glossary records the new topic slugs", () => {
   const index = fs.readFileSync(path.join(ROOT, "sysdesign", "index.html"), "utf8");
   NUMS.forEach(n => assert.match(index, new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`)));
   const glossary = fs.readFileSync(path.join(ROOT, "sysdesign", "GLOSSARY.md"), "utf8");

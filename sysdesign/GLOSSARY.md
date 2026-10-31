@@ -322,4 +322,55 @@ _Avoid_: satu queue besar untuk semua
 Layanan pihak ketiga yang benar-benar mengirim notifikasi: APNs (Apple) dan FCM untuk push, gateway SMS, layanan email. Lambat atau gagal di luar kendali Anda, jadi dipanggil dari worker dengan retry (lesson 0030).
 _Avoid_: vendor (terlalu umum)
 
+**Slug topik 0031–0034**:
+`kasus-feed-estimasi`, `kasus-feed-v1` (0031); `kasus-feed-fanout`, `kasus-feed-hybrid` (0032); `kasus-chat-protokol`, `kasus-chat-data` (0033); `kasus-chat-koneksi`, `kasus-chat-ordering` (0034).
+
+**Fan-out on read**:
+Feed dirakit saat dibaca: satu query mengambil post terbaru dari semua akun yang di-follow. Tulis murah, baca mahal (±200 rentang index per pembukaan feed). Desain v1 news feed (lesson 0031).
+_Avoid_: pull model (boleh disebut, tapi pakai istilah ini di track)
+
+**Fan-out on write**:
+Saat post dibuat, worker menambahkan ID-nya ke feed cache setiap follower, sehingga membaca feed tinggal satu key. Baca murah, tulis mahal (post × follower) (lesson 0032).
+_Avoid_: push model (bisa tertukar dengan push notification)
+
+**Hybrid fan-out**:
+Fan-out on write untuk akun biasa dan user aktif, fan-out on read untuk akun besar di atas ambang follower; keduanya digabung saat feed dibaca (lesson 0032).
+_Avoid_: "celebrity problem" sebagai nama solusi
+
+**Feed cache**:
+List ID post per user (mis. list Redis) yang dibatasi dengan `LTRIM` ke N item terbaru supaya memorinya bisa dihitung (lesson 0032).
+_Avoid_: timeline table
+
+**Cursor pagination**:
+Halaman berikutnya dimulai dari posisi item terakhir (mis. `created_at` + `id`, atau `seq`), bukan `OFFSET`. Tidak menghitung ulang baris yang dilewati dan tidak bergeser saat item baru masuk (lesson 0031, 0033).
+_Avoid_: offset pagination untuk feed
+
+**WebSocket**:
+Protokol dua arah (RFC 6455) di atas satu koneksi TCP, dibuka lewat request HTTP `Upgrade` yang dijawab `101 Switching Protocols`. Server bisa mendorong pesan tanpa request dari client (lesson 0033).
+_Avoid_: socket (terlalu umum)
+
+**Long polling**:
+Server menahan request HTTP sampai ada event, lalu menjawab; client langsung membuka request baru (RFC 6202). Di antara polling biasa dan WebSocket (lesson 0033).
+_Avoid_: comet
+
+**Koneksi stateful**:
+Koneksi yang hidup lama dan terikat ke satu server tertentu, sehingga hanya server itu yang bisa mendorong pesan ke user. Butuh session registry dan reconnect sebagai jalur normal (lesson 0034).
+_Avoid_: sticky session (itu fitur load balancer HTTP)
+
+**Session registry**:
+Peta `user_id → chat server` (mis. di Redis) yang ditulis saat connect dan dihapus saat disconnect; dipakai untuk merutekan pesan antar chat server (lesson 0034).
+_Avoid_: service discovery (itu untuk menemukan service, bukan user)
+
+**Heartbeat**:
+Pesan kecil berkala (mis. frame Ping WebSocket setiap 30 detik) yang menjaga koneksi diam tidak ditutup proxy dan membuktikan client masih hidup (lesson 0034).
+_Avoid_: keepalive TCP (lapisan lain)
+
+**Presence**:
+Status online/offline user. Disimpan sebagai key dengan TTL yang diperbarui setiap heartbeat, sehingga user yang hilang sinyal otomatis dianggap offline (lesson 0034).
+_Avoid_: last seen (itu turunan presence)
+
+**Sequence number per percakapan (seq)**:
+Nomor naik yang diberi server untuk setiap pesan di satu `conversation_id`. Menentukan urutan yang sama untuk semua anggota, mendeteksi pesan terlewat (gap), dan menjadi cursor sinkronisasi saat reconnect (lesson 0033, 0034).
+_Avoid_: timestamp client sebagai urutan
+
 ## Penutup

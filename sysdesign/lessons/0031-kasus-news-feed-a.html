@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0031 · Studi kasus: news feed (A)</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0031 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Studi kasus: news feed (A)</h1>
+  <p class="subtitle">Langkah 1–4: requirement, estimasi read-heavy, API dengan cursor, data model follow, dan desain v1 fan-out on read</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0030-kasus-notification.html">lesson 0030</a> menyelesaikan satu soal dalam satu lesson. News feed lebih besar, jadi dibagi dua:
+  lesson ini mengerjakan langkah 1–4 sampai desain v1, dan <a href="0032-kasus-news-feed-b.html">lesson 0032</a> mengerjakan langkah 5 (deep dive fan-out).
+  Soal ini klasik karena jawabannya bergantung hampir sepenuhnya pada angka: desain yang tepat untuk 100 ribu user salah untuk 10 juta, dan sebaliknya.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Rancang news feed: user mem-posting dan melihat post terbaru dari akun yang mereka follow"</em> sampai desain v1, tanpa catatan, dalam 90 detik:
+  requirement, QPS baca dan tulis (read-heavy 10:1), API dengan cursor, tabel posts dan follows, desain v1 fan-out on read, dan angka yang membuat v1 tidak cukup di skala target.
+</div>
+
+<!-- ============ LANGKAH 1 ============ -->
+<h2>Langkah 1 — Klarifikasi requirement</h2>
+<ul>
+  <li><strong>Functional:</strong> user membuat post (teks; gambar disimpan di object storage, di luar scope), follow akun lain, dan melihat home feed: post dari akun yang di-follow, urut terbaru dulu.
+    Di luar scope: ranking dengan machine learning, iklan, komentar.</li>
+  <li><strong>Skala (asumsi, tanyakan):</strong> 10 juta DAU; setiap user rata-rata 1 post per hari dan membuka feed 10 kali per hari; rata-rata follow 200 akun; akun terbesar punya 10 juta follower.</li>
+  <li><strong>Non-functional:</strong> feed terbuka cepat (mis. p99 &lt; 500 ms); post baru boleh muncul di feed follower beberapa detik kemudian (eventual consistency diterima); availability lebih penting daripada konsistensi kuat.</li>
+</ul>
+<p class="note">
+  Pertanyaan "berapa follower akun terbesar?" terlihat kecil, tetapi jawabannya menentukan deep dive di lesson 0032. Tanyakan di langkah 1, jangan menunggu interviewer menyebutnya.
+</p>
+
+<!-- ============ LANGKAH 2 ============ -->
+<h2>Langkah 2 — Estimasi</h2>
+<table>
+  <thead><tr><th>Besaran</th><th>Hitungan</th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td>QPS tulis (post)</td><td>10<sup>7</sup> post ÷ 10<sup>5</sup> detik</td><td>±100 QPS; puncak 3× ≈ ±300 QPS</td></tr>
+    <tr><td>QPS baca (feed)</td><td>10<sup>7</sup> × 10 ÷ 10<sup>5</sup> detik</td><td>±1.000 QPS; puncak ≈ ±3.000 QPS</td></tr>
+    <tr><td>Rasio baca:tulis</td><td>1.000 ÷ 100</td><td>10:1, read-heavy</td></tr>
+    <tr><td>Storage post</td><td>10<sup>7</sup> × ±1 KB per hari</td><td>±10 GB/hari ≈ ±3,6 TB/tahun</td></tr>
+    <tr><td>Biaya baca v1</td><td>3.000 feed/detik × 200 akun di-follow</td><td>±600.000 pencarian index per detik</td></tr>
+  </tbody>
+</table>
+<p>
+  Rasio 10:1 menempatkan soal ini di keluarga read-heavy: deep dive akan berfokus pada jalur baca feed.
+  Graf sosial di skala besar memang sangat timpang ke arah baca; paper TAO dari Facebook melaporkan bahwa
+  <em>"TAO can process a billion reads and millions of writes each second."</em> <sup class="cite"><a href="https://www.usenix.org/conference/atc13/technical-sessions/presentation/bronson">[1]</a></sup>
+  Baris terakhir tabel adalah angka yang paling penting: berapa pekerjaan database untuk <em>satu</em> pembukaan feed. Simpan angka itu; lesson 0032 dimulai dari sana.
+</p>
+
+<!-- ============ LANGKAH 3 ============ -->
+<h2>Langkah 3 — API dan data model</h2>
+<pre><code>POST /v1/posts                       { "text": "…" }   → 201 { "postId": 9001 }
+POST /v1/users/77/follow                                → 204
+GET  /v1/feed?limit=20&amp;cursor=&lt;created_at,id post terakhir&gt;
+  → 200 { "posts": [ … 20 post … ], "nextCursor": "2026-10-31T09:12:03Z,8995" }
+
+Tabel
+  posts    (id PK, author_id, text, created_at)
+           INDEX (author_id, created_at DESC)
+  follows  (follower_id, followee_id, created_at, PK (follower_id, followee_id))
+           INDEX (followee_id)                       ← daftar follower, dipakai di lesson 0032</code></pre>
+<p>
+  <strong>Kenapa cursor, bukan <code>OFFSET</code>.</strong> Dokumentasi PostgreSQL: <em>"The rows skipped by an OFFSET clause still have to be computed inside the server; therefore a large OFFSET might be inefficient."</em> <sup class="cite"><a href="https://www.postgresql.org/docs/current/queries-limit.html">[2]</a></sup>
+  Feed juga terus bertambah di atas: dengan <code>OFFSET 20</code>, satu post baru menggeser semua halaman sehingga user melihat post yang sama dua kali.
+  Cursor menyimpan posisi post terakhir (<code>created_at</code>, lalu <code>id</code> sebagai pemutus seri) dan halaman berikutnya mulai tepat dari sana.
+</p>
+<p>
+  <strong>Kenapa index <code>(author_id, created_at)</code>.</strong> <em>"A multicolumn B-tree index can be used with query conditions that involve any subset of the index's columns, but the index is most efficient when there are constraints on the leading (leftmost) columns."</em> <sup class="cite"><a href="https://www.postgresql.org/docs/current/indexes-multicolumn.html">[3]</a></sup>
+  Query feed selalu menyaring <code>author_id</code>, lalu mengurutkan menurut waktu, jadi urutan kolom itu cocok dengan bentuk query.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Estimasi dan biaya baca</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0031" data-bank-topic="kasus-feed-estimasi" data-stack></div>
+</section>
+
+<!-- ============ LANGKAH 4 ============ -->
+<h2>Langkah 4 — High-level design (v1)</h2>
+<p>
+  Desain v1 paling sederhana: <strong>fan-out on read</strong>. Saat post dibuat, hanya satu baris yang ditulis ke <code>posts</code>. Feed dirakit saat dibaca:
+</p>
+<pre><code>SELECT p.* FROM posts p
+JOIN follows f ON f.followee_id = p.author_id
+WHERE f.follower_id = :me
+  AND (p.created_at, p.id) &lt; (:cursor_time, :cursor_id)
+ORDER BY p.created_at DESC, p.id DESC
+LIMIT 20;</code></pre>
+<p>
+  App server stateless di belakang load balancer, satu PostgreSQL. Tidak ada cache, queue, atau worker. Saat peluncuran (mis. 100 ribu DAU) puncak feed hanya ±30 QPS,
+  atau ±6.000 pencarian index per detik. Itu wajar untuk dicoba di satu database; ukur dengan <code>EXPLAIN ANALYZE</code> sebelum menambah komponen apa pun.
+  Desain ini juga benar secara otomatis: post yang dihapus atau akun yang di-unfollow langsung hilang dari feed, karena feed tidak pernah disalin.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Gambar diagram v1 sendiri dulu</h2>
+  <p>Gambar diagram v1 Anda sendiri dulu: jalur tulis post dan jalur baca feed, dan di mana pekerjaan "merakit feed" terjadi. Setelah selesai, buka jawabannya.</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <figure class="diagram-fig">
+    <svg class="diagram" viewBox="0 0 660 200" role="img" aria-label="Desain v1 news feed: client ke load balancer ke app server stateless; app server menulis post dan merakit feed dengan satu query ke PostgreSQL berisi tabel posts dan follows">
+      <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g class="node client"><rect x="10" y="80" width="90" height="36" rx="4"/><text x="55" y="98">Client</text></g>
+      <g class="node service"><rect x="140" y="80" width="120" height="36" rx="4"/><text x="200" y="98">Load balancer</text></g>
+      <g class="node service"><rect x="300" y="80" width="130" height="36" rx="4"/><text x="365" y="98">App server ×N</text></g>
+      <g class="node store"><rect x="480" y="80" width="150" height="36" rx="4"/><text x="555" y="98">PostgreSQL</text></g>
+      <path class="edge" d="M100,98 H138"/>
+      <path class="edge" d="M260,98 H298"/>
+      <path class="edge" d="M430,98 H478"/>
+      <text class="label" x="365" y="60">stateless</text>
+      <text class="label" x="555" y="140">posts + follows</text>
+      <text class="label" x="555" y="160">INDEX (author_id, created_at)</text>
+      <text class="label" x="200" y="160">POST /v1/posts: 1 INSERT</text>
+      <text class="label" x="200" y="180">GET /v1/feed: 1 query JOIN</text>
+    </svg>
+    <figcaption>v1 fan-out on read: tulis murah (satu baris), baca mahal (satu query menyentuh 200 penulis). Cukup sampai angka baca menunjukkan sebaliknya.</figcaption>
+    </figure>
+    <p>Jalur tulis: <code>POST /v1/posts</code> → <code>INSERT</code> satu baris → 201. Jalur baca: <code>GET /v1/feed</code> → query di atas → 20 post + <code>nextCursor</code>.</p>
+  </details>
+</section>
+
+<p>
+  <strong>Di mana v1 berhenti cukup.</strong> Di skala target, pekerjaan baca menjadi ±600.000 pencarian index per detik pada puncak, dan setiap pembukaan feed menggabungkan dan mengurutkan post dari 200 penulis.
+  Read replica bisa membagi beban itu, tetapi tidak mengurangi pekerjaan per feed. Pertanyaannya: bisakah feed disiapkan <em>sebelum</em> dibaca?
+</p>
+
+<section class="exercise">
+  <h2>Latihan 3 — API dan desain v1</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0031" data-bank-topic="kasus-feed-v1" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Rancang news feed: user mem-posting dan melihat post terbaru dari akun yang mereka follow. Mulai dari requirement sampai desain v1." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Saya klarifikasi dulu: feed kronologis terbalik dari akun yang di-follow, tanpa ranking; 10 juta DAU, rata-rata follow 200 akun, ada akun besar dengan jutaan follower. Estimasinya: sekitar 100 post per detik dan sekitar 1.000 pembukaan feed per detik, puncak 3.000, jadi read-heavy 10:1. API-nya POST /v1/posts, POST follow, dan GET /v1/feed dengan cursor, bukan OFFSET, karena OFFSET besar tetap dihitung server dan halaman bergeser saat ada post baru. Data model: posts dengan index (author_id, created_at) dan follows (follower_id, followee_id). Desain v1-nya fan-out on read: app server stateless di belakang load balancer, satu query mengambil post terbaru dari akun yang di-follow, dari satu PostgreSQL. Itu cukup saat peluncuran; di skala target, 3.000 × 200 = 600.000 pencarian index per detik, dan itu yang saya serang di deep dive."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>requirement: feed kronologis dari akun yang di-follow, ranking di luar scope, akun besar disebut?</li>
+      <li>estimasi: ±100 post/detik, ±1.000 feed/detik (puncak ±3.000), read-heavy 10:1?</li>
+      <li>API: POST post, follow, GET feed dengan cursor, dan alasan tidak memakai OFFSET?</li>
+      <li>data model: posts dengan index (author_id, created_at) dan tabel follows?</li>
+      <li>v1 fan-out on read: app server stateless + satu database, satu query per pembukaan feed?</li>
+      <li>membenarkan komponen dengan angka (v1 cukup di awal; 600.000 pencarian index/detik di skala target jadi alasan deep dive)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.usenix.org/conference/atc13/technical-sessions/presentation/bronson">Bronson et al., "TAO: Facebook's Distributed Data Store for the Social Graph", USENIX ATC 2013</a>, ±40 menit. Bagaimana graf follow/teman dilayani di skala miliaran baca per detik.
+</div>
+
+<p>Desain v1 sudah berdiri, dan angka 600.000 sudah di tangan. Lanjut di <a href="0032-kasus-news-feed-b.html">lesson 0032</a>: langkah 5, fan-out on write vs on read, dan hybrid untuk akun besar.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kenapa cursor memakai id sebagai pemutus seri?", "kapan read replica cukup untuk feed?", atau "bagaimana feed berubah kalau ada ranking?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.usenix.org/conference/atc13/technical-sessions/presentation/bronson">[1] Bronson et al., TAO: Facebook's Distributed Data Store for the Social Graph (USENIX ATC 2013)</a> ·
+  <a href="https://www.postgresql.org/docs/current/queries-limit.html">[2] PostgreSQL docs: LIMIT and OFFSET</a> ·
+  <a href="https://www.postgresql.org/docs/current/indexes-multicolumn.html">[3] PostgreSQL docs: Multicolumn Indexes</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0030-kasus-notification.html">← 0030 · Studi kasus: notification system</a>
+  <a href="0032-kasus-news-feed-b.html">0032 · Studi kasus: news feed (B): fan-out →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0031.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
