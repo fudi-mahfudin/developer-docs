@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0034 · Studi kasus: chat (B): koneksi, presence, ordering</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0034 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Studi kasus: chat (B): koneksi, presence, ordering</h1>
+  <p class="subtitle">Langkah 5: koneksi WebSocket stateful di banyak server, routing pesan, heartbeat dan presence, urutan dengan seq, dan pesan offline</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0033-kasus-chat-a.html">lesson 0033</a> mengerjakan langkah 1–4 dan berhenti di satu angka: ±3 juta koneksi WebSocket bersamaan, jauh di atas kapasitas satu chat server.
+  Lesson ini adalah langkah 5. Setiap komponen baru menjawab satu masalah yang muncul begitu ada lebih dari satu server.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Desain v1 chat Anda satu chat server WebSocket. Bagaimana Anda mengembangkannya untuk 3 juta koneksi bersamaan, dengan presence, urutan pesan, dan pesan offline?"</em> tanpa catatan, dalam 90 detik:
+  kenapa koneksi stateful butuh session registry, routing pesan antar server dan trade-off-nya, heartbeat dan presence dengan TTL, seq per percakapan, dan push notification untuk user offline.
+</div>
+
+<!-- ============ RINGKASAN A ============ -->
+<h2>Ringkasan dari lesson 0033</h2>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 660 200" role="img" aria-label="Ringkasan v1 dari lesson 0033: user A dan user B terhubung lewat WebSocket ke satu chat server; chat server memberi seq, menyimpan pesan ke database, lalu mendorongnya ke B">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="30" width="100" height="36" rx="4"/><text x="60" y="48">User A</text></g>
+  <g class="node client"><rect x="10" y="120" width="100" height="36" rx="4"/><text x="60" y="138">User B</text></g>
+  <g class="node service"><rect x="220" y="75" width="160" height="36" rx="4"/><text x="300" y="93">Chat server (1)</text></g>
+  <g class="node store"><rect x="480" y="75" width="160" height="36" rx="4"/><text x="560" y="93">DB messages</text></g>
+  <path class="edge" d="M110,48 L218,85"/>
+  <path class="edge" d="M218,101 L112,138"/>
+  <path class="edge" d="M380,93 H478"/>
+  <text class="label" x="430" y="70">simpan + seq</text>
+  <text class="label" x="300" y="135">peta: user_id → koneksi</text>
+  <text class="label" x="330" y="185">target: ±3 juta koneksi, ±12.000 pesan/detik pada puncak</text>
+</svg>
+<figcaption>v1 (satu chat server) dari lesson 0033. Angka yang dibawa: ±4.000 pesan/detik (puncak ±12.000), ±3 juta koneksi bersamaan, ±80 GB pesan/hari, tabel messages dengan key (conversation_id, seq).</figcaption>
+</figure>
+
+<!-- ============ LANGKAH 5 ============ -->
+<h2>Langkah 5 — Deep dive, bottleneck, trade-off</h2>
+<p>Langkah ini adalah evolusi dari v1 ke v2, satu perubahan per masalah:</p>
+
+<p><strong>1. Banyak chat server; koneksi bersifat stateful.</strong> Misalkan satu chat server sanggup ±50.000 koneksi (asumsi; ukur memori dan CPU per koneksi dengan load test).
+  3 juta ÷ 50.000 = 60 server, ditambah cadangan. Berbeda dengan app server stateless di news feed, chat server <em>stateful</em>: koneksi user B hidup di satu server tertentu, dan hanya server itu yang bisa mendorong pesan ke B.
+  Load balancer dan proxy harus meneruskan koneksi panjang ini. Di nginx, header <code>Upgrade</code> tidak otomatis diteruskan, dan
+  <em>"By default, the connection will be closed if the proxied server does not transmit any data within 60 seconds."</em> <sup class="cite"><a href="https://nginx.org/en/docs/http/websocket.html">[1]</a></sup>
+  Koneksi juga pasti putus karena hal lain: deploy, server mati, atau batas platform. AWS API Gateway, misalnya, memberi batas durasi koneksi WebSocket 2 jam dan idle timeout 10 menit. <sup class="cite"><a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-execution-service-websocket-limits-table.html">[2]</a></sup>
+  Jadi reconnect adalah jalur normal, bukan pengecualian: client menyambung ulang dengan backoff + jitter supaya 50.000 user dari satu server yang mati tidak menyerbu bersamaan.</p>
+
+<p><strong>2. Routing pesan antar server.</strong> A terhubung ke server 3, B ke server 7. Simpan <strong>session registry</strong> <code>user_id → server</code> di Redis, ditulis saat connect dan dihapus saat disconnect.
+  Server 3 menyimpan pesan, membalas <code>ack</code> ke A, membaca registry, lalu mem-publish pesan ke channel milik server 7. Trade-off yang perlu Anda ucapkan: Redis Pub/Sub
+  <em>"exhibits at-most-once message delivery semantics"</em>, dan <em>"If the subscriber is unable to handle the message (for example, due to an error or a network disconnect) the message is forever lost."</em> <sup class="cite"><a href="https://redis.io/docs/latest/develop/pubsub/">[3]</a></sup>
+  Itu bisa diterima di sini karena pub/sub hanya jalur cepat: pesan sudah tersimpan sebelum <code>ack</code>, dan bagian 4 di bawah menutup celahnya.</p>
+
+<p><strong>3. Heartbeat dan presence.</strong> Supaya proxy tidak menutup koneksi yang diam dan server tahu client masih hidup, kirim heartbeat lebih sering daripada timeout terpendek (mis. setiap 30 detik).
+  RFC 6455 menyediakan frame kontrol untuk ini: <em>"A Ping frame may serve either as a keepalive or as a means to verify that the remote endpoint is still responsive."</em> <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6455.html#section-5.5.2">[4]</a></sup>
+  Heartbeat yang sama memberi <strong>presence</strong>: setiap heartbeat menulis <code>SET presence:42 online EX 60</code>. Redis <code>EXPIRE</code>: <em>"After the timeout has expired, the key will automatically be deleted."</em> <sup class="cite"><a href="https://redis.io/docs/latest/commands/expire/">[5]</a></sup>
+  Ponsel yang kehilangan sinyal tidak pernah mengirim "logout", tetapi key-nya hilang sendiri dalam 60 detik. Angkanya: 3 juta ÷ 30 detik ≈ ±100.000 penulisan per detik, alasan presence ada di Redis yang di-shard, bukan di tabel SQL.
+  Status online cukup dikirim ke teman yang sedang membuka aplikasi, bukan ke semua kontak, dan boleh terlambat beberapa detik.</p>
+
+<p><strong>4. Ordering dengan seq per percakapan.</strong> Jam ponsel tidak bisa dipercaya, dan dua penerima bisa menerima pesan dalam urutan tiba yang berbeda.
+  Server memberi nomor urut (sequence number, <code>seq</code>) yang naik per <code>conversation_id</code> saat menyimpan (mis. counter atomic per percakapan). Urutan hanya perlu benar <em>di dalam</em> satu percakapan; urutan global tidak dibutuhkan dan mahal.
+  Kalau pesan lewat log seperti Kafka, pakai <code>conversation_id</code> sebagai key: <em>"Events with the same event key (e.g., a customer or vehicle ID) are written to the same partition, and Kafka guarantees that any consumer of a given topic-partition will always read that partition's events in exactly the same order as they were written."</em> <sup class="cite"><a href="https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology">[6]</a></sup>
+  <code>seq</code> juga mendeteksi pesan yang terlewat: client yang menerima 5012 lalu 5014 tahu 5013 hilang (misalnya karena pub/sub at-most-once) dan mengambilnya lewat REST riwayat.
+  <code>clientMsgId</code> dari lesson 0033 membuat kirim ulang setelah reconnect idempotent: server mengenali pesan yang sama dan mengembalikan <code>seq</code> yang sudah ada.</p>
+
+<p><strong>5. Pesan offline dan multi-device.</strong> Kalau B tidak ada di registry, pesan tetap tersimpan; server lalu meminta <strong>push notification</strong> lewat FCM (Android/web) atau APNs (iOS),
+  layanan platform yang <em>"lets you reliably send messages"</em> ke perangkat yang sedang tidak membuka aplikasi. <sup class="cite"><a href="https://firebase.google.com/docs/cloud-messaging">[7]</a></sup>
+  Saat B membuka aplikasi, client terhubung, mengirim <code>seq</code> terakhir per percakapan (dari <code>user_conversations</code>), dan menerima sisanya. Setiap perangkat menyimpan <code>seq</code>-nya sendiri, jadi laptop dan ponsel sinkron dengan cara yang sama.
+  Untuk grup sampai 100 anggota, server pengirim cukup mengulang langkah 2 per anggota online; ±12.000 pesan/detik × beberapa penerima masih dalam jangkauan pub/sub.</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Gambar diagram v2 sendiri dulu</h2>
+  <p>Gambar diagram v2 Anda sendiri dulu, mulai dari v1 di ringkasan: di mana session registry, jalur pub/sub antar server, presence, dan push notification berada. Setelah selesai, buka jawabannya.</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <figure class="diagram-fig">
+    <svg class="diagram" viewBox="0 0 680 320" role="img" aria-label="Desain v2 chat: user A dan user B terhubung lewat load balancer ke chat server 3 dan chat server 7; Redis menyimpan session registry dan presence serta menyediakan pub/sub antar server; chat server menyimpan pesan ke database messages; untuk user offline, push service memanggil FCM atau APNs">
+      <g class="node client"><rect x="10" y="40" width="90" height="36" rx="4"/><text x="55" y="58">User A</text></g>
+      <g class="node client"><rect x="10" y="200" width="90" height="36" rx="4"/><text x="55" y="218">User B</text></g>
+      <g class="node service"><rect x="130" y="120" width="100" height="36" rx="4"/><text x="180" y="138">Load balancer</text></g>
+      <g class="node service"><rect x="270" y="40" width="130" height="36" rx="4"/><text x="335" y="58">Chat server 3</text></g>
+      <g class="node service"><rect x="270" y="200" width="130" height="36" rx="4"/><text x="335" y="218">Chat server 7</text></g>
+      <g class="node cache"><rect x="440" y="120" width="230" height="36" rx="4"/><text x="555" y="138">Redis: registry, presence, pub/sub</text></g>
+      <g class="node store"><rect x="460" y="30" width="160" height="36" rx="4"/><text x="540" y="48">DB messages</text></g>
+      <g class="node service"><rect x="440" y="260" width="110" height="36" rx="4"/><text x="495" y="278">Push service</text></g>
+      <g class="node client"><rect x="580" y="260" width="90" height="36" rx="4"/><text x="625" y="278">FCM/APNs</text></g>
+      <path class="edge" d="M100,58 L130,126"/>
+      <path class="edge" d="M100,218 L130,150"/>
+      <path class="edge" d="M230,132 L268,64"/>
+      <path class="edge" d="M230,144 L268,212"/>
+      <path class="edge" d="M400,52 H458"/>
+      <path class="edge" d="M400,66 L470,118"/>
+      <path class="edge async" d="M470,158 L402,206"/>
+      <path class="edge async" d="M400,70 L470,258"/>
+      <path class="edge" d="M550,278 H578"/>
+      <text class="label" x="180" y="100">WebSocket (stateful)</text>
+      <text class="label" x="510" y="100">publish ke server 7</text>
+      <text class="label" x="420" y="190">subscribe</text>
+      <text class="label" x="560" y="235">B offline</text>
+      <text class="label" x="335" y="290">heartbeat 30 dtk → presence TTL 60 dtk</text>
+    </svg>
+    <figcaption>v2: banyak chat server stateful; registry di Redis memberi tahu server mana yang memegang koneksi B; pub/sub at-most-once ditutup oleh pesan tersimpan + seq; B offline mendapat push notification lalu sinkron dari seq terakhir.</figcaption>
+    </figure>
+    <p>Alur kirim: A → server 3: simpan dengan seq berikutnya → ack ke A → baca registry B → B di server 7: publish ke channel server 7 → server 7 mendorong ke B. Kalau B tidak ada di registry: push notification lewat FCM/APNs.
+      Alur reconnect: B terhubung (registry diperbarui) → kirim seq terakhir per percakapan → server mengirim pesan setelahnya.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Koneksi, presence, dan ordering</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0034" data-bank-topic="kasus-chat-koneksi" data-stack></div>
+  <div class="quiz" data-bank-lesson="0034" data-bank-topic="kasus-chat-ordering" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Desain v1 chat Anda satu chat server WebSocket. Bagaimana Anda mengembangkannya untuk 3 juta koneksi bersamaan, dengan presence, urutan pesan, dan pesan offline?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"3 juta koneksi tidak muat di satu server, jadi saya jalankan banyak chat server di belakang load balancer yang mendukung WebSocket. Koneksinya stateful: B hanya bisa dicapai lewat server yang memegang koneksinya, jadi saya simpan session registry user ke server di Redis, dan server pengirim mem-publish pesan ke channel server penerima. Redis Pub/Sub at-most-once, tapi pesan sudah disimpan sebelum ack, jadi yang terlewat diambil ulang lewat seq. Heartbeat 30 detik menjaga koneksi tetap hidup, karena proxy seperti nginx menutup koneksi diam setelah 60 detik; heartbeat yang sama memperbarui key presence di Redis dengan TTL 60 detik, sekitar 100.000 penulisan per detik. Urutan memakai seq naik per percakapan yang diberi server, bukan jam client. Penerima offline mendapat push notification lewat FCM atau APNs, lalu saat terhubung mengirim seq terakhir per percakapan dan mengambil sisanya. Client juga harus siap reconnect dengan jitter, karena deploy atau batas durasi koneksi memutus koneksi."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>banyak chat server + load balancer; koneksi stateful dan session registry user → server?</li>
+      <li>routing antar server lewat pub/sub, dengan trade-off at-most-once yang ditutup oleh pesan tersimpan + seq?</li>
+      <li>heartbeat (Ping/Pong) karena timeout koneksi diam, dan presence sebagai key dengan TTL?</li>
+      <li>ordering: seq naik per percakapan dari server, bukan timestamp client; gap seq memicu pengambilan ulang?</li>
+      <li>pesan offline: simpan dulu, push notification FCM/APNs, sinkron dari seq terakhir saat reconnect?</li>
+      <li>membenarkan komponen dengan angka (banyak server karena 3 juta koneksi; Redis presence karena ±100.000 heartbeat/detik)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://redis.io/docs/latest/develop/pubsub/">Redis docs: Pub/Sub</a>, ±15 menit. Bagian "Delivery semantics" menjelaskan kenapa pub/sub tidak boleh menjadi satu-satunya jalur pesan, dan kapan Redis Streams lebih cocok.
+</div>
+
+<p>Modul Studi kasus selesai. Berikutnya, <a href="0035-review-studi-kasus.html">lesson 0035</a>: Review 4, studi kasus + topik lemah dari review sebelumnya.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana tanda 'sudah dibaca' bekerja di grup?", "apa yang terjadi pada registry kalau chat server mati mendadak?", atau "kapan pub/sub perlu diganti Redis Streams atau Kafka?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nginx.org/en/docs/http/websocket.html">[1] nginx docs: WebSocket proxying</a> ·
+  <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-execution-service-websocket-limits-table.html">[2] AWS docs: Quotas for configuring and running a WebSocket in API Gateway</a> ·
+  <a href="https://redis.io/docs/latest/develop/pubsub/">[3] Redis docs: Pub/Sub (delivery semantics)</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc6455.html#section-5.5.2">[4] RFC 6455: The WebSocket Protocol, 5.5.2 Ping</a> ·
+  <a href="https://redis.io/docs/latest/commands/expire/">[5] Redis docs: EXPIRE</a> ·
+  <a href="https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology">[6] Apache Kafka 4.4 docs: Introduction, main concepts</a> ·
+  <a href="https://firebase.google.com/docs/cloud-messaging">[7] Firebase docs: Firebase Cloud Messaging</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0033-kasus-chat-a.html">← 0033 · Studi kasus: chat (A)</a>
+  <a href="0035-review-studi-kasus.html">0035 · Review 4: Studi kasus + topik lemah →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0034.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

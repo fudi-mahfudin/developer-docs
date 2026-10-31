@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0036 · Mock interview 45 menit: typeahead (autocomplete)</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0036 · System Design · Penutup · ±45 menit · opsional, pengecualian durasi</div>
+  <h1>Mock interview 45 menit: typeahead (autocomplete)</h1>
+  <p class="subtitle">Satu soal yang belum dibahas di track ini, dikerjakan sendiri dengan kerangka 5 langkah dan timer, lalu dinilai dengan checklist yang memberi penalti untuk over-engineering</p>
+</header>
+
+<p>
+  Lesson ini <strong>opsional</strong> dan merupakan satu-satunya pengecualian durasi di track ini: ±45 menit, sama dengan satu ronde interview.
+  Kerangkanya sama dengan <a href="0027-kerangka-5-langkah.html">lesson 0027</a>, tapi kali ini tidak ada penjelasan sebelum Anda menjawab.
+  Soalnya, typeahead, sengaja tidak muncul di studi kasus 0028–0034, jadi Anda tidak bisa menjawab dari hafalan.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Rancang typeahead untuk kotak pencarian dengan 10 juta DAU"</em> dalam 45 menit tanpa catatan,
+  mengikuti lima langkah sesuai waktu, memulai dari desain v1 paling sederhana, dan membenarkan setiap komponen tambahan dengan angka.
+  Nilainya minimal 4 dari 6 poin checklist setelah penalti.
+</div>
+
+<!-- ============ ATURAN ============ -->
+<h2>Aturan main</h2>
+<ol>
+  <li>Siapkan kertas atau whiteboard. Jawab dengan suara keras, seolah interviewer duduk di depan Anda. Merekam suara sendiri sangat membantu saat menilai.</li>
+  <li>Tekan <strong>Mulai</strong>. Timer pindah segmen sendiri, seperti interviewer yang memotong: kalau waktu langkah habis, lanjut ke langkah berikutnya.</li>
+  <li>Jangan buka jawaban contoh selama mock. Buka per langkah <em>setelah</em> timer selesai, lalu bandingkan.</li>
+  <li>Kalau Anda butuh angka yang tidak ada di soal, ajukan asumsi dengan suara keras, seperti di interview sungguhan. Asumsi Anda boleh berbeda dari jawaban contoh selama dipakai secara konsisten.</li>
+</ol>
+
+<blockquote>"Kami ingin menambah typeahead (autocomplete) di kotak pencarian aplikasi kami: saat user mengetik, muncul saran pencarian. Aplikasi kami punya 10 juta user aktif harian. Rancang sistemnya." (45 menit)</blockquote>
+
+<div class="timer" data-segments="Requirement:5,Estimasi:5,API+data:7,High-level:13,Deep dive:15"></div>
+
+<!-- ============ LANGKAH 1 ============ -->
+<h2>Langkah 1 — Klarifikasi requirement (±5 menit)</h2>
+<p>Tulis 3–5 functional requirement dan non-functional requirement dalam angka. Pertanyaan klarifikasi standar ada di lesson 0027.</p>
+<details>
+  <summary>Lihat jawaban contoh langkah 1</summary>
+  <ul>
+    <li><strong>Functional:</strong> setiap kali user mengetik, tampilkan maksimal 10 saran yang diawali teks yang sudah diketik (prefix), diurutkan berdasarkan popularitas pencarian. Di luar scope: koreksi salah ketik, saran personal per user, banyak bahasa.</li>
+    <li><strong>Skala (asumsi, disetujui interviewer):</strong> 10 juta DAU, 10 pencarian per user per hari, ±10 juta term unik.</li>
+    <li><strong>Latency:</strong> p99 di bawah 100 ms, karena saran harus muncul saat user masih mengetik.</li>
+    <li><strong>Consistency:</strong> urutan popularitas boleh telat ±1 jam. Term yang baru viral tidak harus langsung muncul.</li>
+    <li><strong>Availability:</strong> 99,9%. Kalau typeahead mati, pencarian biasa tetap berjalan, jadi fitur ini boleh degradasi (kotak pencarian tanpa saran).</li>
+  </ul>
+  <p>Kalimat kunci: "boleh telat satu jam" dan "boleh degradasi". Keduanya akan membuat desain jauh lebih murah di langkah 4 dan 5.</p>
+</details>
+
+<!-- ============ LANGKAH 2 ============ -->
+<h2>Langkah 2 — Estimasi (±5 menit)</h2>
+<p>Hitung QPS rata-rata dan puncak, rasio baca:tulis, dan ukuran data. Ingat: satu pencarian bisa menghasilkan beberapa request saran.</p>
+<details>
+  <summary>Lihat jawaban contoh langkah 2</summary>
+  <table>
+    <thead><tr><th>Besaran</th><th>Hitungan</th><th>Hasil</th></tr></thead>
+    <tbody>
+      <tr><td>Request saran</td><td>Client menunggu jeda ketikan ±100–200 ms (debounce) sebelum mengirim, jadi ±4 request per pencarian, bukan satu per huruf</td><td>10<sup>7</sup> × 10 × 4 = 4 × 10<sup>8</sup> per hari</td></tr>
+      <tr><td>QPS baca</td><td>4 × 10<sup>8</sup> ÷ 10<sup>5</sup> detik</td><td>±4.000 QPS, puncak ±8.000 (asumsi 2×)</td></tr>
+      <tr><td>Tulis</td><td>Pencarian yang benar-benar dikirim: 10<sup>8</sup> per hari, dicatat ke log (±50 byte)</td><td>±1.000 QPS log, ±5 GB per hari; dibaca batch, bukan per request</td></tr>
+      <tr><td>Data saran</td><td>±3 × 10<sup>7</sup> prefix unik (1–10 karakter) × 10 saran × ±20 byte</td><td>±6 GB, muat di memori satu node</td></tr>
+      <tr><td>Bandwidth</td><td>8.000 QPS × ±1 KB respons</td><td>±8 MB/s ≈ 64 Mbps, kecil</td></tr>
+    </tbody>
+  </table>
+  <p>Kesimpulan angka: sangat read-heavy (±4 baca per pencarian, tulis hanya ke log), data kecil, dan target latency ketat. Deep dive nanti berfokus pada jalur baca, bukan storage.</p>
+</details>
+
+<!-- ============ LANGKAH 3 ============ -->
+<h2>Langkah 3 — API dan data model (±7 menit)</h2>
+<p>Tulis 1–2 endpoint dan tabel utama dengan key-nya.</p>
+<details>
+  <summary>Lihat jawaban contoh langkah 3</summary>
+<pre><code>GET /suggest?q=ind&amp;limit=10
+  → 200 OK   { "suggestions": ["indonesia", "indomaret", "indihome", …] }
+
+Log pencarian (append-only, dari layanan search yang sudah ada)
+  term, searched_at
+
+Tabel term_counts            ← dihitung ulang batch job setiap jam dari log
+  term   text    PRIMARY KEY
+  count  bigint
+  index: (term text_pattern_ops)   ← untuk LIKE 'prefix%'</code></pre>
+  <p>
+    Kenapa <code>text_pattern_ops</code>: dokumentasi PostgreSQL menyebut operator class ini membandingkan nilai <em>"strictly character by character"</em>,
+    sehingga cocok untuk <em>"queries involving pattern matching expressions (LIKE or POSIX regular expressions)"</em> kalau database tidak memakai locale "C". <sup class="cite"><a href="https://www.postgresql.org/docs/current/indexes-opclass.html">[1]</a></sup>
+  </p>
+</details>
+
+<!-- ============ LANGKAH 4 ============ -->
+<h2>Langkah 4 — High-level design v1 (±13 menit)</h2>
+<p>Gambar diagram v1 sendiri dulu: desain paling sederhana yang memenuhi angka langkah 2. Telusuri satu request baca (user mengetik "ind") dan satu jalur tulis (pencarian masuk ke hitungan popularitas).</p>
+<details>
+  <summary>Lihat jawaban contoh langkah 4</summary>
+  <p>
+    v1: satu app server stateless dan satu PostgreSQL. Baca: <code>SELECT term FROM term_counts WHERE term LIKE 'ind%' ORDER BY count DESC LIMIT 10</code>.
+    Tulis tidak lewat request saran sama sekali: batch job setiap jam membaca log pencarian, menghitung ulang <code>term_counts</code>, lalu menggantinya.
+    Karena popularitas boleh telat satu jam, tidak ada counter yang ditulis setiap ketikan.
+  </p>
+  <div class="flow">
+    <span class="box">Log pencarian</span><span class="arrow">→</span>
+    <span class="box">Batch job per jam</span><span class="arrow">→</span>
+    <span class="box">term_counts</span><span class="arrow">→</span>
+    <span class="box">GET /suggest</span>
+  </div>
+  <figure class="diagram-fig">
+  <svg class="diagram" viewBox="0 0 640 170" role="img" aria-label="Desain v1 typeahead: client ke satu app server, app server ke PostgreSQL; batch job per jam menulis term_counts dari log pencarian">
+    <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    <g class="node client"><rect x="10" y="40" width="80" height="36" rx="4"/><text x="50" y="58">Client</text></g>
+    <g class="node service"><rect x="150" y="40" width="130" height="36" rx="4"/><text x="215" y="58">App server</text></g>
+    <g class="node store"><rect x="350" y="40" width="140" height="36" rx="4"/><text x="420" y="58">PostgreSQL</text></g>
+    <g class="node store"><rect x="350" y="120" width="140" height="36" rx="4"/><text x="420" y="138">Log pencarian</text></g>
+    <g class="node service"><rect x="520" y="80" width="110" height="36" rx="4"/><text x="575" y="98">Batch job</text></g>
+    <path class="edge" d="M90,58 H148"/>
+    <path class="edge" d="M280,58 H348"/>
+    <path class="edge async" d="M490,138 L530,118"/>
+    <path class="edge async" d="M540,80 L492,64"/>
+    <text class="label" x="119" y="30">GET /suggest</text>
+    <text class="label" x="314" y="30">LIKE 'ind%'</text>
+    <text class="label" x="575" y="60">per jam</text>
+  </svg>
+  <figcaption>v1: cukup untuk mulai. Belum ada cache, load balancer, atau queue, karena belum ada angka yang menuntutnya.</figcaption>
+  </figure>
+  <p>Kalimat untuk interviewer: "Untuk mulai cukup satu app server dan PostgreSQL dengan index prefix. Kalau p99 melewati 100 ms, saya ukur query-nya dulu, lalu mulai dari perubahan termurah."</p>
+</details>
+
+<!-- ============ LANGKAH 5 ============ -->
+<h2>Langkah 5 — Deep dive, bottleneck, trade-off (±15 menit)</h2>
+<p>Cari bottleneck pertama menurut angka, tambahkan satu komponen per alasan, dan sebut biayanya. Gambar evolusi v2 sendiri dulu.</p>
+<details>
+  <summary>Lihat jawaban contoh langkah 5</summary>
+  <p>Evolusi dari v1 ke v2, satu komponen per alasan:</p>
+  <ol>
+    <li><strong>Ukur dulu.</strong> <code>EXPLAIN ANALYZE</code> menjalankan query dan menampilkan waktu sebenarnya per node rencana. <sup class="cite"><a href="https://www.postgresql.org/docs/current/using-explain.html">[2]</a></sup>
+      Hasil yang diharapkan: prefix panjang ("indom") cepat, prefix pendek ("a", "in") lambat, karena index memang menemukan barisnya tapi <code>ORDER BY count</code> harus menimbang ratusan ribu baris yang cocok.</li>
+    <li><strong>p99 prefix pendek &gt; 100 ms:</strong> precompute. Batch job yang sama menulis tabel <code>prefix_topk(prefix PRIMARY KEY, suggestions)</code> berisi 10 saran teratas untuk setiap prefix 1–10 karakter (±6 GB).
+      Baca menjadi satu lookup primary key. Ini trie (prefix tree) yang "diratakan" menjadi tabel; trie di memori adalah alternatif yang sama cepatnya tapi harus dibangun ulang dan direplikasi sendiri.
+      Biayanya: batch job lebih lama, dan saran tetap telat sampai satu jam, yang sudah diizinkan requirement.</li>
+    <li><strong>8.000 QPS puncak:</strong> saran untuk satu prefix hanya berubah setiap jam, jadi respons boleh di-cache. RFC 9111: directive <code>max-age</code> menyatakan respons <em>"is to be considered stale after its age is greater than the specified number of seconds"</em>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9111.html#cache-response-directive.max-age">[3]</a></sup>
+      <code>Cache-Control: public, max-age=3600</code> membuat browser dan CDN menyerap prefix populer. Biayanya: saran bisa basi sampai satu jam lebih, dan CDN adalah biaya bulanan.</li>
+    <li><strong>Availability 99,9%:</strong> server kedua di belakang load balancer. Server stateless, jadi tidak ada state yang dipindah.</li>
+    <li><strong>Kalau database masih jenuh setelah cache:</strong> salin <code>prefix_topk</code> (±6 GB) ke Redis sebagai key-value. Sorted set Redis bisa mencari rentang leksikografis kalau semua anggotanya memakai score yang sama <sup class="cite"><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">[4]</a></sup>,
+      tapi hasilnya diurutkan menurut abjad, bukan popularitas; karena itu key per prefix berisi daftar top-10 lebih cocok.</li>
+    <li><strong>Yang tidak ditambahkan:</strong> sharding (6 GB muat di satu node), Kafka + stream processing (popularitas boleh telat satu jam), microservices (satu tim, satu fitur).
+      SRE Book menyebut kompleksitas seperti ini <em>accidental complexity</em>, yang <em>"can be resolved with engineering effort"</em>, berbeda dengan kompleksitas yang melekat pada masalahnya. <sup class="cite"><a href="https://sre.google/sre-book/simplicity/">[5]</a></sup>
+      Sebut sinyal kapan naik: kalau requirement berubah menjadi "trending dalam 1 menit", baru stream processing dibenarkan.</li>
+  </ol>
+  <figure class="diagram-fig">
+  <svg class="diagram" viewBox="0 0 640 240" role="img" aria-label="Desain v2 typeahead: client ke CDN, load balancer, dua app server, Redis prefix_topk, PostgreSQL; batch job per jam menulis prefix_topk">
+    <g class="node client"><rect x="10" y="100" width="70" height="36" rx="4"/><text x="45" y="118">Client</text></g>
+    <g class="node cache"><rect x="100" y="100" width="70" height="36" rx="4"/><text x="135" y="118">CDN</text></g>
+    <g class="node service"><rect x="190" y="100" width="100" height="36" rx="4"/><text x="240" y="118">Load balancer</text></g>
+    <g class="node service"><rect x="310" y="50" width="80" height="36" rx="4"/><text x="350" y="68">App 1</text></g>
+    <g class="node service"><rect x="310" y="150" width="80" height="36" rx="4"/><text x="350" y="168">App 2</text></g>
+    <g class="node cache"><rect x="420" y="20" width="110" height="36" rx="4"/><text x="475" y="38">Redis (top-k)</text></g>
+    <g class="node store"><rect x="420" y="120" width="110" height="36" rx="4"/><text x="475" y="138">prefix_topk</text></g>
+    <g class="node service"><rect x="545" y="190" width="90" height="36" rx="4"/><text x="590" y="208">Batch job</text></g>
+    <path class="edge" d="M80,118 H98"/>
+    <path class="edge" d="M170,118 H188"/>
+    <path class="edge" d="M290,112 L308,76"/>
+    <path class="edge" d="M290,124 L308,160"/>
+    <path class="edge" d="M390,62 L418,44"/>
+    <path class="edge" d="M390,160 L418,146"/>
+    <path class="edge async" d="M570,190 L520,158"/>
+    <text class="label" x="135" y="90">max-age=3600</text>
+    <text class="label" x="590" y="172">per jam</text>
+  </svg>
+  <figcaption>v2: setiap kotak tambahan punya angka. CDN untuk 8.000 QPS prefix populer; dua app server untuk 99,9%; <code>prefix_topk</code> untuk p99 prefix pendek; Redis hanya kalau database masih jenuh setelah cache.</figcaption>
+  </figure>
+</details>
+
+<!-- ============ PENILAIAN ============ -->
+<section class="exercise">
+  <h2>Penilaian — Nilai jawaban Anda sendiri</h2>
+  <p>Setelah timer selesai dan kelima jawaban contoh dibuka, nilai rekaman atau catatan Anda dengan checklist ini. Soal yang sama ada di bank soal sebagai soal lisan.</p>
+  <blockquote>"Rancang sistem typeahead (autocomplete) untuk kotak pencarian dengan 10 juta DAU. Anda punya 45 menit." (mock penuh, 45 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Saya klarifikasi dulu: saran 10 teratas yang diawali prefix, diurutkan popularitas; 10 juta DAU, 10 pencarian per hari; p99 di bawah 100 ms karena user sedang mengetik; popularitas boleh telat satu jam. Estimasinya: dengan debounce sekitar 4 request per pencarian, jadi 4 × 10⁸ per hari, sekitar 4.000 QPS rata-rata dan 8.000 puncak; data saran sekitar 6 GB. API-nya GET /suggest?q=. v1 sederhana dulu: satu app server dan PostgreSQL, tabel term_counts dengan index text_pattern_ops, query LIKE prefix ORDER BY count LIMIT 10, dan batch job per jam yang menghitung ulang dari log. Setelah saya ukur, prefix pendek akan lambat karena cocok dengan jutaan baris, jadi batch job yang sama menulis tabel prefix_topk sehingga baca menjadi satu lookup primary key. Karena saran hanya berubah tiap jam, saya pasang Cache-Control max-age=3600 supaya browser dan CDN menyerap prefix populer. Server kedua di belakang load balancer untuk availability. Sharding belum perlu karena 6 GB muat di satu node; Kafka real-time juga tidak, karena requirement mengizinkan telat satu jam."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>requirement dalam angka: DAU, p99 &lt; 100 ms, popularitas boleh telat ±1 jam?</li>
+      <li>estimasi: ±4.000 QPS rata-rata, puncak ±8.000, data saran ±6 GB?</li>
+      <li>API GET /suggest?q= dan data model term_counts lalu prefix_topk?</li>
+      <li>v1 sederhana dulu: satu app server + PostgreSQL dengan index prefix, satu request ditelusuri?</li>
+      <li>bottleneck prefix pendek diukur dulu, lalu top-k per prefix dan Cache-Control?</li>
+      <li>setiap komponen dibenarkan dengan angka (cache untuk 8.000 QPS, sharding belum perlu untuk 6 GB)?</li>
+    </ul>
+    <p class="note">Penalti: kurangi satu poin untuk setiap komponen tanpa alasan angka yang Anda gambar (Kafka "untuk jaga-jaga", sharding untuk 6 GB, microservices, Elasticsearch di v1). Ini tanda over-engineering yang dinilai negatif oleh interviewer. Kurangi satu poin juga kalau Anda masih di langkah 3 saat segmen High-level dimulai.</p>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Cek cepat setelah mock</h2>
+  <p>Kuis singkat untuk mengunci angka dan keputusan utama. Ini feedback cepat, bukan bukti penguasaan; yang dicatat tetap hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0036" data-bank-topic="mock-typeahead-v1" data-stack></div>
+  <div class="quiz" data-bank-lesson="0036" data-bank-topic="mock-typeahead-skala" data-stack></div>
+</section>
+
+<h2>Setelah mock</h2>
+<ul>
+  <li>Catat langkah yang kehabisan waktu dan poin checklist yang terlewat. Itu topik yang perlu diulang.</li>
+  <li>Baca ulang tiga cheat sheet: <a href="../reference/angka-dan-estimasi.html">angka dan estimasi</a> · <a href="../reference/kerangka-5-langkah.html">kerangka 5 langkah</a> · <a href="../reference/trade-off-komponen.html">trade-off komponen</a>.</li>
+  <li>Ulangi mock dengan soal lain, misalnya: pastebin, leaderboard game, sistem pemesanan tiket, atau penyimpanan file. Minta agent menjadi interviewer.</li>
+</ul>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.postgresql.org/docs/current/indexes-opclass.html">PostgreSQL docs: Operator Classes and Operator Families</a>, ±10 menit. Kapan index B-tree bisa dipakai untuk <code>LIKE 'prefix%'</code>.
+</div>
+
+<p>Track System Design selesai. Kembali ke <a href="../index.html">indeks</a> untuk mengulang lesson atau review yang lemah.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Penutup") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "jadilah interviewer dan beri saya soal mock baru", "nilai jawaban mock saya dengan checklist ini", atau "bagaimana menambah saran personal per user tanpa merusak cache?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.postgresql.org/docs/current/indexes-opclass.html">[1] PostgreSQL docs: Operator Classes and Operator Families</a> ·
+  <a href="https://www.postgresql.org/docs/current/using-explain.html">[2] PostgreSQL docs: Using EXPLAIN</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9111.html#cache-response-directive.max-age">[3] RFC 9111: HTTP Caching, 5.2.2.1 max-age</a> ·
+  <a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">[4] Redis docs: Sorted sets</a> ·
+  <a href="https://sre.google/sre-book/simplicity/">[5] Google SRE Book, bab 9: Simplicity</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0035-review-studi-kasus.html">← 0035 · Review 4: Studi kasus + topik lemah</a>
+  <a href="../index.html">Indeks →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0036.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/timer.js"></script>
+</body>
+</html>

@@ -10,4 +10,4 @@ Lima label bawaan (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-h
 
 ### Domain docs
 
-Multi-context: `GLOSSARY-MAP.md` di root menunjuk `dotnet/GLOSSARY.md` (track .NET + Angular + SQL) dan `fhir/GLOSSARY.md` (track FHIR). `docs/adr/` di root. Struktur: satu folder per track (`dotnet/`, `fhir/`); komponen bersama di `assets/`, test di `tests/{shared,dotnet,fhir}/`, draf STAR lintas track di `star/`. See `docs/adr/0001-struktur-folder-per-track.md`. See `docs/agents/domain.md`.
+Multi-context: `GLOSSARY-MAP.md` di root menunjuk `dotnet/GLOSSARY.md` (track .NET + Angular + SQL), `fhir/GLOSSARY.md` (track FHIR), dan `sysdesign/GLOSSARY.md` (track system design). `docs/adr/` di root. Struktur: satu folder per track (`dotnet/`, `fhir/`, `sysdesign/`); komponen bersama di `assets/`, test di `tests/{shared,dotnet,fhir,sysdesign}/`, draf STAR lintas track di `star/`. See `docs/adr/0001-struktur-folder-per-track.md`. Track baru mengikuti `docs/adr/0003-konvensi-materi-baru.md`. See `docs/agents/domain.md`.

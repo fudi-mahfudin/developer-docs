@@ -2,6 +2,8 @@
 
 Status: diterima (2026-10-27)
 
+Konvensi umumnya diangkat menjadi [ADR 0003](./0003-konvensi-materi-baru.md) untuk track baru.
+
 ## Konteks
 
 Track FHIR dirancang untuk deadline "1 hari (6–8 jam)": 7 lesson besar ±50–100 menit dengan slot jam (08.00–17.30), satu seam di akhir hari (0006), dan satu lesson "malam sebelum interview" (0007). Deadline itu sudah tidak berlaku, dan lesson sebesar itu sulit dicicil.

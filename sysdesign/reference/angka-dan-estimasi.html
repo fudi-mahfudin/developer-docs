@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Angka dan estimasi back-of-envelope</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · System Design · Angka dan estimasi</div>
+<h1>Angka dan estimasi</h1>
+<p class="subtitle">Ringkasan satu halaman untuk dibaca ulang menjelang interview. Dari Lesson <a href="../lessons/0003-latency-dan-throughput.html">0003</a> (latency, percentile, angka yang perlu dihafal) dan <a href="../lessons/0004-estimasi-back-of-envelope.html">0004</a> (QPS, storage, bandwidth), ditambah tabel availability dari <a href="../lessons/0027-kerangka-5-langkah.html">0027</a>.</p>
+
+<h2>Angka latency (urutan, bukan angka persis)</h2>
+<table>
+  <thead><tr><th>Operasi</th><th>Waktu</th><th>Artinya untuk desain</th></tr></thead>
+  <tbody>
+    <tr><td>Main memory reference</td><td>100 ns</td><td>Memori jauh lebih murah dari apa pun lewat jaringan: dasar cache</td></tr>
+    <tr><td>Round trip di dalam datacenter</td><td>0,5 ms</td><td>Sepuluh panggilan berurutan ke service/database = 5 ms</td></tr>
+    <tr><td>Disk seek (hard disk berputar)</td><td>10 ms</td><td>Akses acak mahal; index menghindari baca acak yang tidak perlu</td></tr>
+    <tr><td>Paket California → Belanda → California</td><td>150 ms</td><td>Jarak fisik tidak bisa dikalahkan kode: dekatkan data ke user (CDN)</td></tr>
+  </tbody>
+</table>
+<p>Sumber: Jeff Dean, "Numbers Everyone Should Know" (2009). <sup class="cite"><a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[1]</a></sup> Angka disk berasal dari 2009; yang dihafal adalah urutannya: memori ≪ jaringan datacenter ≪ disk acak ≪ antarbenua.</p>
+
+<h2>Latency, throughput, percentile</h2>
+<ul>
+  <li><strong>Latency</strong> = waktu satu request (ms). <strong>Throughput</strong> = request per detik (QPS). Menambah server menaikkan throughput, tidak mempercepat satu request yang lambat.</li>
+  <li>Latency adalah distribusi: tulis target sebagai percentile, mis. <strong>p99 &lt; 300 ms</strong>, bukan rata-rata. Rata-rata menyembunyikan ekor. <sup class="cite"><a href="https://sre.google/sre-book/service-level-objectives/">[2]</a></sup></li>
+  <li>Fan-out memperbesar ekor: halaman yang memanggil 100 service, masing-masing 1% lambat, kena minimal satu panggilan lambat dengan peluang 1 − 0,99<sup>100</sup> ≈ 63%.</li>
+</ul>
+
+<h2>Dua angka bantu dan satuan</h2>
+<table>
+  <thead><tr><th>Angka</th><th>Pakai untuk</th></tr></thead>
+  <tbody>
+    <tr><td>1 hari = 86.400 detik ≈ 10⁵ detik</td><td>10 juta request per hari = 10⁷ / 10⁵ = 100 QPS</td></tr>
+    <tr><td>2¹⁰ ≈ 10³ (KB) · 2²⁰ ≈ 10⁶ (MB) · 2³⁰ ≈ 10⁹ (GB) · 2⁴⁰ ≈ 10¹² (TB)</td><td>Satu baris data kecil ±1 KB; satu foto ratusan KB sampai beberapa MB; memori server puluhan sampai ratusan GB</td></tr>
+    <tr><td>1 byte = 8 bit</td><td>Jaringan dalam bit per detik, storage dalam byte: 100 MB/s = 800 Mbps</td></tr>
+  </tbody>
+</table>
+
+<h2>Empat rumus</h2>
+<div class="flow">
+  <span class="box">DAU × request/user/hari</span><span class="arrow">→</span>
+  <span class="box">÷ 10⁵ = QPS rata-rata</span><span class="arrow">→</span>
+  <span class="box">× faktor puncak = QPS puncak</span><span class="arrow">→</span>
+  <span class="box">× ukuran = bandwidth / storage</span>
+</div>
+<ul>
+  <li><strong>QPS</strong> = DAU × request per user per hari / 10⁵. DAU = user yang aktif minimal sekali sehari, bukan akun terdaftar.</li>
+  <li><strong>QPS puncak</strong> = QPS rata-rata × faktor puncak (asumsi, sering 2–3×). Kalau 30% request datang dalam satu jam: 0,3 × total / 3.600.</li>
+  <li><strong>Storage</strong> = record baru per hari × ukuran × 365 × tahun disimpan (+ index dan replika).</li>
+  <li><strong>Bandwidth</strong> = QPS × ukuran request/response. Hitung baca dan tulis terpisah.</li>
+</ul>
+
+<h2>Contoh baku</h2>
+<table>
+  <thead><tr><th>Soal</th><th>Hitungan</th><th>Kesimpulan</th></tr></thead>
+  <tbody>
+    <tr><td>1.000 DAU × 20 request</td><td>20.000 / 10⁵ = 0,2 QPS; puncak ±2 QPS; 1 KB × 1.000/hari ≈ 365 MB/tahun</td><td>Satu server + satu database. Tanpa LB, cache, queue</td></tr>
+    <tr><td>Kapasitas kasar satu server</td><td>±10 ms per request, satu request sekaligus → 1.000 / 10 = 100 request/detik</td><td>Patokan kapan beberapa server mulai masuk akal</td></tr>
+    <tr><td>Chat 10 juta DAU × 40 pesan</td><td>4 × 10⁸ / 10⁵ = 4.000 QPS, puncak ±8.000; × 100 byte = 40 GB/hari ≈ 15 TB/tahun</td><td>Beberapa server; pikirkan masa simpan dan pembagian data</td></tr>
+    <tr><td>Foto 1 juta DAU × 50 tampilan × 200 KB</td><td>500 QPS × 200 KB = 100 MB/s = 800 Mbps</td><td>Sinyal CDN, bukan sinyal banyak server</td></tr>
+  </tbody>
+</table>
+
+<h2>Availability: jatah downtime</h2>
+<table>
+  <thead><tr><th>Target</th><th>Downtime per bulan (30 hari)</th></tr></thead>
+  <tbody>
+    <tr><td>99%</td><td>±7,2 jam</td></tr>
+    <tr><td>99,9%</td><td>±43,2 menit</td></tr>
+    <tr><td>99,99%</td><td>±4,32 menit</td></tr>
+  </tbody>
+</table>
+<p>Sumber: Google SRE Book, Availability Table. <sup class="cite"><a href="https://sre.google/sre-book/availability-table/">[3]</a></sup></p>
+
+<p><strong>Aturan di interview:</strong> bulatkan bebas, ucapkan asumsi dengan suara keras, maksimal ±5 menit. Estimasi punya satu fungsi: menentukan apakah komponen tambahan dibutuhkan.</p>
+
+<p class="note sources">
+  <a href="https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf">[1] Jeff Dean, LADIS 2009 keynote ("Numbers Everyone Should Know")</a> ·
+  <a href="https://sre.google/sre-book/service-level-objectives/">[2] Google SRE Book, bab 4: Service Level Objectives</a> ·
+  <a href="https://sre.google/sre-book/availability-table/">[3] Google SRE Book, Appendix A: Availability Table</a>
+</p>
+<p class="note">Lesson: <a href="../lessons/0003-latency-dan-throughput.html">0003</a> · <a href="../lessons/0004-estimasi-back-of-envelope.html">0004</a> · Cheat sheet lain: <a href="kerangka-5-langkah.html">kerangka 5 langkah</a> · <a href="trade-off-komponen.html">trade-off komponen</a> · <a href="../index.html">Indeks</a></p>
+</main>
+</body>
+</html>

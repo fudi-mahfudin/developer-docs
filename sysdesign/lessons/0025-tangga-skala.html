@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0025 · Tangga skala: ukur dulu, arsitektur baru jalan terakhir</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0025 · System Design · Modul Reliabilitas &amp; API · ±20 menit</div>
+  <h1>Tangga skala: ukur dulu, arsitektur baru jalan terakhir</h1>
+  <p class="subtitle">Delapan anak tangga dari mengukur sampai memecah service, biaya dan risiko masing-masing, sinyal kapan naik, dan satu kalimat yang membuat Anda terdengar senior tanpa over-engineering</p>
+</header>
+
+<p>Sebelumnya, di <a href="0024-monolith-vs-microservices.html">lesson 0024</a>, memecah service disebut sebagai jalan terakhir. Setiap lesson komponen, mulai <a href="0005-vertical-horizontal-stateless.html">lesson 0005</a>, punya bagian "Kapan tidak perlu", sesuai janji di <a href="0001-apa-itu-system-design.html">lesson 0001</a>. Lesson ini merangkai semuanya menjadi satu urutan yang bisa Anda ucapkan di interview mana pun.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyusun delapan anak tangga skala dari ingatan (ukur → query/index → cache → scale vertical → read replica → queue → sharding → pecah service), menyebut biaya, risiko, dan sinyal untuk naik ke setiap anak tangga, lalu mengucapkan keputusan dengan pola <em>"untuk skala ini cukup X; kalau metrik Y melewati Z, langkah berikutnya W"</em>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Prinsipnya: ukur, lalu perubahan termurah</h2>
+<p>
+  Setiap komponen baru memecahkan satu masalah dan menambah biaya: server yang harus dijalankan, kegagalan baru yang harus ditangani, dan hal baru yang harus dipahami tim. SRE Book menyebut "boring" sebagai sifat positif untuk software, dan membedakan kompleksitas <em>esensial</em> (melekat pada masalah) dari kompleksitas <em>aksidental</em> (yang kita tambahkan sendiri dan bisa dihilangkan). <sup class="cite"><a href="https://sre.google/sre-book/simplicity/">[1]</a></sup>
+  Tangga skala adalah cara menjaga kompleksitas aksidental tetap kecil: naik satu anak tangga hanya kalau angka menuntut.
+</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 260" role="img" aria-label="Tangga skala delapan anak tangga dari kiri bawah ke kanan atas: ukur, index, cache, vertical, replica, queue, sharding, pecah service; biaya dan risiko naik ke kanan">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="190" width="72" height="34" rx="4"/><text x="46" y="207">1 ukur</text></g>
+  <g class="node service"><rect x="88" y="166" width="72" height="34" rx="4"/><text x="124" y="183">2 index</text></g>
+  <g class="node cache"><rect x="166" y="142" width="72" height="34" rx="4"/><text x="202" y="159">3 cache</text></g>
+  <g class="node service"><rect x="244" y="118" width="72" height="34" rx="4"/><text x="280" y="135">4 vertical</text></g>
+  <g class="node store"><rect x="322" y="94" width="72" height="34" rx="4"/><text x="358" y="111">5 replica</text></g>
+  <g class="node queue"><rect x="400" y="70" width="72" height="34" rx="4"/><text x="436" y="87">6 queue</text></g>
+  <g class="node store"><rect x="478" y="46" width="72" height="34" rx="4"/><text x="514" y="63">7 sharding</text></g>
+  <g class="node service"><rect x="556" y="22" width="76" height="34" rx="4"/><text x="594" y="39">8 pecah</text></g>
+  <path class="edge" d="M10,245 H630"/>
+  <text class="label" x="320" y="236">biaya, risiko, dan kompleksitas naik ke kanan</text>
+</svg>
+<figcaption>Anak tangga 1–3 hampir tidak mengubah arsitektur. Anak tangga 4–5 menambah mesin. Anak tangga 6–8 mengubah cara sistem bekerja dan paling mahal dibatalkan.</figcaption>
+</figure>
+
+<!-- ============ 2 ============ -->
+<h2>2. Delapan anak tangga</h2>
+<p>Angka sinyal di tabel adalah contoh titik awal yang masuk akal untuk interview, bukan aturan baku. Yang penting, setiap kenaikan punya angka yang disebut.</p>
+<table>
+  <thead><tr><th>Anak tangga</th><th>Biaya</th><th>Risiko</th><th>Sinyal untuk naik ke sini</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1. Ukur</strong>: metrik, profiling, query plan</td><td>Hampir nol</td><td>Tidak ada</td><td>Selalu pertama. Empat golden signals (latency, traffic, errors, saturation) <sup class="cite"><a href="https://sre.google/sre-book/monitoring-distributed-systems/">[2]</a></sup> dan <code>EXPLAIN</code> untuk melihat query plan <sup class="cite"><a href="https://www.postgresql.org/docs/current/using-explain.html">[3]</a></sup></td></tr>
+    <tr><td><strong>2. Perbaiki kode, query, index</strong></td><td>Jam kerja engineer</td><td>Kecil; index menambah overhead saat menulis <sup class="cite"><a href="https://www.postgresql.org/docs/current/indexes-intro.html">[4]</a></sup></td><td><code>EXPLAIN</code> menunjukkan scan seluruh tabel baris demi baris <sup class="cite"><a href="https://www.postgresql.org/docs/current/indexes-intro.html">[4]</a></sup>, query N+1, atau satu query mendominasi waktu</td></tr>
+    <tr><td><strong>3. Cache</strong> (<a href="0013-pola-cache.html">0013</a>)</td><td>Satu komponen (Redis) atau cache di proses</td><td>Data basi; invalidation <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[5]</a></sup></td><td>Beban didominasi baca berulang ke key yang sama, data jarang berubah</td></tr>
+    <tr><td><strong>4. Scale vertical</strong> (<a href="0005-vertical-horizontal-stateless.html">0005</a>)</td><td>Mesin lebih mahal, tanpa ubah kode</td><td>Ada batas atas; tetap satu titik gagal</td><td>CPU atau memori di atas ±70% terus-menerus setelah query diperbaiki</td></tr>
+    <tr><td><strong>5. Read replica</strong> (<a href="0009-index-dan-replication.html">0009</a>)</td><td>Satu database lagi, routing baca</td><td>Replication lag: user tidak langsung melihat tulisannya sendiri</td><td>Sebagian besar query adalah baca dan primary tetap jenuh; standby bisa melayani query read-only <sup class="cite"><a href="https://www.postgresql.org/docs/current/hot-standby.html">[6]</a></sup></td></tr>
+    <tr><td><strong>6. Asinkron / queue</strong> (<a href="0016-queue-dan-pubsub.html">0016</a>)</td><td>Broker + worker</td><td>Eventual, pesan ganda, butuh idempotency</td><td>Pekerjaan lambat di jalur request (email, gambar) atau beban yang naik-turun tajam; queue menjadi buffer yang meratakan puncak <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling">[7]</a></sup></td></tr>
+    <tr><td><strong>7. Sharding</strong> (<a href="0010-sharding-dan-consistent-hashing.html">0010</a>)</td><td>Banyak primary, logika routing</td><td>Query lintas shard, resharding, hot partition</td><td>Beban <em>tulis</em> atau ukuran data melewati satu primary terbesar yang masuk akal</td></tr>
+    <tr><td><strong>8. Pecah service</strong> (<a href="0024-monolith-vs-microservices.html">0024</a>)</td><td>Deploy, monitoring, tracing per service</td><td>Panggilan jaringan, distributed transaction, kompleksitas sistem <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/microservices">[8]</a></sup></td><td>Masalah tim (banyak tim saling menunggu deploy) atau kebutuhan skala yang sangat berbeda per bagian</td></tr>
+  </tbody>
+</table>
+
+<section class="exercise">
+  <h2>Latihan 1 — Susun tangga skala</h2>
+  <p>Susun dari yang pertama dicoba sampai yang terakhir. Ucapkan sinyal untuk naik ke setiap anak tangga dengan suara keras saat memindahkannya.</p>
+  <div class="order">
+    <ol>
+      <li>Ukur: golden signals, profiling, <code>EXPLAIN</code> query yang lambat</li>
+      <li>Perbaiki kode/query, tambah index yang hilang</li>
+      <li>Pasang cache untuk baca berulang (cache-aside + TTL)</li>
+      <li>Scale vertical: mesin yang lebih besar, tanpa ubah kode</li>
+      <li>Tambah read replica untuk beban baca</li>
+      <li>Pindahkan pekerjaan lambat ke queue (asinkron)</li>
+      <li>Sharding saat beban tulis atau data melewati satu primary</li>
+      <li>Pecah service saat masalahnya tim atau kebutuhan skala yang berbeda</li>
+    </ol>
+    <p class="explain">
+      Urutannya mengikuti biaya dan risiko. Mengukur tidak mengubah apa pun. Index dan cache tidak mengubah arsitektur. Mesin besar dan replica menambah mesin, tapi kode hampir sama. Queue, sharding, dan pecah service mengubah cara sistem bekerja (eventual consistency, routing data, panggilan jaringan) dan paling mahal dibatalkan.
+    </p>
+  </div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Anak tangga mana?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0026.</p>
+  <div class="quiz" data-bank-lesson="0025" data-bank-topic="rel-tangga-skala" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Anti-pattern: over-engineering</h2>
+<p>
+  Contoh klasik: kandidat menerima soal "aplikasi pemesanan untuk 1.000 user", lalu menggambar API gateway, sepuluh microservices, Kafka, Redis cluster, dan database yang di-shard. Hitung dulu (<a href="0004-estimasi-back-of-envelope.html">lesson 0004</a>):
+</p>
+<div class="flow">
+  <span class="box">1.000 user aktif harian</span><span class="arrow">→</span>
+  <span class="box">× ±10 request/hari = 10⁴</span><span class="arrow">→</span>
+  <span class="box">÷ 10⁵ detik/hari ≈ 0,1 QPS</span><span class="arrow">→</span>
+  <span class="box">puncak ×10 ≈ 1 QPS: satu server + satu database</span>
+</div>
+<p>
+  Satu QPS bisa dilayani hampir semua server. Setiap komponen di gambar tadi adalah kompleksitas aksidental: tidak ada angka yang membenarkannya. Interviewer membaca ini sebagai tanda kandidat menghafal arsitektur besar tanpa memahami kapan arsitektur itu dibutuhkan. "Supaya siap kalau viral" bukan pembenaran; jawaban yang kuat menyebut apa yang akan diukur dan pada angka berapa desain berubah.
+</p>
+<p>Tanda Anda mulai over-engineer:</p>
+<ul>
+  <li>Komponen muncul sebelum langkah estimasi selesai.</li>
+  <li>Anda tidak bisa menyebut angka yang membuat komponen itu perlu.</li>
+  <li>Desain v1 sudah berisi anak tangga 6–8.</li>
+  <li>Alasannya "best practice" atau "perusahaan besar memakainya", bukan bottleneck yang disebut.</li>
+</ul>
+
+<!-- ============ 4 ============ -->
+<h2>4. Cara mengucapkannya di interview</h2>
+<p>Satu pola kalimat menunjukkan bahwa Anda tahu solusi besarnya <em>dan</em> tahu kapan memakainya:</p>
+<blockquote>"Untuk skala ini cukup <strong>X</strong>; kalau metrik <strong>Y</strong> melewati <strong>Z</strong>, langkah berikutnya <strong>W</strong>."</blockquote>
+<ul>
+  <li>"Untuk skala ini cukup satu PostgreSQL dengan index di <code>customer_id</code>; kalau CPU database di atas 70% terus-menerus dan sebagian besar query adalah baca, langkah berikutnya read replica."</li>
+  <li>"Untuk skala ini cukup kirim email langsung dari request; kalau p99 checkout naik karena email, atau volumenya melewati ratusan per menit, langkah berikutnya queue dan worker."</li>
+  <li>"Untuk skala ini cukup monolith; kalau tiga tim mulai saling menunggu deploy, langkah berikutnya memisahkan modul yang paling sering berubah."</li>
+</ul>
+<p>Di kerangka 5 langkah (<a href="0027-kerangka-5-langkah.html">lesson 0027</a>), pola ini dipakai di langkah 4 (desain v1 paling sederhana) dan langkah 5 (setiap komponen yang ditambahkan disertai angkanya).</p>
+
+<section class="exercise">
+  <h2>Latihan 3 — Over-engineering</h2>
+  <div class="quiz" data-bank-lesson="0025" data-bank-topic="rel-over-engineering" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0026.</p>
+  <blockquote>"Aplikasi kita yang sekarang satu server dan satu database mulai lambat setelah traffic naik sepuluh kali lipat. Jelaskan urutan langkah Anda, dari yang pertama." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Pertama saya ukur: empat golden signals untuk melihat apakah yang jenuh CPU aplikasi, database, atau koneksi, lalu EXPLAIN untuk query paling lambat. Biasanya perbaikan termurah ada di sana: index yang hilang, query N+1, atau query yang mengambil terlalu banyak kolom. Kalau masalahnya baca berulang ke data yang sama, saya pasang cache-aside dengan TTL dan menerima risiko data agak basi. Kalau database masih jenuh, scale vertical dulu karena tanpa ubah kode, lalu read replica untuk beban baca, dengan risiko replication lag. Pekerjaan lambat seperti kirim email saya pindah ke queue supaya tidak di jalur request. Sharding baru kalau beban tulis atau ukuran data melewati satu primary yang sudah besar, dan pecah service hanya kalau masalahnya tim atau kebutuhan skala yang berbeda. Jadi jawabannya: untuk skala ini cukup index dan cache; kalau CPU database tetap di atas 70% setelah itu, langkah berikutnya replica."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>mulai dari mengukur (golden signals, EXPLAIN), bukan menebak?</li>
+      <li>perbaiki query/index sebelum menambah komponen?</li>
+      <li>cache, lalu scale vertical, lalu read replica, dengan risikonya (stale data, replication lag)?</li>
+      <li>queue untuk pekerjaan lambat atau beban yang naik-turun?</li>
+      <li>sharding dan pecah service sebagai anak tangga terakhir dengan sinyalnya?</li>
+      <li>kalimat "untuk skala ini cukup X; kalau metrik Y melewati Z, langkah berikutnya W"?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://sre.google/sre-book/simplicity/">Google SRE Book, ch. 9: Simplicity</a>, ±10 menit.
+</div>
+
+<p>Berikutnya, <a href="0026-review-asinkron-reliabilitas.html">review 0026</a>: uji modul Asinkron dan Reliabilitas &amp; API tanpa catatan. Setelah itu, modul Studi kasus memakai tangga ini di setiap soal.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Prinsip dan kerangka" dan "Reliabilitas &amp; API") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan queue sebaiknya naik sebelum read replica?", "Beri saya soal skenario dan nilai urutan tangga yang saya ucapkan."</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://sre.google/sre-book/simplicity/">[1] Google SRE Book, ch. 9: Simplicity</a> ·
+  <a href="https://sre.google/sre-book/monitoring-distributed-systems/">[2] Google SRE Book, ch. 6: Monitoring Distributed Systems</a> ·
+  <a href="https://www.postgresql.org/docs/current/using-explain.html">[3] PostgreSQL docs: Using EXPLAIN</a> ·
+  <a href="https://www.postgresql.org/docs/current/indexes-intro.html">[4] PostgreSQL docs: Indexes, Introduction</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[5] Azure Architecture Center: Cache-Aside pattern</a> ·
+  <a href="https://www.postgresql.org/docs/current/hot-standby.html">[6] PostgreSQL docs: Hot Standby</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling">[7] Azure Architecture Center: Queue-Based Load Leveling pattern</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/microservices">[8] Azure Architecture Center: Microservices architecture style</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0024-monolith-vs-microservices.html">← 0024 · Monolith vs microservices</a>
+  <a href="0026-review-asinkron-reliabilitas.html">0026 · Review 3: Asinkron + Reliabilitas &amp; API →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0025.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

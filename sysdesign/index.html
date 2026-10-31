@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indeks lesson · Persiapan ronde system design</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  ol.lessons { list-style: none; padding: 0; margin: .4rem 0 0; }
+  ol.lessons li { display: flex; gap: .8rem; align-items: baseline; padding: .45rem 0; border-bottom: 1px solid var(--rule); }
+  ol.lessons .num { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .8rem; color: var(--muted); min-width: 2.6rem; }
+  ol.lessons .title { flex: 1; }
+  ol.lessons li::after { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+  ol.lessons li.tersedia::after { content: "tersedia"; color: var(--ok); }
+  ol.lessons li.segera::after { content: "segera"; color: var(--muted); }
+  ol.lessons li.segera .title { color: var(--muted); }
+  ol.lessons li.seam .title::after { content: " · seam penguasaan"; font-size: .8rem; color: var(--accent); font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Indeks · 36 lesson · ±20 menit per lesson · self-paced</div>
+  <h1>Persiapan ronde system design</h1>
+  <p class="subtitle">Dari nol sampai studi kasus interview, level mid-level. Konsep untuk interview, tanpa implementasi. Rencana: <a href="ROADMAP.md">ROADMAP</a> · Tujuan: <a href="MISSION.md">MISSION</a></p>
+</header>
+
+<p class="note">
+  Prinsip inti track ini: <strong>ukur dulu, mulai dari perubahan termurah dan paling kecil risikonya; arsitektur baru adalah jalan terakhir.</strong>
+  Hanya hasil review 0012, 0019, 0026, dan 0035 yang dicatat sebagai bukti penguasaan. Kuis di lesson lain adalah feedback cepat.
+</p>
+
+<!--
+  Cara mengubah status: ganti SATU baris <li> lesson Anda saja.
+    segera   : <li class="segera"><span class="num">NNNN</span><span class="title">Judul</span></li>
+    tersedia : <li class="tersedia"><span class="num">NNNN</span><a class="title" href="lessons/NNNN-slug.html">Judul</a></li>
+  Pertahankan class "seam" untuk 0012, 0019, 0026, 0035. Biarkan baris kosong di antara <li> supaya branch paralel tidak bentrok saat merge.
+-->
+
+<h2>Modul 1 · Fondasi</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0001</span><a class="title" href="lessons/0001-apa-itu-system-design.html">Apa itu system design; functional vs non-functional requirement</a></li>
+
+<li class="tersedia"><span class="num">0002</span><a class="title" href="lessons/0002-perjalanan-request.html">Perjalanan request: client-server, DNS, HTTP</a></li>
+
+<li class="tersedia"><span class="num">0003</span><a class="title" href="lessons/0003-latency-dan-throughput.html">Latency vs throughput; angka latency yang perlu dihafal</a></li>
+
+<li class="tersedia"><span class="num">0004</span><a class="title" href="lessons/0004-estimasi-back-of-envelope.html">Estimasi back-of-envelope: QPS, storage, bandwidth</a></li>
+
+</ol>
+
+<h2>Modul 2 · Skalabilitas</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0005</span><a class="title" href="lessons/0005-vertical-horizontal-stateless.html">Vertical vs horizontal scaling; stateless service</a></li>
+
+<li class="tersedia"><span class="num">0006</span><a class="title" href="lessons/0006-load-balancer.html">Load balancer: L4 vs L7, algoritma, health check</a></li>
+
+<li class="tersedia"><span class="num">0007</span><a class="title" href="lessons/0007-reverse-proxy-dan-cdn.html">Reverse proxy dan CDN</a></li>
+
+</ol>
+
+<h2>Modul 3 · Data</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0008</span><a class="title" href="lessons/0008-sql-vs-nosql.html">SQL vs NoSQL: kapan memilih yang mana</a></li>
+
+<li class="tersedia"><span class="num">0009</span><a class="title" href="lessons/0009-index-dan-replication.html">Index dan replication: leader-follower, replication lag</a></li>
+
+<li class="tersedia"><span class="num">0010</span><a class="title" href="lessons/0010-sharding-dan-consistent-hashing.html">Sharding dan consistent hashing</a></li>
+
+<li class="tersedia"><span class="num">0011</span><a class="title" href="lessons/0011-cap-pacelc-consistency.html">CAP, PACELC, dan consistency model</a></li>
+
+</ol>
+
+<h2>Review 1</h2>
+<ol class="lessons">
+
+<li class="tersedia seam"><span class="num">0012</span><a class="title" href="lessons/0012-review-fondasi-skalabilitas.html">Review 1: Fondasi + Skalabilitas</a></li>
+
+</ol>
+
+<h2>Modul 4 · Caching</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0013</span><a class="title" href="lessons/0013-pola-cache.html">Pola cache: cache-aside, read-through, write-through, write-behind</a></li>
+
+<li class="tersedia"><span class="num">0014</span><a class="title" href="lessons/0014-ttl-eviction-invalidation.html">TTL, eviction, invalidation</a></li>
+
+<li class="tersedia"><span class="num">0015</span><a class="title" href="lessons/0015-thundering-herd-hot-key.html">Thundering herd, hot key, cache berlapis</a></li>
+
+</ol>
+
+<h2>Modul 5 · Asinkron</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0016</span><a class="title" href="lessons/0016-queue-dan-pubsub.html">Message queue vs pub/sub</a></li>
+
+<li class="tersedia"><span class="num">0017</span><a class="title" href="lessons/0017-delivery-semantics-idempotency.html">Delivery semantics dan idempotency</a></li>
+
+<li class="tersedia"><span class="num">0018</span><a class="title" href="lessons/0018-event-driven-backpressure.html">Event-driven dan back-pressure</a></li>
+
+</ol>
+
+<h2>Review 2</h2>
+<ol class="lessons">
+
+<li class="tersedia seam"><span class="num">0019</span><a class="title" href="lessons/0019-review-data-caching.html">Review 2: Data + Caching</a></li>
+
+</ol>
+
+<h2>Modul 6 · Reliabilitas &amp; API</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0020</span><a class="title" href="lessons/0020-gaya-api.html">Gaya API: REST, gRPC, WebSocket, long polling, SSE</a></li>
+
+<li class="tersedia"><span class="num">0021</span><a class="title" href="lessons/0021-algoritma-rate-limiting.html">Algoritma rate limiting: token bucket, sliding window</a></li>
+
+<li class="tersedia"><span class="num">0022</span><a class="title" href="lessons/0022-timeout-retry-circuit-breaker.html">Timeout, retry + backoff, circuit breaker</a></li>
+
+<li class="tersedia"><span class="num">0023</span><a class="title" href="lessons/0023-observability-slo.html">Observability: metrics, logs, traces; SLI/SLO</a></li>
+
+<li class="tersedia"><span class="num">0024</span><a class="title" href="lessons/0024-monolith-vs-microservices.html">Monolith vs microservices</a></li>
+
+<li class="tersedia"><span class="num">0025</span><a class="title" href="lessons/0025-tangga-skala.html">Tangga skala: ukur dulu, arsitektur baru jalan terakhir</a></li>
+
+</ol>
+
+<h2>Review 3</h2>
+<ol class="lessons">
+
+<li class="tersedia seam"><span class="num">0026</span><a class="title" href="lessons/0026-review-asinkron-reliabilitas.html">Review 3: Asinkron + Reliabilitas &amp; API</a></li>
+
+</ol>
+
+<h2>Modul 7 · Studi kasus</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0027</span><a class="title" href="lessons/0027-kerangka-5-langkah.html">Kerangka 5 langkah menjawab soal desain</a></li>
+
+<li class="tersedia"><span class="num">0028</span><a class="title" href="lessons/0028-kasus-url-shortener.html">Studi kasus: URL shortener</a></li>
+
+<li class="tersedia"><span class="num">0029</span><a class="title" href="lessons/0029-kasus-rate-limiter.html">Studi kasus: rate limiter</a></li>
+
+<li class="tersedia"><span class="num">0030</span><a class="title" href="lessons/0030-kasus-notification.html">Studi kasus: notification system</a></li>
+
+<li class="tersedia"><span class="num">0031</span><a class="title" href="lessons/0031-kasus-news-feed-a.html">Studi kasus: news feed (A)</a></li>
+
+<li class="tersedia"><span class="num">0032</span><a class="title" href="lessons/0032-kasus-news-feed-b.html">Studi kasus: news feed (B): fan-out</a></li>
+
+<li class="tersedia"><span class="num">0033</span><a class="title" href="lessons/0033-kasus-chat-a.html">Studi kasus: chat (A)</a></li>
+
+<li class="tersedia"><span class="num">0034</span><a class="title" href="lessons/0034-kasus-chat-b.html">Studi kasus: chat (B): koneksi, presence, ordering</a></li>
+
+</ol>
+
+<h2>Review 4</h2>
+<ol class="lessons">
+
+<li class="tersedia seam"><span class="num">0035</span><a class="title" href="lessons/0035-review-studi-kasus.html">Review 4: Studi kasus + topik lemah</a></li>
+
+</ol>
+
+<h2>Penutup · mock interview</h2>
+<ol class="lessons">
+
+<li class="tersedia"><span class="num">0036</span><a class="title" href="lessons/0036-mock-interview.html">Mock interview 45 menit (opsional, pengecualian durasi)</a></li>
+
+</ol>
+
+<p>Cheat sheet: <a href="reference/angka-dan-estimasi.html">angka dan estimasi</a> · <a href="reference/kerangka-5-langkah.html">kerangka 5 langkah</a> · <a href="reference/trade-off-komponen.html">trade-off komponen</a></p>
+
+<p>Istilah: <a href="GLOSSARY.md">GLOSSARY.md</a> · Sumber: <a href="RESOURCES.md">RESOURCES.md</a></p>
+
+</main>
+</body>
+</html>

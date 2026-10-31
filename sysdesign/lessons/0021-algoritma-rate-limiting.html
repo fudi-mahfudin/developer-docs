@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0021 · Algoritma rate limiting: token bucket, sliding window</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0021 · System Design · Modul Reliabilitas &amp; API · ±20 menit</div>
+  <h1>Algoritma rate limiting: token bucket, sliding window</h1>
+  <p class="subtitle">Empat cara menghitung "terlalu banyak", apa kelemahan masing-masing, dan apa yang harus dikirim ke client saat request ditolak</p>
+</header>
+
+<p>Sebelumnya, di <a href="0020-gaya-api.html">lesson 0020</a>, Anda memilih gaya API. Begitu API terbuka, satu client (bug di loop, scraper, pelanggan besar) bisa menghabiskan kapasitas yang seharusnya dibagi. Lesson ini mengajarkan <strong>algoritmanya</strong>. Di mana limiter dipasang dan bagaimana counter dibagi ke banyak server dibahas di studi kasus <a href="0029-kasus-rate-limiter.html">lesson 0029</a>.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Bagaimana Anda membatasi 100 request per menit per user?"</em> dalam 60 detik: memilih token bucket, leaky bucket, fixed window, atau sliding window dengan trade-off-nya, dan menyebut 429 + <code>Retry-After</code> sebagai jawaban ke client.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Token bucket: burst boleh, rata-rata dijaga</h2>
+<p>
+  Bayangkan ember berisi token. Token ditambahkan dengan laju tetap (<em>refill rate</em>, misalnya 2 per detik) sampai ember penuh (<em>kapasitas</em>, misalnya 10). Setiap request mengambil satu token. Kalau ember kosong, request ditolak.
+  AWS API Gateway memakai algoritma ini: <em>throttling rate</em> adalah laju token ditambahkan ke bucket, dan <em>throttling burst</em> adalah kapasitas bucket. <sup class="cite"><a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html">[1]</a></sup>
+</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 210" role="img" aria-label="Token bucket: refill menambah token ke bucket; request masuk mengambil satu token; kalau ada token request lolos ke API, kalau kosong dijawab 429">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node service"><rect x="230" y="10" width="180" height="36" rx="4"/><text x="320" y="28">Refill: r token/detik</text></g>
+  <g class="node client"><rect x="10" y="110" width="130" height="36" rx="4"/><text x="75" y="128">Request masuk</text></g>
+  <g class="node cache"><rect x="230" y="110" width="180" height="36" rx="4"/><text x="320" y="128">Bucket: maks b token</text></g>
+  <g class="node service"><rect x="480" y="60" width="150" height="36" rx="4"/><text x="555" y="78">Ada token: ke API</text></g>
+  <g class="node store"><rect x="480" y="160" width="150" height="36" rx="4"/><text x="555" y="178">Kosong: 429</text></g>
+  <path class="edge" d="M320,46 V108"/>
+  <path class="edge" d="M140,128 H228"/>
+  <path class="edge" d="M410,120 L478,84"/>
+  <path class="edge" d="M410,136 L478,172"/>
+  <text class="label" x="350" y="80">+r</text>
+  <text class="label" x="184" y="120">ambil 1</text>
+</svg>
+<figcaption>Dua parameter yang terpisah: kapasitas b = burst terbesar yang boleh lewat sekaligus, refill r = laju rata-rata jangka panjang.</figcaption>
+</figure>
+
+<p>Contoh: bucket penuh berisi 10 token, lalu 15 request datang bersamaan. Sepuluh lolos, lima ditolak, lalu request berikutnya hanya lolos 2 per detik. Inilah alasan token bucket populer: aplikasi yang wajar sesekali mengirim burst, dan itu tidak dihukum.</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Leaky bucket: keluaran diratakan</h2>
+<p>
+  Leaky bucket membalik sudut pandang: request masuk ke antrean, dan antrean dikuras dengan laju tetap. Yang keluar ke backend selalu rata.
+  Modul <code>limit_req</code> di nginx bekerja seperti ini; dokumentasinya menyebut metode <em>"leaky bucket"</em>. Request yang melebihi laju ditunda, dan baru ditolak dengan error kalau jumlahnya melewati <code>burst</code>, yang default-nya nol. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">[2]</a></sup>
+  Cocok untuk melindungi backend yang hanya sanggup laju tertentu. Kekurangannya, burst yang sah ikut tertunda.
+</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Fixed window dan sliding window: menghitung per jendela waktu</h2>
+<p>
+  <strong>Fixed window counter</strong> adalah yang paling sederhana: satu counter per user per jendela (misalnya per detik atau per menit), dinaikkan setiap request, dan kedaluwarsa sendiri. Dokumentasi Redis memberi pola ini untuk <code>INCR</code>: key = IP + timestamp, <code>INCR</code> lalu <code>EXPIRE</code>, tolak kalau counter melewati 10 per detik. <sup class="cite"><a href="https://redis.io/docs/latest/commands/incr/#pattern-rate-limiter">[3]</a></sup>
+</p>
+<p>
+  Kelemahannya ada di batas jendela. Dengan limit 100 per menit, client bisa mengirim 100 request di detik ke-59 dan 100 lagi di detik ke-61. Keduanya jatuh di jendela berbeda, jadi 200 request lolos dalam ±2 detik.
+</p>
+<p>
+  <strong>Sliding window</strong> menutup celah itu. Versi <em>log</em> menyimpan timestamp setiap request dan menghitung yang masih di dalam 60 detik terakhir; akurat, tapi memorinya sebanding dengan jumlah request. Versi <em>counter</em> lebih hemat: ia menimbang counter jendela sebelumnya dengan porsi waktu yang masih tumpang tindih.
+</p>
+<div class="flow">
+  <span class="box">Menit lalu: 80 request</span><span class="arrow">→</span>
+  <span class="box">Sekarang detik ke-15: 30 request</span><span class="arrow">→</span>
+  <span class="box">Estimasi: 30 + 80 × 45/60 = 90</span><span class="arrow">→</span>
+  <span class="box">90 &lt; 100: lolos</span>
+</div>
+<table>
+  <thead><tr><th>Algoritma</th><th>Memori per user</th><th>Burst</th><th>Kelemahan</th></tr></thead>
+  <tbody>
+    <tr><td>Token bucket</td><td>2 angka (token, waktu refill terakhir)</td><td>Boleh sampai kapasitas</td><td>Dua parameter perlu disetel</td></tr>
+    <tr><td>Leaky bucket</td><td>Antrean</td><td>Ditunda, lalu ditolak</td><td>Burst sah ikut terlambat</td></tr>
+    <tr><td>Fixed window</td><td>1 counter</td><td>Bisa 2× limit di batas jendela</td><td>Tidak akurat di batas</td></tr>
+    <tr><td>Sliding window counter</td><td>2 counter</td><td>Hampir akurat</td><td>Estimasi, bukan hitungan pasti</td></tr>
+  </tbody>
+</table>
+
+<section class="exercise">
+  <h2>Latihan 1 — Algoritma</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0026.</p>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="rel-ratelimit-algoritma" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Apa yang dikirim ke client: 429 dan <code>Retry-After</code></h2>
+<p>
+  RFC 6585 mendefinisikan <strong>429 Too Many Requests</strong>: user mengirim terlalu banyak request dalam rentang waktu tertentu ("rate limiting"). Response sebaiknya menjelaskan kondisinya dan boleh menyertakan header <code>Retry-After</code> yang menyatakan berapa lama menunggu. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6585.html#section-4">[4]</a></sup>
+  Nilai <code>Retry-After</code> berupa tanggal HTTP atau jumlah detik, misalnya <code>Retry-After: 30</code>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#field.retry-after">[5]</a></sup>
+</p>
+<pre><code>HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+Content-Type: application/json
+
+{"error": "rate_limited", "limit": "100 per menit"}</code></pre>
+<p>Perhatikan: <code>limit_req</code> di nginx secara default membalas 503, bukan 429; ubah dengan <code>limit_req_status 429;</code>. <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">[2]</a></sup> Client yang baik menunggu sesuai <code>Retry-After</code>, lalu memakai backoff (<a href="0022-timeout-retry-circuit-breaker.html">lesson 0022</a>).</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Response saat ditolak</h2>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="rel-ratelimit-http" data-stack></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<h2>5. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal yang membenarkan rate limiter:</strong> API terbuka untuk pihak luar, ada satu client yang memakai porsi kapasitas jauh di atas yang lain (misalnya satu API key = 40% traffic), ada endpoint yang mahal per request (login, pencarian, panggilan ke API berbayar), atau ada insiden overload yang disebabkan satu sumber. Tool internal untuk 50 karyawan tidak butuh rate limiter sendiri.
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> limit yang salah setel menolak user sah, dan itu terlihat sebagai outage. Limiter yang counter-nya disimpan di luar proses (misalnya Redis) menambah latency di setiap request dan menjadi dependency baru: kalau Redis mati, Anda harus memilih <em>fail open</em> (semua lolos) atau <em>fail closed</em> (semua ditolak).
+</p>
+<p>
+  <strong>Alternatif lebih murah:</strong> pakai fitur yang sudah ada di jalur request, yaitu <code>limit_req</code> di nginx atau throttling di API gateway, sebelum membangun layanan rate limiter sendiri. Counter di memori satu proses cukup kalau hanya ada satu server. Rate limiter terdistribusi baru dibenarkan kalau limit harus konsisten di banyak instance (<a href="0029-kasus-rate-limiter.html">lesson 0029</a>).
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0026.</p>
+  <blockquote>"API publik kita perlu rate limiting 100 request per menit per API key. Algoritma apa yang Anda pilih, apa trade-off-nya, dan apa yang diterima client saat ditolak?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Saya pilih token bucket: kapasitas, misalnya 20, menentukan burst yang boleh lewat sekaligus, dan refill 100 token per menit menentukan rata-rata. Burst singkat dari aplikasi yang wajar tetap lolos. Alternatifnya fixed window counter: paling sederhana, cukup INCR dan EXPIRE di Redis, tapi di batas window client bisa lolos dua kali limit. Sliding window counter menutup celah itu dengan menimbang window sebelumnya, dengan biaya satu counter tambahan. Leaky bucket meratakan ke laju tetap, cocok untuk melindungi backend yang rapuh, seperti limit_req di nginx. Saat ditolak, server membalas 429 Too Many Requests dengan header Retry-After, dan client menunggu sebanyak itu. Sebagai v1 saya pakai fitur rate limit di gateway atau nginx yang sudah ada; desain layanan terdistribusinya baru dibahas kalau satu node tidak cukup."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>token bucket: kapasitas = burst, refill = laju rata-rata?</li>
+      <li>fixed window sederhana tapi bisa lolos dua kali limit di batas window?</li>
+      <li>sliding window atau leaky bucket sebagai pembanding dengan trade-off-nya?</li>
+      <li>429 Too Many Requests sebagai response saat ditolak?</li>
+      <li>header Retry-After memberi tahu client berapa lama menunggu?</li>
+      <li>v1 memakai fitur gateway/nginx yang sudah ada sebelum membangun layanan sendiri?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">nginx: Module ngx_http_limit_req_module</a>, terutama contoh <code>burst</code> dan <code>nodelay</code>, ±10 menit.
+</div>
+
+<p>Berikutnya, <a href="0022-timeout-retry-circuit-breaker.html">lesson 0022</a>: sisi sebaliknya. Saat service Anda yang memanggil dependency yang lambat atau menolak, kapan menyerah, kapan mengulang, dan kapan berhenti mencoba?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Reliabilitas &amp; API") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Hitung ulang sliding window counter kalau sekarang detik ke-45", "Kenapa nginx memilih 503 sebagai default?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html">[1] AWS API Gateway: Throttle requests to your REST APIs</a> ·
+  <a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">[2] nginx: Module ngx_http_limit_req_module</a> ·
+  <a href="https://redis.io/docs/latest/commands/incr/#pattern-rate-limiter">[3] Redis docs: INCR, pattern rate limiter</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc6585.html#section-4">[4] RFC 6585 Additional HTTP Status Codes, §4 (429)</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#field.retry-after">[5] RFC 9110 HTTP Semantics, §10.2.3 Retry-After</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0020-gaya-api.html">← 0020 · Gaya API: REST, gRPC, WebSocket, long polling, SSE</a>
+  <a href="0022-timeout-retry-circuit-breaker.html">0022 · Timeout, retry + backoff, circuit breaker →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0021.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

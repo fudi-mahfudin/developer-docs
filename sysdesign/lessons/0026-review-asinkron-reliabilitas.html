@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0026 · Review 3: Asinkron + Reliabilitas &amp; API</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0026 · System Design · Review · ±20 menit · seam penguasaan</div>
+  <h1>Review 3: Asinkron + Reliabilitas &amp; API</h1>
+  <p class="subtitle">Tanpa materi baru: soal kuis dan lisan dari modul sebelumnya, diacak bersama (interleaving).</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> keluar dengan daftar jujur topik yang <em>benar-benar menempel</em> dari modul Asinkron (0016–0018) dan Reliabilitas &amp; API (0020–0025), dan yang perlu diulang.
+</div>
+
+<p class="note">
+  Review ini <strong>sengaja tertunda satu modul</strong>: Modul Asinkron (0016–0018) diuji setelah Anda menyelesaikan modul Reliabilitas &amp; API (0020–0025). Untuk topik Reliabilitas &amp; API yang baru saja selesai, beri jeda minimal satu hari setelah lesson 0025 sebelum mengerjakan review ini. Jeda itu membuat skornya mengukur ingatan (retensi), bukan hafalan beberapa menit sebelumnya (fluency). Tanpa materi baru.
+</p>
+
+<h2>Aturan main</h2>
+<ol>
+  <li><strong>Jangan buka catatan, lesson, reference, atau tab lain.</strong> Yang diuji adalah kemampuan menjawab pertanyaan interview system design tanpa catatan. Kalau Anda mengintip, hasilnya tidak berarti.</li>
+  <li><strong>Soal kuis:</strong> pilih satu jawaban. Ada tepat satu soal kuis untuk setiap topik modul yang diuji (18 topik = 18 kuis), jadi setiap topik diuji minimal sekali.</li>
+  <li><strong>Soal lisan:</strong> jawab dengan suara keras (±60–90 detik, boleh direkam di ponsel) <em>sebelum</em> membuka checklist, lalu centang hanya poin yang benar-benar Anda sebut, bukan yang "sebenarnya tahu".</li>
+  <li><strong>Kriteria lulus per topik:</strong> soal kuis acak dijawab benar, dan soal lisan topik itu lulus (minimal 2/3 poin checklist dicentang, misalnya 4 dari 6). Satu kesalahan di topik itu = topik lemah.
+    Topik yang kuisnya benar tapi tidak mendapat soal lisan tampil sebagai <em>Kuis lulus, lisan belum diuji</em> dan belum dihitung lulus.</li>
+</ol>
+
+<p class="note">
+  Urutan soal mengikuti seed yang tampil di bawah. Tombol "Acak ulang" membuat set baru, tapi kerjakan <strong>set pertama</strong> sampai selesai sebelum mengacak ulang; hasil set pertama itulah yang dilaporkan.
+  Untuk mengulang set yang sama nanti, tambahkan <code>?seed=NNN</code> di URL. Hanya 3 soal lisan yang ditarik, jadi topik lain bisa diuji lewat <code>?seed=</code> berbeda di sesi berikutnya (pengulangan berjarak).
+</p>
+
+<!--
+  Pengaturan review (cara agent mengubahnya):
+  - data-lessons = lesson modul yang diuji (semua topiknya ikut).
+  - data-mc = jumlah topik kuis di pool (sekarang 18: async- 6, rel- 12), supaya draw() menarik tepat satu kuis per topik.
+    Hitung ulang bila bank soal modul itu mendapat topik baru; tests/sysdesign/review.test.js memeriksanya.
+  - data-oral = 3, supaya review muat ±20 menit.
+  - data-topics: kosong. Untuk sesi ulang (topik lemah), isi slug lemah dan pakai ?seed= baru.
+-->
+<div class="review" data-title="Review 3: Asinkron + Reliabilitas &amp; API" data-lessons="0016,0017,0018,0020,0021,0022,0023,0024,0025"
+     data-topics="" data-mc="18" data-oral="3"></div>
+
+<section class="exercise">
+  <h2>Setelah selesai: laporkan hasilnya ke agent</h2>
+  <ol>
+    <li>Setelah semua soal dijawab, ringkasan per topik muncul di bawah soal terakhir.</li>
+    <li>Tekan <strong>Salin</strong> (atau blok teks di kotak ringkasan), lalu <strong>tempel ke agent</strong> di terminal, misalnya:
+      <em>"Ini hasil review 0026 System Design, tolong dicatat."</em></li>
+    <li>Agent menulis learning record "sudah dikuasai" di <code>sysdesign/learning-records/</code> <strong>hanya untuk topik yang lulus</strong> (kuis benar dan lisan lulus), dengan seed dan skor sebagai bukti.
+      Topik <em>Kuis lulus, lisan belum diuji</em> dicatat di NOTES saja, tanpa learning record.</li>
+    <li>Topik yang lemah dicatat sebagai baris "Topik lemah System Design 0026: …" di <code>sysdesign/NOTES.md</code>, lalu dimasukkan ke <code>data-topics</code> Review 4 (0035) supaya diuji lagi.</li>
+  </ol>
+  <p class="note">Hanya hasil review 0012, 0019, 0026, dan 0035 yang dicatat sebagai bukti penguasaan System Design. Skor kuis di lesson biasa tidak dihitung.</p>
+</section>
+
+<h2>Kalau ada topik lemah</h2>
+<p>
+  Jangan baca ulang seluruh modul. Untuk topik <code>async-</code>, buka hanya bagian topik itu di lesson 0016–0018; untuk <code>rel-</code>, di lesson 0020–0025.
+  Lalu tutup, dan jelaskan lagi dengan suara keras.
+</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa jawaban soal at-least-once tadi salah?", "Beri saya satu soal lagi tentang circuit breaker."</p>
+
+<nav class="lesson-nav">
+  <a href="0025-tangga-skala.html">← 0025 · Tangga skala: ukur dulu, arsitektur baru jalan terakhir</a>
+  <a href="0027-kerangka-5-langkah.html">0027 · Kerangka 5 langkah menjawab soal desain →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../assets/questions/0018.js"></script>
+<script src="../assets/questions/0020.js"></script>
+<script src="../assets/questions/0021.js"></script>
+<script src="../assets/questions/0022.js"></script>
+<script src="../assets/questions/0023.js"></script>
+<script src="../assets/questions/0024.js"></script>
+<script src="../assets/questions/0025.js"></script>
+<script src="../../assets/review.js"></script>
+</body>
+</html>
