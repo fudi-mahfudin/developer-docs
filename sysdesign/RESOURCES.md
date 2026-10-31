@@ -295,6 +295,22 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003). Agent lesson menambah
 
 ### Penutup
 
+- [PostgreSQL docs: Operator Classes and Operator Families](https://www.postgresql.org/docs/current/indexes-opclass.html)
+  Use for: index B-tree `text_pattern_ops` untuk `LIKE 'prefix%'` di desain v1 typeahead (lesson 0036).
+- [PostgreSQL docs: Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)
+  Use for: `EXPLAIN ANALYZE` mengukur waktu sebenarnya sebelum menambah komponen (lesson 0036; reference trade-off-komponen).
+- [RFC 9111: HTTP Caching, 5.2.2.1 max-age](https://www.rfc-editor.org/rfc/rfc9111.html#cache-response-directive.max-age)
+  Use for: `Cache-Control: max-age` supaya browser dan CDN menyerap prefix populer (lesson 0036).
+- [Redis docs: Sorted sets](https://redis.io/docs/latest/develop/data-types/sorted-sets/)
+  Use for: rentang leksikografis dengan score sama (ZRANGE BYLEX), dan kenapa urutannya abjad, bukan popularitas (lesson 0036).
+- [Google SRE Book, bab 9: Simplicity](https://sre.google/sre-book/simplicity/)
+  Use for: accidental complexity sebagai dasar penalti over-engineering di checklist mock (lesson 0036; reference kerangka-5-langkah).
+- [Jeff Dean, LADIS 2009 keynote](https://www.cs.cornell.edu/projects/ladis2009/talks/dean-keynote-ladis2009.pdf)
+  Use for: angka latency di reference angka-dan-estimasi (dari lesson 0003, 0004).
+- [Google SRE Book, Appendix A: Availability Table](https://sre.google/sre-book/availability-table/)
+  Use for: jatah downtime 99%/99,9%/99,99% di reference angka-dan-estimasi dan kerangka-5-langkah.
+- Reference trade-off-komponen memakai ulang sumber modul Data, Caching, Asinkron, dan Reliabilitas & API di atas (Azure Cache-Aside, PostgreSQL Hot Standby/SELECT/Partitioning/JSON Types, Redis eviction, nginx limit_req, SRE Book bab 19).
+
 ## Bacaan (bukan sumber kutipan)
 
 - Martin Kleppmann, *Designing Data-Intensive Applications* (O'Reilly). Bacaan mendalam untuk modul Data dan Asinkron.

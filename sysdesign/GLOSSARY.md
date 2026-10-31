@@ -539,3 +539,21 @@ Nomor naik yang diberi server untuk setiap pesan di satu `conversation_id`. Mene
 _Avoid_: timestamp client sebagai urutan
 
 ## Penutup
+
+**Slug topik 0036**:
+`mock-typeahead-v1` (requirement, estimasi, API, desain v1) dan `mock-typeahead-skala` (bottleneck prefix pendek, top-k per prefix, cache). Semua soal Penutup memakai prefix `mock-`.
+
+**Mock interview**:
+Latihan satu soal desain penuh selama ±45 menit dengan timer per langkah, tanpa melihat materi, lalu dinilai dengan checklist berpenalti untuk komponen tanpa alasan (lesson 0036).
+_Avoid_: latihan soal (yang itu per lesson, 60–90 detik)
+
+**Typeahead (autocomplete)**:
+Saran pencarian yang muncul saat user mengetik, diawali teks yang sudah diketik (prefix) dan diurutkan popularitas (lesson 0036).
+_Avoid_: search (pencarian lengkap setelah user menekan Enter)
+
+**Debounce**:
+Client menunggu jeda ketikan singkat (mis. 100–200 ms) sebelum mengirim request, sehingga satu pencarian menghasilkan beberapa request, bukan satu per huruf (lesson 0036).
+
+**Top-k per prefix**:
+Daftar k saran teratas yang dihitung lebih dulu (precompute) untuk setiap prefix dan disimpan dengan prefix sebagai key, sehingga baca menjadi satu lookup. Bentuk "rata" dari trie (prefix tree) (lesson 0036).
+_Avoid_: `LIKE 'a%' ORDER BY count` untuk prefix pendek di skala besar

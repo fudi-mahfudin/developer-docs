@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Trade-off komponen: kapan dipakai, kapan tidak, alternatifnya</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · System Design · Trade-off komponen</div>
+<h1>Trade-off komponen</h1>
+<p class="subtitle">Ringkasan satu halaman untuk dibaca ulang menjelang interview, diurutkan sesuai tangga skala (<a href="../lessons/0025-tangga-skala.html">Lesson 0025</a>) dan dirangkum dari bagian "Kapan tidak perlu" di setiap lesson komponen. Angka sinyal adalah titik awal yang masuk akal untuk interview, bukan aturan baku.</p>
+
+<p><strong>Prinsip:</strong> ukur dulu, lalu perubahan termurah. Naik satu anak tangga hanya kalau angka menuntut. Patokan: 1.000 DAU ≈ di bawah 1 QPS rata-rata, cukup satu server + satu database (<a href="../lessons/0004-estimasi-back-of-envelope.html">0004</a>).</p>
+
+<h2>Tangga skala: delapan anak tangga</h2>
+<table>
+  <thead><tr><th>Komponen</th><th>Kapan dipakai (sinyal)</th><th>Kapan tidak</th><th>Alternatif lebih murah / risiko</th></tr></thead>
+  <tbody>
+    <tr><th>Ukur (golden signals, EXPLAIN)</th><td>Selalu pertama: latency, traffic, errors, saturation; query plan untuk query lambat <sup class="cite"><a href="https://www.postgresql.org/docs/current/using-explain.html">[1]</a></sup></td><td>Tidak pernah dilewati</td><td>Hampir nol biaya</td></tr>
+    <tr><th>Index, perbaiki query/kode (<a href="../lessons/0009-index-dan-replication.html">0009</a>)</th><td>EXPLAIN menunjukkan scan seluruh tabel, query N+1, satu query mendominasi waktu</td><td>Kolom yang tidak pernah di-query; tabel yang sangat sering ditulis</td><td>Risiko kecil: index menambah overhead saat menulis</td></tr>
+    <tr><th>Cache (<a href="../lessons/0013-pola-cache.html">0013</a>)</th><td>Baca:tulis tinggi (mis. 100:1), key sama dibaca berulang, p99/CPU database masih tinggi setelah index</td><td>1.000 DAU; data yang tidak boleh basi (saldo, stok saat checkout); sebagian besar request miss</td><td>Header <code>Cache-Control</code> untuk browser/CDN, local cache kecil. Risiko: cache-aside <em>"doesn't guarantee consistency between the data store and the cache"</em> <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[2]</a></sup></td></tr>
+    <tr><th>Scale vertical (<a href="../lessons/0005-vertical-horizontal-stateless.html">0005</a>)</th><td>CPU/memori di atas ±70% terus-menerus setelah query diperbaiki</td><td>Sudah di mesin terbesar yang wajar; masalahnya availability (tetap satu titik gagal)</td><td>Satu perubahan konfigurasi, tanpa ubah kode; ada batas atas</td></tr>
+    <tr><th>Read replica (<a href="../lessons/0009-index-dan-replication.html">0009</a>)</th><td>Read-heavy (≥10:1), primary tetap jenuh oleh baca setelah index dan scale vertical; standby bisa melayani query read-only <sup class="cite"><a href="https://www.postgresql.org/docs/current/hot-standby.html">[3]</a></sup></td><td>Bottleneck-nya write: replica tidak membantu sama sekali</td><td>Index, cache dulu. Risiko: replication lag (user tidak langsung melihat tulisannya; baca data sendiri dari leader)</td></tr>
+    <tr><th>Queue / asinkron (<a href="../lessons/0016-queue-dan-pubsub.html">0016</a>)</th><td>Pekerjaan lambat (detik) atau pihak ketiga tidak stabil, hasilnya tidak ditunggu user; lonjakan melebihi kapasitas downstream</td><td>User butuh jawabannya sekarang dan tujuan cepat; rata-rata beban (bukan hanya puncak) sudah melebihi consumer: queue tidak menambah kapasitas</td><td>Tabel job dengan <code>SELECT … FOR UPDATE SKIP LOCKED</code> untuk beberapa ratus job per menit <sup class="cite"><a href="https://www.postgresql.org/docs/current/sql-select.html">[4]</a></sup>; queue terkelola sebelum cluster Kafka sendiri. Risiko: eventual, pesan ganda, butuh idempotency</td></tr>
+    <tr><th>Sharding (<a href="../lessons/0010-sharding-dan-consistent-hashing.html">0010</a>)</th><td>Write melewati kapasitas satu leader setelah tuning dan scale vertical; data tidak muat di satu server terbesar yang wajar</td><td>Beban baca saja (itu replica/cache); 1.000 DAU</td><td>Arsip data lama; partitioning di satu server, yang biasanya baru sepadan kalau <em>"the size of the table should exceed the physical memory of the database server"</em> <sup class="cite"><a href="https://www.postgresql.org/docs/current/ddl-partitioning.html">[5]</a></sup>. Risiko: query lintas shard, resharding, hot partition; shard key hampir mustahil diganti</td></tr>
+    <tr><th>Microservices / pecah service (<a href="../lessons/0024-monolith-vs-microservices.html">0024</a>)</th><td>Beberapa tim saling menunggu deploy; satu modul butuh sumber daya sangat berbeda (mis. CPU 10×) atau siklus rilis sendiri</td><td>Jumlah user saja: 1.000–100.000 DAU masih muat di beberapa server di belakang load balancer</td><td>Pertahankan modular monolith (batas modul dijaga); monolith stateless di belakang LB; worker lewat queue. Risiko: panggilan jaringan, saga, tracing per service</td></tr>
+  </tbody>
+</table>
+
+<h2>Komponen pendukung</h2>
+<table>
+  <thead><tr><th>Komponen</th><th>Kapan dipakai (sinyal)</th><th>Kapan tidak</th><th>Alternatif lebih murah</th></tr></thead>
+  <tbody>
+    <tr><th>Horizontal scaling + load balancer (<a href="../lessons/0006-load-balancer.html">0006</a>)</th><td>App server jenuh sementara database longgar; target availability (99,9%) menuntut deploy tanpa downtime</td><td>Satu app server: LB hanya menambah satu hop; database yang jenuh</td><td>Scale up; DNS dengan beberapa record A, sederhana tapi kontrolnya sedikit <sup class="cite"><a href="https://sre.google/sre-book/load-balancing-frontend/">[6]</a></sup>. Tetap tulis aplikasi stateless sejak awal</td></tr>
+    <tr><th>CDN, reverse proxy, API gateway (<a href="../lessons/0007-reverse-proxy-dan-cdn.html">0007</a>)</th><td>User jauh dari origin (RTT puluhan–ratusan ms); bandwidth konten statis besar; banyak service dengan auth/rate limit berulang</td><td>User di satu kota; satu monolith (gateway hanya menambah hop); API personal yang tidak bisa di-cache</td><td><code>Cache-Control</code> yang benar, kompresi, nama file berversi</td></tr>
+    <tr><th>NoSQL tambahan (<a href="../lessons/0008-sql-vs-nosql.html">0008</a>)</th><td>Akses hanya per key pada volume yang melampaui satu relasional yang sudah di-tuning; data graph/time series</td><td>Butuh JOIN dan transaksi; 1.000 DAU</td><td>PostgreSQL + kolom <code>jsonb</code>, yang mendukung index <sup class="cite"><a href="https://www.postgresql.org/docs/current/datatype-json.html">[7]</a></sup></td></tr>
+    <tr><th>Datastore multi-node, quorum (<a href="../lessons/0011-cap-pacelc-consistency.html">0011</a>)</th><td>Write harus tetap diterima saat node/region putus, pada skala di atas satu leader + standby</td><td>Satu region, 1.000 DAU: jawab "satu leader, konsisten"</td><td>Satu leader + standby + read replica; read-your-writes dari leader</td></tr>
+    <tr><th>Invalidation eksplisit, eviction khusus (<a href="../lessons/0014-ttl-eviction-invalidation.html">0014</a>)</th><td>Toleransi basi lebih pendek dari TTL yang masuk akal; hit ratio terukur rendah</td><td>Data yang boleh basi beberapa detik/menit</td><td>TTL pendek; <code>allkeys-lru</code> sebagai default eviction <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/eviction/">[8]</a></sup></td></tr>
+    <tr><th>Proteksi stampede, pecah hot key (<a href="../lessons/0015-thundering-herd-hot-key.html">0015</a>)</th><td>QPS satu key × waktu hitung ulang = banyak query serentak (5.000 QPS × 2 detik ≈ 10.000)</td><td>10 QPS dengan hitung ulang 50 ms</td><td>Jitter pada TTL; stale-while-revalidate atau <code>proxy_cache_lock</code> di proxy yang sudah ada</td></tr>
+    <tr><th>Exactly-once, DLQ, ordering ketat (<a href="../lessons/0017-delivery-semantics-idempotency.html">0017</a>)</th><td>Duplikat berarti uang hilang dan efeknya sulit dibuat idempotent; urutan mengubah hasil</td><td>Metrik atau presence yang boleh hilang</td><td>At-least-once + consumer idempotent; upsert per primary key; satu transaksi database</td></tr>
+    <tr><th>Event-driven, outbox (<a href="../lessons/0018-event-driven-backpressure.html">0018</a>)</th><td>Satu kejadian ditunggu beberapa layanan milik tim berbeda; ada database dan broker, kehilangan event = data tidak konsisten</td><td>Hanya satu penerima yang cepat dan stabil; semua efek di satu database</td><td>Panggilan langsung; satu transaksi; tabel job sebagai queue sekaligus outbox</td></tr>
+    <tr><th>WebSocket, streaming (<a href="../lessons/0020-gaya-api.html">0020</a>)</th><td>Data harus sampai dalam hitungan detik dan polling mendominasi beban</td><td>1.000 user polling tiap 30 detik = ±33 request/detik, ringan</td><td>REST + short polling; SSE untuk aliran satu arah</td></tr>
+    <tr><th>Rate limiter (<a href="../lessons/0021-algoritma-rate-limiting.html">0021</a>)</th><td>API terbuka; satu client memakai porsi besar (mis. 40% traffic); endpoint mahal per request</td><td>Tool internal 50 karyawan</td><td><code>limit_req</code> di nginx <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">[9]</a></sup> atau throttling gateway; counter di memori kalau hanya satu server</td></tr>
+    <tr><th>Circuit breaker, bulkhead (<a href="../lessons/0022-timeout-retry-circuit-breaker.html">0022</a>)</th><td>Satu dependency lambat menyeret p99 semua endpoint; pool koneksi habis saat insiden</td><td>Monolith dengan satu database (kalau database mati, tidak ada yang diselamatkan)</td><td>Timeout ketat (selalu perlu) + retry terbatas dengan jitter + batas connection pool</td></tr>
+    <tr><th>Distributed tracing, SLA (<a href="../lessons/0023-observability-slo.html">0023</a>)</th><td>Request melewati tiga service atau lebih dan kenaikan p99 tidak terjelaskan dari metrics dan logs</td><td>Monolith dengan satu database</td><td>Log terstruktur dengan request id + empat golden signals; satu atau dua SLO untuk endpoint terpenting</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Kalimat untuk interview:</strong> "Untuk skala ini cukup X; kalau metrik Y melewati Z, langkah berikutnya W." Komponen tanpa angka = over-engineering.</p>
+
+<p class="note sources">
+  <a href="https://www.postgresql.org/docs/current/using-explain.html">[1] PostgreSQL docs: Using EXPLAIN</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[2] Azure Architecture Center: Cache-Aside pattern</a> ·
+  <a href="https://www.postgresql.org/docs/current/hot-standby.html">[3] PostgreSQL docs: Hot Standby</a> ·
+  <a href="https://www.postgresql.org/docs/current/sql-select.html">[4] PostgreSQL docs: SELECT (locking clause, SKIP LOCKED)</a> ·
+  <a href="https://www.postgresql.org/docs/current/ddl-partitioning.html">[5] PostgreSQL docs: Table Partitioning</a> ·
+  <a href="https://sre.google/sre-book/load-balancing-frontend/">[6] Google SRE Book, bab 19: Load Balancing at the Frontend</a> ·
+  <a href="https://www.postgresql.org/docs/current/datatype-json.html">[7] PostgreSQL docs: JSON Types</a> ·
+  <a href="https://redis.io/docs/latest/develop/reference/eviction/">[8] Redis docs: Key eviction</a> ·
+  <a href="https://nginx.org/en/docs/http/ngx_http_limit_req_module.html">[9] nginx: Module ngx_http_limit_req_module</a>
+</p>
+<p class="note">Cheat sheet lain: <a href="angka-dan-estimasi.html">angka dan estimasi</a> · <a href="kerangka-5-langkah.html">kerangka 5 langkah</a> · <a href="../index.html">Indeks</a></p>
+</main>
+</body>
+</html>
