@@ -17,6 +17,22 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003). Agent lesson menambah
 - Paper asli (tambahkan tautan resmi saat dipakai): DeCandia et al. 2007 "Dynamo: Amazon's Highly Available Key-value Store"; Karger et al. 1997 "Consistent Hashing and Random Trees"; Gilbert & Lynch 2002 "Brewer's Conjecture and the Feasibility of Consistent, Available, Partition-Tolerant Web Services"; Abadi 2012 "Consistency Tradeoffs in Modern Distributed Database System Design" (PACELC); Chang et al. 2006 "Bigtable".
   Use for: consistent hashing, CAP, PACELC, quorum, wide-column store.
 
+### Fondasi
+
+### Skalabilitas
+
+### Data
+
+### Caching
+
+### Asinkron
+
+### Reliabilitas & API
+
+### Studi kasus
+
+### Penutup
+
 ## Bacaan (bukan sumber kutipan)
 
 - Martin Kleppmann, *Designing Data-Intensive Applications* (O'Reilly). Bacaan mendalam untuk modul Data dan Asinkron.

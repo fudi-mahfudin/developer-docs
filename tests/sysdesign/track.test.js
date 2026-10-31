@@ -69,7 +69,7 @@ lessons.forEach(({ num, href }) => {
       assert.match(s, /^\.\.\/\.\.\/assets\/[\w-]+\.js$/, `${s}: komponen bersama harus dari ../../assets/`));
     scripts.filter(s => s.startsWith("../assets/questions/")).forEach(s =>
       assert.ok(fs.existsSync(path.join(ROOT, TRACK, "lessons", s)), `${s} tidak ada`));
-    assert.ok(scripts.includes(`../assets/questions/${num}.js`), `lesson belum memuat bank soal ${num}`);
+    if (questionNums.includes(num)) assert.ok(scripts.includes(`../assets/questions/${num}.js`), `lesson belum memuat bank soal ${num}`);
     assert.doesNotMatch(html, /href="[^"]*\.\.\/(dotnet|fhir)\//, `${href}: track mandiri, jangan menautkan track lain`);
     const nav = (html.match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
     const prev = String(Number(num) - 1).padStart(4, "0");

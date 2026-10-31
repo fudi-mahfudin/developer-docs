@@ -33,3 +33,5 @@ _Avoid_: MVP (konteks produk, bukan arsitektur)
 ## Reliabilitas & API
 
 ## Studi kasus
+
+## Penutup
