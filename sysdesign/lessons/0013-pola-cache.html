@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0013 · Pola cache: cache-aside, read-through, write-through, write-behind</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0013 · System Design · Modul Caching · ±20 menit</div>
+  <h1>Di mana cache berada, dan empat pola mengisinya</h1>
+  <p class="subtitle">Lesson pertama modul Caching: lapisan cache dari browser sampai Redis, lalu cache-aside, read-through, write-through, dan write-behind beserta trade-off-nya</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0012-review-fondasi-skalabilitas.html">Review 1</a> menutup modul Fondasi dan Skalabilitas. Di tangga skala, cache adalah anak tangga
+  <strong>sesudah</strong> "ukur, lalu perbaiki kode/query/index" dan <strong>sebelum</strong> scale vertical atau read replica: murah, tapi membawa masalah baru (data basi).
+  Lesson ini menjawab dua pertanyaan: cache diletakkan di mana, dan siapa yang mengisinya.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Pola cache apa yang Anda pakai untuk katalog produk yang read-heavy?"</em>
+  tanpa catatan, dalam 60 detik: lokasi cache yang dipilih, alur baca dan tulis cache-aside (update database dulu, lalu hapus key),
+  beda write-through dan write-behind, dan angka yang membenarkan cache.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Di mana cache berada</h2>
+<p>
+  "Cache" bukan satu kotak. Sepanjang perjalanan request ada beberapa tempat menyimpan salinan jawaban, dan makin dekat ke user, makin murah satu hit:
+</p>
+<ul>
+  <li><strong>Browser (private cache).</strong> HTTP caching diatur header seperti <code>Cache-Control: max-age</code>. RFC 9111 membedakan <em>private cache</em> (milik satu user, mis. browser) dan <em>shared cache</em> (dipakai banyak user, mis. CDN atau proxy). <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9111.html#section-1">[1]</a></sup></li>
+  <li><strong>CDN di edge.</strong> Shared cache dekat user. CloudFront menyarankan origin menambah <code>Cache-Control max-age</code> untuk menaikkan <em>cache hit ratio</em> (porsi request yang dilayani dari cache, tanpa ke origin). <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cache-hit-ratio.html">[2]</a></sup></li>
+  <li><strong>Reverse proxy.</strong> nginx bisa menyimpan respons upstream; direktif <code>proxy_cache</code> "defines a shared memory zone used for caching". <sup class="cite"><a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_cache">[3]</a></sup></li>
+  <li><strong>Local cache in-process.</strong> Map di memori proses aplikasi. Dokumentasi Redis: akses memori lokal lebih cepat beberapa orde besaran dibanding layanan lewat jaringan seperti database. <sup class="cite"><a href="https://redis.io/docs/latest/develop/reference/client-side-caching/">[4]</a></sup></li>
+  <li><strong>Distributed cache.</strong> Redis atau Memcached terpisah yang dipakai bersama oleh semua instance. Local cache bersifat private per instance, sehingga salinan antar-instance cepat tidak konsisten; Azure menyarankan shared/distributed cache untuk kasus itu. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#problems-and-considerations">[5]</a></sup></li>
+</ul>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 220" role="img" aria-label="Request dari browser lewat CDN dan reverse proxy ke dua instance aplikasi dengan local cache, yang berbagi satu Redis dan satu database">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="92" width="80" height="36" rx="4"/><text x="50" y="110">Browser</text></g>
+  <g class="node cache"><rect x="116" y="92" width="80" height="36" rx="4"/><text x="156" y="110">CDN edge</text></g>
+  <g class="node service"><rect x="222" y="92" width="100" height="36" rx="4"/><text x="272" y="110">Reverse proxy</text></g>
+  <g class="node service"><rect x="350" y="40" width="120" height="36" rx="4"/><text x="410" y="58">App 1 + local</text></g>
+  <g class="node service"><rect x="350" y="144" width="120" height="36" rx="4"/><text x="410" y="162">App 2 + local</text></g>
+  <g class="node cache"><rect x="520" y="40" width="110" height="36" rx="4"/><text x="575" y="58">Redis bersama</text></g>
+  <g class="node store"><rect x="520" y="144" width="110" height="36" rx="4"/><text x="575" y="162">Database</text></g>
+  <path class="edge" d="M90,110 H114"/>
+  <path class="edge" d="M196,110 H220"/>
+  <path class="edge" d="M322,104 L348,66"/>
+  <path class="edge" d="M322,116 L348,154"/>
+  <path class="edge" d="M470,58 H518"/>
+  <path class="edge" d="M470,66 L518,150"/>
+  <path class="edge" d="M470,154 L518,70"/>
+  <path class="edge" d="M470,162 H518"/>
+  <text class="label" x="156" y="80">HTTP cache</text>
+  <text class="label" x="575" y="100">miss → database</text>
+</svg>
+<figcaption>Empat lapisan cache di depan database. Kiri (browser, CDN, proxy) diatur header HTTP; kanan (local, Redis) diatur kode aplikasi.</figcaption>
+</figure>
+
+<p class="note">
+  Aturan praktis: konten publik yang sama untuk semua user (gambar, CSS, halaman katalog anonim) cukup diberi header HTTP, tanpa komponen baru.
+  Data dinamis per user (keranjang, profil) disimpan di cache yang dikontrol aplikasi.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Lokasi cache</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0019.</p>
+  <div class="quiz" data-bank-lesson="0013" data-bank-topic="cache-lokasi" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Empat pola: siapa yang membaca dan menulis database</h2>
+<p>
+  Untuk cache yang dikontrol aplikasi, pertanyaannya: saat miss, siapa yang mengambil data dari database? Saat write, kapan cache diperbarui?
+</p>
+
+<h3>Cache-aside (lazy loading): default yang paling sering</h3>
+<div class="flow">
+  <span class="box">baca cache</span><span class="arrow">→</span>
+  <span class="box">miss</span><span class="arrow">→</span>
+  <span class="box">aplikasi baca database</span><span class="arrow">→</span>
+  <span class="box">aplikasi isi cache (+TTL)</span><span class="arrow">→</span>
+  <span class="box">kembalikan ke caller</span>
+</div>
+<p>
+  Aplikasi yang memegang kendali: coba baca cache; kalau miss, ambil dari data store, taruh di cache, kembalikan. Saat write, aplikasi mengubah data store
+  lalu meng-<em>invalidate</em> (menghapus) item di cache. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#solution">[5]</a></sup>
+  Urutannya penting: <strong>update database dulu, baru hapus cache</strong>. Kalau cache dihapus dulu, ada jendela waktu ketika request lain miss, membaca nilai lama, dan menaruhnya kembali ke cache. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[5]</a></sup>
+</p>
+<p>
+  Dokumentasi ElastiCache menyebut kelebihannya: hanya data yang diminta yang di-cache, dan node cache yang mati tidak fatal (aplikasi tetap jalan, hanya lebih lambat).
+  Kekurangannya: setiap miss berarti tiga trip (baca cache, query database, tulis cache), dan data bisa basi karena cache tidak ikut diperbarui saat database berubah. <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html">[6]</a></sup>
+</p>
+
+<h3>Read-through, write-through, write-behind: cache yang mengurus database</h3>
+<p>
+  Beberapa produk cache (contoh: Oracle Coherence) bisa memegang "loader" ke database sendiri. <sup class="cite"><a href="https://docs.oracle.com/en/middleware/standalone/coherence/14.1.1.0/develop-applications/caching-data-sources.html">[7]</a></sup>
+  Azure menyebut cache-aside sebagai cara meniru read-through kalau cache Anda tidak menyediakannya. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#solution">[5]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Pola</th><th>Cara kerja</th><th>Kelebihan</th><th>Biaya / risiko</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Cache-aside</strong></td><td>aplikasi baca DB saat miss, isi cache; write → update DB, hapus key</td><td>sederhana, cache mati tidak fatal</td><td>miss = 3 trip; data bisa basi sampai TTL/hapus</td></tr>
+    <tr><td><strong>Read-through</strong></td><td>aplikasi hanya bicara ke cache; saat miss, cache memanggil loader ke DB</td><td>kode aplikasi lebih bersih</td><td>butuh produk cache yang mendukungnya</td></tr>
+    <tr><td><strong>Write-through</strong></td><td>write ke cache dan DB dalam satu operasi; selesai setelah DB tersimpan</td><td>cache tidak basi setelah write</td><td>setiap write dua trip; cache terisi data yang tak pernah dibaca</td></tr>
+    <tr><td><strong>Write-behind</strong></td><td>write ke cache, DB ditulis asinkron setelah jeda lewat antrean</td><td>write cepat, beberapa update digabung ("write-coalescing")</td><td>data bisa hilang sebelum flush; update DB bisa tidak berurutan</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Sumber tabel: Coherence untuk read-through ("Coherence automatically delegates to the CacheStore"), write-through (put "does not return" sampai data tersimpan di data source),
+  dan write-behind (ditulis "asynchronously ... after a configured delay"; cache menjadi system of record sampai antrean ditulis) <sup class="cite"><a href="https://docs.oracle.com/en/middleware/standalone/coherence/14.1.1.0/develop-applications/caching-data-sources.html">[7]</a></sup>;
+  ElastiCache untuk write-through ("data in the cache is never stale", setiap write dua trip, cache churn) <sup class="cite"><a href="https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html">[6]</a></sup>;
+  Azure untuk perbandingan cache-aside vs write-through: write-through membuat pembaca melihat nilai baru tepat setelah write berhasil. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#problems-and-considerations">[5]</a></sup>
+</p>
+<p>
+  Yang perlu diucapkan di interview: <strong>cache-aside + TTL</strong> sebagai default. Write-through bila pembacaan setelah write harus langsung segar.
+  Write-behind hanya bila write sangat banyak dan kehilangan beberapa detik data bisa diterima (mis. counter view), bukan untuk pembayaran.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Empat pola</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <div class="quiz" data-bank-lesson="0013" data-bank-topic="cache-pola" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal yang membenarkan cache:</strong> rasio baca:tulis tinggi (mis. 100:1), data yang sama dibaca berulang (hit ratio yang diharapkan tinggi), dan p99 atau CPU database
+  masih tinggi <em>setelah</em> query dan index diperiksa. Untuk 1.000 user aktif harian (di bawah 1 QPS rata-rata, lesson 0004), database tanpa cache sudah cukup.
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> satu komponen lagi untuk dijalankan dan dipantau, data basi, dan konsistensi yang tidak dijamin: cache-aside "doesn't guarantee consistency between the data store and the cache". <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#problems-and-considerations">[5]</a></sup>
+  Azure juga mendaftar kapan pola ini tidak cocok: data sensitif atau terkait keamanan, dataset statis yang muat di memori (cukup diisi saat startup), dan ketika sebagian besar request tidak pernah hit, sehingga biaya cek dan isi cache melebihi manfaatnya. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside#when-to-use-this-pattern">[5]</a></sup>
+</p>
+<p>
+  <strong>Alternatif lebih murah:</strong> baca query plan dengan <code>EXPLAIN</code> dan tambah index yang hilang <sup class="cite"><a href="https://www.postgresql.org/docs/current/using-explain.html">[8]</a></sup>;
+  pasang header <code>Cache-Control</code> supaya browser dan CDN yang menyimpan konten publik <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9111.html#section-1">[1]</a></sup>;
+  atau local cache kecil untuk data yang hampir tidak pernah berubah (daftar negara, konfigurasi), tanpa server cache baru.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Katalog produk Anda read-heavy dan database mulai lambat. Pola cache apa yang Anda pakai, bagaimana alur baca dan tulisnya, dan kapan Anda tidak memakai cache sama sekali?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Pertama saya ukur: kalau p99 lambat karena query tanpa index, saya perbaiki query dulu, itu lebih murah. Kalau rasio baca:tulis tinggi, misalnya 100:1, dan data yang sama dibaca berulang, saya pakai cache-aside di Redis bersama: baca cache, kalau miss baca database lalu isi cache dengan TTL. Saat write, update database dulu lalu hapus key-nya. Write-through membuat cache selalu segar tapi setiap write jadi dua trip; write-behind cepat tapi bisa kehilangan data kalau cache mati sebelum flush, jadi tidak untuk katalog berharga. Gambar produk cukup diberi header Cache-Control supaya browser dan CDN yang menyimpannya."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>cache-aside: baca cache, miss → baca database → isi cache?</li>
+      <li>urutan write: update database dulu, lalu hapus key cache?</li>
+      <li>perbandingan dengan write-through (selalu segar, dua trip) atau write-behind (cepat, risiko data hilang)?</li>
+      <li>TTL sebagai pengaman terhadap stale data?</li>
+      <li>lokasi: header HTTP/CDN untuk konten publik, cache bersama untuk data dinamis?</li>
+      <li>angka yang membenarkan cache (rasio baca:tulis, hit ratio, p99) setelah query/index diperiksa?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">Azure Architecture Center: Cache-Aside pattern</a>, ±10 menit. Bagian "Problems and considerations" adalah daftar trade-off yang bagus untuk diucapkan di interview.
+</div>
+
+<p>Berikutnya, <a href="0014-ttl-eviction-invalidation.html">lesson 0014</a>: berapa lama data boleh tinggal di cache (TTL), apa yang dibuang saat memori penuh (LRU/LFU), dan bagaimana menghapus data basi.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Caching") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan read-through lebih baik daripada cache-aside?", "Kenapa delete key saat write, bukan langsung set nilai baru?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.rfc-editor.org/rfc/rfc9111.html">[1] RFC 9111: HTTP Caching</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cache-hit-ratio.html">[2] Amazon CloudFront: Increase the cache hit ratio</a> ·
+  <a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html">[3] nginx: Module ngx_http_proxy_module</a> ·
+  <a href="https://redis.io/docs/latest/develop/reference/client-side-caching/">[4] Redis docs: Client-side caching reference</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside">[5] Azure Architecture Center: Cache-Aside pattern</a> ·
+  <a href="https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html">[6] Amazon ElastiCache: Caching strategies</a> ·
+  <a href="https://docs.oracle.com/en/middleware/standalone/coherence/14.1.1.0/develop-applications/caching-data-sources.html">[7] Oracle Coherence 14.1.1: Caching Data Sources</a> ·
+  <a href="https://www.postgresql.org/docs/current/using-explain.html">[8] PostgreSQL: Using EXPLAIN</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0012-review-fondasi-skalabilitas.html">← 0012 · Review 1: Fondasi + Skalabilitas</a>
+  <a href="0014-ttl-eviction-invalidation.html">0014 · TTL, eviction, invalidation →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
