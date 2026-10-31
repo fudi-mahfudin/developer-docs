@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0033 · Studi kasus: chat (A)</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0033 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Studi kasus: chat (A)</h1>
+  <p class="subtitle">Langkah 1–4: requirement, estimasi pesan dan koneksi, polling vs long polling vs WebSocket, data model per percakapan, dan desain v1</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0032-kasus-news-feed-b.html">lesson 0032</a> menyelesaikan news feed: sistem read-heavy yang boleh terlambat beberapa detik.
+  Chat berbeda di dua hal: server harus <em>mendorong</em> pesan ke client dalam hitungan ratus milidetik, dan urutan pesan di satu percakapan harus benar.
+  Seperti news feed, soal ini dibagi dua: lesson ini langkah 1–4, <a href="0034-kasus-chat-b.html">lesson 0034</a> langkah 5.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Rancang aplikasi chat untuk percakapan 1:1 dan grup kecil, 10 juta DAU"</em> sampai desain v1, tanpa catatan, dalam 90 detik:
+  requirement, QPS pesan dan jumlah koneksi bersamaan, kenapa WebSocket dan bukan polling (dengan angka), tabel pesan yang di-partisi menurut percakapan, dan desain v1 satu chat server.
+</div>
+
+<!-- ============ LANGKAH 1 ============ -->
+<h2>Langkah 1 — Klarifikasi requirement</h2>
+<ul>
+  <li><strong>Functional:</strong> pesan teks 1:1 dan grup kecil (sampai 100 anggota); indikator online (presence); pesan untuk user yang offline disampaikan saat ia kembali; riwayat tersimpan dan sama di semua perangkat user.
+    Di luar scope: enkripsi end-to-end, media, panggilan suara.</li>
+  <li><strong>Skala (asumsi, tanyakan):</strong> 10 juta DAU, rata-rata 40 pesan terkirim per user per hari, 30% DAU online bersamaan pada puncak; riwayat disimpan selamanya.</li>
+  <li><strong>Non-functional:</strong> pesan sampai ke penerima yang online dalam &lt; 500 ms; pesan yang sudah dikonfirmasi ke pengirim tidak boleh hilang; urutan pesan di satu percakapan sama untuk semua anggota.</li>
+</ul>
+
+<!-- ============ LANGKAH 2 ============ -->
+<h2>Langkah 2 — Estimasi</h2>
+<table>
+  <thead><tr><th>Besaran</th><th>Hitungan</th><th>Hasil</th></tr></thead>
+  <tbody>
+    <tr><td>QPS pesan masuk</td><td>10<sup>7</sup> × 40 ÷ 10<sup>5</sup> detik</td><td>±4.000 pesan/detik; puncak 3× ≈ ±12.000</td></tr>
+    <tr><td>Koneksi bersamaan</td><td>30% × 10<sup>7</sup></td><td>±3 juta koneksi pada puncak</td></tr>
+    <tr><td>Storage</td><td>4 × 10<sup>8</sup> pesan × ±200 byte per hari</td><td>±80 GB/hari ≈ ±29 TB/tahun</td></tr>
+    <tr><td>Kalau memakai polling</td><td>3 juta client ÷ polling tiap 2 detik</td><td>±1,5 juta request/detik, &gt; 99% kosong</td></tr>
+  </tbody>
+</table>
+<p>
+  Dua angka menentukan soal ini. Baris terakhir menjawab pertanyaan protokol di langkah 3. Baris kedua, 3 juta koneksi yang harus tetap terbuka, menjadi deep dive di lesson 0034.
+  Bandingkan dengan news feed: di sana yang mahal adalah QPS baca; di sini yang mahal adalah koneksi yang hidup lama.
+</p>
+
+<!-- ============ LANGKAH 3 ============ -->
+<h2>Langkah 3 — API dan data model</h2>
+<p><strong>Protokol: polling, long polling, atau WebSocket.</strong></p>
+<ul>
+  <li><strong>Polling:</strong> client bertanya "ada pesan?" setiap beberapa detik. Sederhana, tetapi ±1,5 juta request/detik yang hampir semuanya kosong, dan latensi rata-rata setengah interval polling.</li>
+  <li><strong>Long polling:</strong> RFC 6202: <em>"The server attempts to "hold open" (not immediately reply to) each HTTP request, responding only when there are events to deliver."</em> <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6202.html#section-1">[1]</a></sup>
+    Latensi lebih baik, tetapi setiap pesan tetap satu siklus request/response baru, dan arah client → server butuh request terpisah.</li>
+  <li><strong>WebSocket:</strong> RFC 6455 dibuat untuk aplikasi <em>"that need two-way communication with servers that does not rely on opening multiple HTTP connections"</em>.
+    Dengan teknik berbasis polling, RFC itu mencatat <em>"The wire protocol has a high overhead, with each client-to-server message having an HTTP header."</em> <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6455.html#section-1.1">[2]</a></sup>
+    Koneksi dibuka dengan request HTTP <code>Upgrade</code> yang dijawab <code>HTTP/1.1 101 Switching Protocols</code>, lalu koneksi TCP yang sama dipakai dua arah.</li>
+</ul>
+<p>
+  Pilih WebSocket untuk kirim dan terima pesan; ini pola yang sama dengan dokumentasi AWS API Gateway: <em>"services can push data to clients without requiring clients to make an explicit request"</em>,
+  dan WebSocket API <em>"are often used in real-time applications such as chat applications"</em>. <sup class="cite"><a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api.html">[3]</a></sup>
+  Riwayat tetap lewat REST biasa, karena bisa di-cache dan di-paginate.
+</p>
+<pre><code>WebSocket  wss://chat.example.com/v1/ws
+  client → server  { "type": "send", "conversationId": "c_17", "clientMsgId": "a1b2…", "text": "halo" }
+  server → client  { "type": "ack",  "clientMsgId": "a1b2…", "seq": 5012 }
+  server → client  { "type": "message", "conversationId": "c_17", "seq": 5012, "from": 42, "text": "halo" }
+
+REST  GET /v1/conversations/c_17/messages?beforeSeq=5012&amp;limit=50     ← riwayat, cursor = seq
+
+Tabel
+  messages            PRIMARY KEY ((conversation_id), seq) — urut seq menurun
+                      kolom: sender_id, client_msg_id, text, created_at
+  conversation_members (conversation_id, user_id)
+  user_conversations   (user_id, conversation_id, last_read_seq)   ← daftar chat + penanda sudah dibaca</code></pre>
+<p>
+  <strong>Kenapa <code>conversation_id</code> sebagai partition key.</strong> Hampir semua query berbentuk "pesan terakhir di percakapan X". Dokumentasi Cassandra:
+  <em>"the first field or component of a primary key is hashed to generate the partition key and the remaining fields or components are the clustering keys that are used to sort data within a partition."</em> <sup class="cite"><a href="https://cassandra.apache.org/doc/latest/cassandra/developing/data-modeling/intro.html">[4]</a></sup>
+  Satu percakapan = satu partition, terurut menurut <code>seq</code>. Bentuk key ini sama baiknya untuk PostgreSQL (primary key <code>(conversation_id, seq)</code>) di v1;
+  ±29 TB/tahun baru membenarkan penyimpanan wide-column yang di-partisi, dan pindah ke sana tidak mengubah bentuk key.
+  <code>clientMsgId</code> dibuat client supaya kirim ulang setelah koneksi putus tidak membuat pesan ganda.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Protokol dan data model</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0033" data-bank-topic="kasus-chat-protokol" data-stack></div>
+  <div class="quiz" data-bank-lesson="0033" data-bank-topic="kasus-chat-data" data-stack></div>
+</section>
+
+<!-- ============ LANGKAH 4 ============ -->
+<h2>Langkah 4 — High-level design (v1)</h2>
+<p>
+  Desain v1 paling sederhana: <strong>satu chat server</strong> yang memegang semua koneksi WebSocket, plus satu database. Chat server menyimpan peta di memori: <code>user_id → koneksi</code>.
+</p>
+<ol>
+  <li>Pengirim mengirim <code>send</code>. Server memberi nomor <code>seq</code> berikutnya untuk percakapan itu, menyimpan pesan, lalu membalas <code>ack</code>. Pesan dianggap terkirim setelah tersimpan, bukan sebelumnya.</li>
+  <li>Server mencari anggota percakapan di peta koneksi dan mendorong <code>message</code> ke yang sedang terhubung.</li>
+  <li>Anggota yang offline tidak menerima apa pun saat itu. Ketika terhubung lagi, client mengirim <code>seq</code> terakhir yang ia punya per percakapan, dan server mengirim semua pesan setelahnya dari database.</li>
+</ol>
+<p>
+  v1 ini sudah memenuhi semua requirement functional untuk satu server: urutan benar karena satu server memberi semua <code>seq</code>, dan pesan offline tidak hilang karena database menjadi sumber kebenaran.
+  Saat peluncuran (mis. puluhan ribu user online) ini cukup; ukur jumlah koneksi dan memori per koneksi di server itu sebelum menambah apa pun.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Gambar diagram v1 sendiri dulu</h2>
+  <p>Gambar diagram v1 Anda sendiri dulu: koneksi mana yang hidup lama, kapan pesan disimpan relatif terhadap <code>ack</code>, dan bagaimana user offline mendapat pesannya. Setelah selesai, buka jawabannya.</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <figure class="diagram-fig">
+    <svg class="diagram" viewBox="0 0 660 220" role="img" aria-label="Desain v1 chat: user A dan user B terhubung lewat WebSocket ke satu chat server yang menyimpan peta koneksi di memori; chat server menyimpan pesan ke database messages lalu mendorongnya ke user B">
+      <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <g class="node client"><rect x="10" y="40" width="100" height="36" rx="4"/><text x="60" y="58">User A</text></g>
+      <g class="node client"><rect x="10" y="140" width="100" height="36" rx="4"/><text x="60" y="158">User B</text></g>
+      <g class="node service"><rect x="220" y="90" width="160" height="36" rx="4"/><text x="300" y="108">Chat server (1)</text></g>
+      <g class="node store"><rect x="480" y="90" width="160" height="36" rx="4"/><text x="560" y="108">DB messages</text></g>
+      <path class="edge" d="M110,58 L218,100"/>
+      <path class="edge" d="M218,116 L112,158"/>
+      <path class="edge" d="M380,108 H478"/>
+      <text class="label" x="150" y="48">1. send (WebSocket)</text>
+      <text class="label" x="150" y="190">3. message (WebSocket)</text>
+      <text class="label" x="430" y="88">2. simpan + seq</text>
+      <text class="label" x="300" y="150">peta: user_id → koneksi</text>
+      <text class="label" x="560" y="150">(conversation_id, seq)</text>
+    </svg>
+    <figcaption>v1: satu chat server memberi seq, menyimpan, membalas ack ke A, lalu mendorong ke B. B yang offline mengambil pesan setelah seq terakhirnya saat reconnect.</figcaption>
+    </figure>
+  </details>
+</section>
+
+<p>
+  <strong>Di mana v1 berhenti cukup.</strong> Target skalanya ±3 juta koneksi bersamaan, jauh di atas yang wajar dipegang satu server, dan satu server juga titik gagal tunggal.
+  Begitu ada banyak chat server, muncul empat pertanyaan baru: bagaimana pesan berpindah dari server pengirim ke server penerima, bagaimana tahu siapa yang online, siapa yang memberi <code>seq</code>, dan bagaimana pesan offline sampai ke ponsel yang tertidur.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Rancang aplikasi chat untuk percakapan 1:1 dan grup kecil, 10 juta DAU. Mulai dari requirement sampai desain v1." (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Scope-nya pesan teks 1:1 dan grup sampai 100 orang, status online, pesan untuk user offline disampaikan saat ia kembali, riwayat tersimpan di semua perangkat; enkripsi end-to-end dan media di luar scope. 10 juta DAU, 40 pesan per user per hari: sekitar 4.000 pesan per detik, puncak 12.000. Kalau 30% online di puncak, itu 3 juta koneksi bersamaan. Polling setiap 2 detik berarti 1,5 juta request per detik yang hampir semuanya kosong, jadi saya pakai WebSocket untuk kirim dan terima, dan REST untuk riwayat dengan cursor seq. Tabel messages di-partisi menurut conversation_id dengan clustering seq; storage sekitar 80 GB per hari, 29 TB per tahun. Desain v1: satu chat server WebSocket yang memberi seq, menyimpan pesan, lalu mendorongnya ke penerima yang terhubung; penerima yang offline mengambil pesan setelah seq terakhirnya saat reconnect. Batas v1 adalah jumlah koneksi per server; 3 juta koneksi itulah deep dive-nya."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>requirement: 1:1 + grup kecil, presence, pesan offline, riwayat multi-device; yang di luar scope disebut?</li>
+      <li>estimasi: ±4.000 pesan/detik (puncak ±12.000) dan ±3 juta koneksi bersamaan?</li>
+      <li>protokol: WebSocket untuk kirim/terima, dengan alasan biaya polling (±1,5 juta request/detik kosong)?</li>
+      <li>data model: messages dengan partition key conversation_id dan clustering seq; storage ±80 GB/hari?</li>
+      <li>v1: satu chat server WebSocket + database, penerima offline mengambil pesan setelah seq terakhir?</li>
+      <li>membenarkan komponen dengan angka (WebSocket karena biaya polling; batas v1 karena 3 juta koneksi)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.rfc-editor.org/rfc/rfc6455.html#section-1.1">RFC 6455: The WebSocket Protocol, bagian 1.1–1.3</a>, ±15 menit. Latar belakang, masalah polling, dan opening handshake.
+</div>
+
+<p>Desain v1 sudah berdiri, dan angka 3 juta koneksi sudah di tangan. Lanjut di <a href="0034-kasus-chat-b.html">lesson 0034</a>: langkah 5, koneksi WebSocket stateful, presence, ordering, dan pesan offline.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan Server-Sent Events cukup untuk chat?", "bagaimana grup 100 anggota mengubah estimasi?", atau "kenapa riwayat lewat REST dan bukan WebSocket?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.rfc-editor.org/rfc/rfc6202.html#section-1">[1] RFC 6202: Known Issues and Best Practices for the Use of Long Polling and Streaming in Bidirectional HTTP</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc6455.html#section-1.1">[2] RFC 6455: The WebSocket Protocol</a> ·
+  <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-websocket-api.html">[3] AWS docs: API Gateway WebSocket APIs</a> ·
+  <a href="https://cassandra.apache.org/doc/latest/cassandra/developing/data-modeling/intro.html">[4] Apache Cassandra docs: Introduction to data modeling</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0032-kasus-news-feed-b.html">← 0032 · Studi kasus: news feed (B): fan-out</a>
+  <a href="0034-kasus-chat-b.html">0034 · Studi kasus: chat (B): koneksi, presence, ordering →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0033.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

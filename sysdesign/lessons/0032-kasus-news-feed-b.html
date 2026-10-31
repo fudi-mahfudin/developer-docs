@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0032 · Studi kasus: news feed (B): fan-out</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0032 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Studi kasus: news feed (B): fan-out</h1>
+  <p class="subtitle">Langkah 5: fan-out on write vs fan-out on read, feed cache yang dibatasi, dan hybrid untuk akun besar</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0031-kasus-news-feed-a.html">lesson 0031</a> mengerjakan langkah 1–4 dan berhenti di satu angka: ±600.000 pencarian index per detik pada puncak.
+  Lesson ini adalah langkah 5: setiap komponen baru harus menjawab angka itu, atau angka baru yang muncul dari komponen sebelumnya.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Desain v1 news feed Anda fan-out on read. Di 10 juta DAU, dengan akun terbesar 10 juta follower, bagaimana Anda mengembangkannya?"</em> tanpa catatan, dalam 90 detik:
+  biaya fan-out on read vs fan-out on write dalam angka, feed cache dengan batas, queue untuk fan-out asinkron, dan hybrid untuk akun besar dan user tidak aktif.
+</div>
+
+<!-- ============ RINGKASAN A ============ -->
+<h2>Ringkasan dari lesson 0031</h2>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 660 160" role="img" aria-label="Ringkasan v1 dari lesson 0031: client ke load balancer ke app server stateless ke PostgreSQL berisi posts dan follows; feed dirakit dengan satu query saat dibaca">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="50" width="90" height="36" rx="4"/><text x="55" y="68">Client</text></g>
+  <g class="node service"><rect x="140" y="50" width="120" height="36" rx="4"/><text x="200" y="68">Load balancer</text></g>
+  <g class="node service"><rect x="300" y="50" width="130" height="36" rx="4"/><text x="365" y="68">App server ×N</text></g>
+  <g class="node store"><rect x="480" y="50" width="150" height="36" rx="4"/><text x="555" y="68">PostgreSQL</text></g>
+  <path class="edge" d="M100,68 H138"/>
+  <path class="edge" d="M260,68 H298"/>
+  <path class="edge" d="M430,68 H478"/>
+  <text class="label" x="555" y="110">posts + follows</text>
+  <text class="label" x="365" y="110">feed = 1 query JOIN</text>
+  <text class="label" x="330" y="140">puncak: 3.000 feed/detik × 200 penulis ≈ 600.000 pencarian index/detik</text>
+</svg>
+<figcaption>v1 (fan-out on read) dari lesson 0031. Angka yang dibawa: ±100 post/detik, ±3.000 feed/detik pada puncak, rata-rata 200 akun di-follow, akun terbesar 10 juta follower, keterlambatan beberapa detik diizinkan.</figcaption>
+</figure>
+
+<!-- ============ LANGKAH 5 ============ -->
+<h2>Langkah 5 — Deep dive: fan-out on write vs fan-out on read</h2>
+<p>Langkah ini adalah evolusi dari v1 ke v2, satu perubahan per masalah yang terlihat di angka:</p>
+
+<p><strong>1. Fan-out on write: siapkan feed sebelum dibaca.</strong> Saat post dibuat, ID-nya ditambahkan ke feed setiap follower. Membaca feed tinggal mengambil satu list.
+  Redis mendokumentasikan pola ini sendiri: salah satu kegunaan list adalah <em>"Remember the latest updates posted by users into a social network."</em> <sup class="cite"><a href="https://redis.io/docs/latest/develop/data-types/lists/">[1]</a></sup>
+  Perbandingannya dalam angka:</p>
+<table>
+  <thead><tr><th></th><th>Fan-out on read (v1)</th><th>Fan-out on write</th></tr></thead>
+  <tbody>
+    <tr><td>Kerja saat post dibuat</td><td>1 INSERT</td><td>1 INSERT + 200 penulisan feed (±20.000/detik, puncak ±60.000)</td></tr>
+    <tr><td>Kerja saat feed dibuka</td><td>200 rentang index (±600.000/detik pada puncak)</td><td>1 baca list (±3.000/detik pada puncak)</td></tr>
+    <tr><td>Post baru terlihat</td><td>langsung</td><td>beberapa detik kemudian (diizinkan di langkah 1)</td></tr>
+    <tr><td>Unfollow, hapus post</td><td>otomatis benar</td><td>perlu dibersihkan atau disaring saat baca</td></tr>
+  </tbody>
+</table>
+<p>Sistem ini read-heavy 10:1, jadi memindahkan kerja dari baca ke tulis adalah pertukaran yang menguntungkan. Untuk sistem dengan rasio sebaliknya, v1 tetap lebih baik.</p>
+
+<p><strong>2. Feed cache yang dibatasi.</strong> Simpan hanya ID post, bukan isinya, dan batasi panjangnya: <em>"Redis allows us to use lists as a capped collection, only remembering the latest N items and discarding all the oldest items using the LTRIM command."</em> <sup class="cite"><a href="https://redis.io/docs/latest/develop/data-types/lists/">[1]</a></sup>
+  Worker menjalankan <code>LPUSH feed:42 9001</code> lalu <code>LTRIM feed:42 0 799</code>. Estimasi: 800 ID × 8 byte × 10 juta user ≈ 64 GB, cukup untuk beberapa node Redis yang di-shard menurut <code>user_id</code>.
+  Isi post diambil saat baca dari cache post (satu post dibaca banyak follower, cocok untuk cache) atau dari database. Karena isi tidak disalin, post yang dihapus cukup disaring saat itu.
+  User yang menggulir melewati 800 ID jatuh ke query v1; itu jarang, dan v1 tetap benar.</p>
+
+<p><strong>3. Fan-out asinkron lewat queue.</strong> 200 penulisan per post tidak boleh membuat <code>POST /v1/posts</code> menunggu. Post service menyimpan post, mengirim event ke queue, lalu langsung membalas 201.
+  Worker fan-out membaca daftar follower (index <code>followee_id</code> dari lesson 0031) dan menulis ke feed cache. Dengan Kafka, event diberi key <code>author_id</code>:
+  <em>"Events with the same event key (e.g., a customer or vehicle ID) are written to the same partition, and Kafka guarantees that any consumer of a given topic-partition will always read that partition's events in exactly the same order as they were written."</em> <sup class="cite"><a href="https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology">[2]</a></sup>
+  Jadi post dari satu penulis masuk ke feed dalam urutan yang benar, dan worker bisa ditambah sampai sejumlah partition.</p>
+
+<p><strong>4. Hybrid untuk akun besar.</strong> Fan-out on write murni gagal di ujung distribusi: satu post dari akun dengan 10 juta follower menjadi 10 juta penulisan, dan post lain menunggu di belakangnya.
+  Hybrid: akun di atas ambang (mis. 10.000 follower) tidak di-fan-out. Saat user membuka feed, app server mengambil feed cache-nya, lalu mengambil post terbaru dari sedikit akun besar yang ia follow
+  (query v1, tetapi hanya untuk beberapa penulis, bukan 200), dan menggabungkan keduanya menurut waktu. Post terbaru akun besar dibaca jutaan kali, jadi simpan di cache.
+  Ambangnya bukan angka ajaib: ukur antrean fan-out dan latensi baca, lalu geser ambang sampai keduanya dalam target.</p>
+
+<p><strong>5. Jangan fan-out ke user yang tidak membaca.</strong> Kalau sepertiga follower tidak login berbulan-bulan, sepertiga penulisan dan memori terbuang. Fan-out hanya ke user aktif (mis. login 30 hari terakhir).
+  Saat user lama kembali, feed-nya dirakit sekali dengan fan-out on read, lalu cache diisi lagi.</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Gambar diagram v2 sendiri dulu</h2>
+  <p>Gambar diagram v2 Anda sendiri dulu, mulai dari v1 di ringkasan: di mana queue, worker fan-out, dan feed cache berada, dan dari mana post akun besar diambil saat baca. Setelah selesai, buka jawabannya.</p>
+  <details>
+    <summary>Lihat jawaban</summary>
+    <figure class="diagram-fig">
+    <svg class="diagram" viewBox="0 0 680 300" role="img" aria-label="Desain v2 news feed: post service menyimpan post dan mengirim event ke queue; worker fan-out membaca follower dan menulis ke feed cache Redis; feed service membaca feed cache, mengambil post akun besar dari cache post, lalu menggabungkan">
+      <g class="node client"><rect x="10" y="40" width="90" height="36" rx="4"/><text x="55" y="58">Client</text></g>
+      <g class="node service"><rect x="140" y="40" width="120" height="36" rx="4"/><text x="200" y="58">Post service</text></g>
+      <g class="node store"><rect x="300" y="40" width="130" height="36" rx="4"/><text x="365" y="58">DB posts/follows</text></g>
+      <g class="node queue"><rect x="140" y="130" width="120" height="36" rx="4"/><text x="200" y="148">Queue (Kafka)</text></g>
+      <g class="node service"><rect x="300" y="130" width="130" height="36" rx="4"/><text x="365" y="148">Worker fan-out</text></g>
+      <g class="node cache"><rect x="480" y="130" width="180" height="36" rx="4"/><text x="570" y="148">Feed cache (Redis list)</text></g>
+      <g class="node client"><rect x="10" y="230" width="90" height="36" rx="4"/><text x="55" y="248">Client</text></g>
+      <g class="node service"><rect x="140" y="230" width="120" height="36" rx="4"/><text x="200" y="248">Feed service</text></g>
+      <g class="node cache"><rect x="300" y="230" width="130" height="36" rx="4"/><text x="365" y="248">Cache post</text></g>
+      <path class="edge" d="M100,58 H138"/>
+      <path class="edge" d="M260,58 H298"/>
+      <path class="edge async" d="M200,76 V128"/>
+      <path class="edge" d="M260,148 H298"/>
+      <path class="edge" d="M365,128 V78"/>
+      <path class="edge" d="M430,148 H478"/>
+      <path class="edge" d="M100,248 H138"/>
+      <path class="edge" d="M260,248 H298"/>
+      <path class="edge" d="M240,230 L520,168"/>
+      <text class="label" x="222" y="102">event</text>
+      <text class="label" x="420" y="102">baca follower</text>
+      <text class="label" x="570" y="190">LPUSH + LTRIM 0 799</text>
+      <text class="label" x="200" y="290">gabung: feed cache + post akun besar</text>
+      <text class="label" x="570" y="58">akun besar: tidak di-fan-out</text>
+    </svg>
+    <figcaption>v2 hybrid: fan-out on write untuk akun biasa dan user aktif (baca ±3.000/detik dari satu list); fan-out on read untuk akun besar (post terbarunya di cache).</figcaption>
+    </figure>
+    <p>Jalur tulis: <code>POST</code> → simpan post → event ke queue (key <code>author_id</code>) → 201. Worker: kalau penulis di bawah ambang, baca follower aktif → <code>LPUSH</code> + <code>LTRIM</code> per follower.
+      Jalur baca: <code>LRANGE feed:me 0 19</code> + post terbaru akun besar yang di-follow → gabung menurut waktu → ambil isi post dari cache post → 20 post + cursor.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Fan-out dan hybrid</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0032" data-bank-topic="kasus-feed-fanout" data-stack></div>
+  <div class="quiz" data-bank-lesson="0032" data-bank-topic="kasus-feed-hybrid" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Desain v1 news feed Anda fan-out on read. Di 10 juta DAU, dengan akun terbesar 10 juta follower, bagaimana Anda mengembangkannya?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Di v1, satu pembukaan feed menyentuh 200 penulis, jadi pada puncak 3.000 feed per detik itu sekitar 600.000 pencarian index per detik. Evolusi pertama: fan-out on write. Post disimpan, lalu event-nya masuk queue; worker menambahkan ID post ke feed cache setiap follower di Redis, dengan LTRIM supaya hanya 800 ID terakhir, sekitar 64 GB untuk 10 juta user. Membaca feed tinggal satu key. Biayanya 100 post kali 200 follower, sekitar 20.000 penulisan per detik, dan post muncul beberapa detik kemudian, yang diizinkan requirement. Masalahnya akun besar: satu post jadi 10 juta penulisan. Jadi saya pakai hybrid: akun di atas ambang, misalnya 10.000 follower, tidak di-fan-out; post terbarunya diambil saat feed dibaca dan digabung dengan feed cache. Saya juga hanya fan-out ke user yang aktif 30 hari terakhir; user lama dirakit dengan fan-out on read saat kembali."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>titik awal: biaya v1 ±600.000 pencarian index/detik pada puncak?</li>
+      <li>fan-out on write: queue + worker menulis ID post ke feed cache setiap follower?</li>
+      <li>feed cache terbatas (LTRIM, mis. 800 ID) dengan estimasi memori?</li>
+      <li>biaya fan-out on write: ±20.000 penulisan/detik dan keterlambatan beberapa detik yang diizinkan?</li>
+      <li>hybrid: akun besar di atas ambang diambil saat baca; user tidak aktif tidak di-fan-out?</li>
+      <li>membenarkan komponen dengan angka (cache karena 600.000/detik; hybrid karena 10 juta penulisan per post)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://redis.io/docs/latest/develop/data-types/lists/">Redis docs: Lists</a>, ±15 menit. Bagian "Capped lists" dan contoh "latest photos" adalah inti feed cache di lesson ini.
+</div>
+
+<p>Berikutnya, <a href="0033-kasus-chat-a.html">lesson 0033</a>: chat, langkah 1–4.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana menghapus post dari feed cache setelah unfollow?", "bagaimana feed berubah kalau ada ranking?", atau "bagaimana menentukan ambang akun besar dengan metrik?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://redis.io/docs/latest/develop/data-types/lists/">[1] Redis docs: Lists (capped lists, LTRIM)</a> ·
+  <a href="https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology">[2] Apache Kafka 4.4 docs: Introduction, main concepts</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0031-kasus-news-feed-a.html">← 0031 · Studi kasus: news feed (A)</a>
+  <a href="0033-kasus-chat-a.html">0033 · Studi kasus: chat (A) →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0032.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
