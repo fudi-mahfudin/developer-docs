@@ -22,7 +22,7 @@ const REVIEWS = [
 
   { num: "0026", sources: [...range(16, 18), ...range(20, 25)], prefixes: ["async-", "rel-"] },
 
-  // { num: "0035", sources: range(27, 34), prefixes: ["kasus-"], allBanks: true },
+  { num: "0035", sources: range(27, 34), prefixes: ["kasus-"], allBanks: true },
 ];
 
 REVIEWS.forEach(({ num, sources, prefixes, allBanks }) => {
