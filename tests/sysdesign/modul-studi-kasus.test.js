@@ -7,7 +7,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { ROOT, forTrack } = require("../helpers.js");
+const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const sd = forTrack("sysdesign");
 // kasus: true = satu lesson memuat langkah 1–5; "A" = langkah 1–4 lalu "lanjut di lesson B"; "B" = ringkasan diagram dari A lalu langkah 5.
@@ -34,19 +34,9 @@ const KEYWORDS = {
 const NAV_BEFORE = "0026-review-asinkron-reliabilitas.html";
 const NAV_AFTER = "0035-review-studi-kasus.html";
 const NUMS = Object.keys(LESSONS);
-const read = n => fs.readFileSync(path.join(ROOT, "sysdesign", "lessons", LESSONS[n].file), "utf8");
 
 test("modul Studi kasus: topics, kasus- prefix, >=2 mc per topic, >=1 oral per lesson", () => {
-  NUMS.forEach(n => {
-    const { qs, oral } = sd.lessonQuestions(n);
-    qs.forEach(q => {
-      assert.match(q.topic, /^kasus-/);
-      assert.ok(LESSONS[n].topics.includes(q.topic), `${q.id}: topik ${q.topic} bukan milik ${n}`);
-    });
-    assert.ok(oral.length >= 1, `${n}: butuh soal lisan`);
-  });
-  const mc = NUMS.flatMap(n => sd.lessonQuestions(n).mc);
-  NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(mc.filter(q => q.topic === t).length >= 2, t));
+  sd.assertModuleTopics(LESSONS, "kasus-");
 });
 
 test("every oral checklist awards 'membenarkan komponen dengan angka'", () => {
@@ -56,21 +46,17 @@ test("every oral checklist awards 'membenarkan komponen dengan angka'", () => {
 
 test("modul Studi kasus covers the spec keywords per lesson", () => {
   NUMS.forEach(n => {
-    const html = read(n);
+    const html = sd.readLesson(n);
     KEYWORDS[n].forEach(k => assert.ok(html.includes(k), `${n} belum membahas ${k}`));
   });
 });
 
 test("each lesson: one win, module kicker, cite numbering, diagram, quiz per topic, oral blocks, no lab", () => {
   NUMS.forEach(n => {
-    const html = read(n);
+    const html = sd.readLesson(n);
     assert.equal((html.match(/<div class="win">/g) || []).length, 1, `${n}: satu win`);
     assert.match(html, new RegExp(`<div class="kicker">Lesson ${n} · System Design · Modul Studi kasus · ±\\d+ menit</div>`));
-    const cites = [...html.matchAll(/<sup class="cite"><a [^>]*>\[(\d+)\]<\/a><\/sup>/g)].map(m => Number(m[1]));
-    const listed = [...html.matchAll(/<a href="[^"]+">\[(\d+)\] /g)].map(m => Number(m[1]));
-    assert.ok(cites.length >= 1, `${n}: butuh >= 1 .cite`);
-    assert.deepEqual(listed, listed.map((_, i) => i + 1), `${n}: Sumber bernomor urut`);
-    assert.deepEqual([...new Set(cites)].sort((a, b) => a - b), listed, `${n}: sitasi = daftar Sumber`);
+    assertCitesNumbered(html, n);
     assert.match(html, /<svg class="diagram"|<div class="flow">/, `${n}: butuh diagram`);
     LESSONS[n].topics.forEach(t => assert.match(html, new RegExp(`data-bank-lesson="${n}" data-bank-topic="[^"]*${t}`), `${n}: kuis ${t}`));
     const blocks = (html.match(/Lulus (jika|kalau) minimal 4 dari 6\./g) || []).length;
@@ -82,7 +68,7 @@ test("each lesson: one win, module kicker, cite numbering, diagram, quiz per top
 });
 
 test("0027 teaches the 5-step frame with an order exercise and starts step 4 from v1", () => {
-  const html = read("0027");
+  const html = sd.readLesson("0027");
   assert.match(html, /<div class="order">\s*<ol>(\s*<li>[\s\S]*?<\/li>){5}\s*<\/ol>/, "order 5 langkah");
   assert.ok(html.includes('<script src="../../assets/order.js"></script>'), "memuat order.js");
   const order = html.match(/<div class="order">\s*<ol>([\s\S]*?)<\/ol>/)[1];
@@ -94,7 +80,7 @@ test("0027 teaches the 5-step frame with an order exercise and starts step 4 fro
 
 test("each case study: heading per langkah 1–5, v1 before evolution, numbers, draw-first reveal with svg", () => {
   NUMS.filter(n => LESSONS[n].kasus === true).forEach(n => {
-    const html = read(n);
+    const html = sd.readLesson(n);
     const steps = [1, 2, 3, 4, 5].map(i => {
       const m = html.match(new RegExp(`<h2>[^<]*Langkah ${i}\\b[^<]*</h2>`));
       assert.ok(m, `${n}: butuh h2 Langkah ${i}`);
@@ -117,7 +103,7 @@ const stepAt = (html, i) => { const m = html.match(new RegExp(`<h2>[^<]*Langkah 
 
 test("case study A (0031, 0033): langkah 1–4 only, v1 with numbers, draw-first reveal, closes with 'lanjut di lesson B'", () => {
   NUMS.filter(n => LESSONS[n].kasus === "A").forEach(n => {
-    const html = read(n);
+    const html = sd.readLesson(n);
     const steps = [1, 2, 3, 4].map(i => stepAt(html, i));
     steps.forEach((s, i) => assert.ok(s >= 0, `${n}: butuh h2 Langkah ${i + 1}`));
     assert.deepEqual(steps, [...steps].sort((a, b) => a - b), `${n}: langkah berurutan`);
@@ -133,7 +119,7 @@ test("case study A (0031, 0033): langkah 1–4 only, v1 with numbers, draw-first
 
 test("case study B (0032, 0034): opens with a diagram summary of A, then langkah 5 with v2, draw-first reveal", () => {
   NUMS.filter(n => LESSONS[n].kasus === "B").forEach(n => {
-    const html = read(n);
+    const html = sd.readLesson(n);
     [1, 2, 3, 4].forEach(i => assert.equal(stepAt(html, i), -1, `${n}: langkah ${i} ada di lesson A`));
     const step5 = stepAt(html, 5);
     assert.ok(step5 >= 0, `${n}: butuh h2 Langkah 5`);
@@ -153,7 +139,7 @@ test("case study B (0032, 0034): opens with a diagram summary of A, then langkah
 test("modul Studi kasus nav: 0026 → 0027 → … → 0034 → 0035", () => {
   const files = [NAV_BEFORE, ...NUMS.map(n => LESSONS[n].file), NAV_AFTER];
   NUMS.forEach((n, i) => {
-    const nav = (read(n).match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
+    const nav = (sd.readLesson(n).match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
     assert.deepEqual([...nav.matchAll(/href="([^"]+)"/g)].map(m => m[1]), [files[i], files[i + 2]]);
   });
 });
