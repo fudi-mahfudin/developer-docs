@@ -20,7 +20,7 @@ const REVIEWS = [
 
   { num: "0019", sources: [...range(8, 11), ...range(13, 15)], prefixes: ["data-", "cache-"] },
 
-  // { num: "0026", sources: [...range(16, 18), ...range(20, 25)], prefixes: ["async-", "rel-"] },
+  { num: "0026", sources: [...range(16, 18), ...range(20, 25)], prefixes: ["async-", "rel-"] },
 
   // { num: "0035", sources: range(27, 34), prefixes: ["kasus-"], allBanks: true },
 ];
