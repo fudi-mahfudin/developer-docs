@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0016 · Message queue vs pub/sub; log (Kafka) vs broker (RabbitMQ)</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0016 · System Design · Modul Asinkron · ±20 menit</div>
+  <h1>Message queue vs pub/sub; log (Kafka) vs broker (RabbitMQ)</h1>
+  <p class="subtitle">Kenapa sebagian pekerjaan sebaiknya tidak ditunggu, dua cara mengantar pesan, dan dua keluarga produk yang paling sering disebut di interview</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0015-thundering-herd-hot-key.html">lesson 0015</a> menutup modul Caching: cache mengurangi kerja yang <em>berulang</em>.
+  Modul Asinkron membahas kerja yang <em>tidak perlu ditunggu</em>. Lesson ini memberi kosakata dasarnya: queue, pub/sub, consumer group, log, dan broker.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Kapan memakai message queue, kapan pub/sub, kapan Kafka, kapan RabbitMQ, dan kapan tidak memakai keduanya?"</em>
+  tanpa catatan, dalam 60 detik: alasan asinkron, satu pesan ke satu consumer vs ke semua subscriber, log yang bisa dibaca ulang vs pesan yang dihapus setelah ack, dan alternatif yang lebih murah.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Kenapa asinkron</h2>
+<p>
+  Bayangkan endpoint checkout yang, setelah menyimpan pesanan, memanggil layanan email secara sinkron. Kalau layanan email butuh 5 detik, user menunggu 5 detik untuk sesuatu yang tidak ia lihat.
+  Kalau layanan email mati, checkout ikut gagal. Message queue memutus ketergantungan ini: checkout menaruh pesan "kirim email untuk order 42" lalu langsung menjawab user,
+  dan worker di belakang mengambil pesan itu kapan pun ia siap. Azure Architecture Center merangkumnya: message queue <em>"decouple senders from consumers and prevent the sender from blocking a process while it waits for a response."</em>
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/publisher-subscriber#context-and-problem">[1]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Checkout (producer)</span><span class="arrow">→</span>
+  <span class="box">Queue</span><span class="arrow">→</span>
+  <span class="box">Worker email (consumer)</span><span class="arrow">→</span>
+  <span class="box">SMTP</span>
+</div>
+<p>
+  Tiga istilah dasar: <strong>producer</strong> mengirim pesan, <strong>broker</strong> (server queue) menyimpannya, <strong>consumer</strong> mengambil dan memprosesnya.
+  Yang dibeli dengan asinkron adalah <em>waktu respons</em> dan <em>isolasi kegagalan</em>; yang dibayar adalah komponen baru, hasil yang tidak langsung terlihat, dan pertanyaan baru: bagaimana kalau pesan hilang atau datang dua kali (lesson 0017).
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Message queue vs pub/sub</h2>
+<p>Dua pola pengantaran ini sering tertukar. Bedanya ada pada <strong>berapa penerima per pesan</strong>.</p>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 250" role="img" aria-label="Kiri: satu queue, tiga worker berebut pesan, setiap pesan ke satu worker. Kanan: satu topik pub/sub, tiga subscriber email, stok, analitik masing-masing menerima salinan">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <text class="label" x="150" y="16">Queue: satu pesan → satu consumer</text>
+  <g class="node service"><rect x="10" y="107" width="80" height="36" rx="4"/><text x="50" y="125">Producer</text></g>
+  <g class="node queue"><rect x="120" y="107" width="70" height="36" rx="4"/><text x="155" y="125">Queue</text></g>
+  <g class="node service"><rect x="220" y="40" width="80" height="36" rx="4"/><text x="260" y="58">Worker 1</text></g>
+  <g class="node service"><rect x="220" y="107" width="80" height="36" rx="4"/><text x="260" y="125">Worker 2</text></g>
+  <g class="node service"><rect x="220" y="174" width="80" height="36" rx="4"/><text x="260" y="192">Worker 3</text></g>
+  <path class="edge async" d="M90,125 H118"/>
+  <path class="edge async" d="M190,118 L218,62"/>
+  <path class="edge async" d="M190,125 H218"/>
+  <path class="edge async" d="M190,132 L218,188"/>
+  <text class="label" x="260" y="232">pesan A ke W1, B ke W2, C ke W3</text>
+
+  <text class="label" x="490" y="16">Pub/sub: satu pesan → semua subscriber</text>
+  <g class="node service"><rect x="340" y="107" width="80" height="36" rx="4"/><text x="380" y="125">Publisher</text></g>
+  <g class="node queue"><rect x="450" y="107" width="70" height="36" rx="4"/><text x="485" y="125">Topik</text></g>
+  <g class="node service"><rect x="550" y="40" width="80" height="36" rx="4"/><text x="590" y="58">Email</text></g>
+  <g class="node service"><rect x="550" y="107" width="80" height="36" rx="4"/><text x="590" y="125">Stok</text></g>
+  <g class="node service"><rect x="550" y="174" width="80" height="36" rx="4"/><text x="590" y="192">Analitik</text></g>
+  <path class="edge async" d="M420,125 H448"/>
+  <path class="edge async" d="M520,118 L548,62"/>
+  <path class="edge async" d="M520,125 H548"/>
+  <path class="edge async" d="M520,132 L548,188"/>
+  <text class="label" x="560" y="232">pesan A ke ketiganya</text>
+</svg>
+<figcaption>Garis putus-putus = asinkron. Kiri: competing consumers. Kanan: publish-subscribe.</figcaption>
+</figure>
+<table>
+  <thead><tr><th></th><th>Message queue (point-to-point)</th><th>Pub/sub</th></tr></thead>
+  <tbody>
+    <tr><td>Penerima per pesan</td><td>Satu consumer; consumer lain mengambil pesan berikutnya</td><td>Setiap subscriber mendapat salinan</td></tr>
+    <tr><td>Dipakai untuk</td><td>Membagi kerja: kirim email, resize gambar, generate PDF</td><td>Memberi tahu banyak pihak: <code>OrderPlaced</code> ke email, stok, analitik</td></tr>
+    <tr><td>Menambah consumer berarti</td><td>Throughput naik (kerja dibagi)</td><td>Satu penerima baru, tanpa mengubah publisher</td></tr>
+  </tbody>
+</table>
+<p>
+  Queue dengan banyak consumer disebut <strong>competing consumers</strong>: sistem harus memastikan <em>"each message is delivered to only one consumer."</em>
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/competing-consumers#context-and-problem">[2]</a></sup>
+  Pub/sub punya <em>"a mechanism for copying each message from the input channel to the output channels for all subscribers interested in that message."</em> <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/publisher-subscriber#solution">[1]</a></sup>
+  Satu catatan penting untuk keduanya: urutan penerimaan <em>"isn't guaranteed"</em> kecuali broker mendukung urutan per partition atau session. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/publisher-subscriber#problems-and-considerations">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Queue atau pub/sub</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0026.</p>
+  <div class="quiz" data-bank-lesson="0016" data-bank-topic="async-queue-pubsub" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Log (Kafka) vs broker (RabbitMQ)</h2>
+<p>Di interview, "pakai queue" biasanya disusul "Kafka atau RabbitMQ?". Keduanya bisa melakukan queue dan pub/sub, tapi model penyimpanannya berbeda.</p>
+
+<h3>Kafka: log yang dipartisi</h3>
+<ul>
+  <li><strong>Topik dan partition.</strong> Event disimpan di <em>topic</em>, dan topik dipecah menjadi beberapa <em>partition</em> di broker yang berbeda. Event dengan key yang sama (mis. customer ID) masuk ke partition yang sama,
+    dan Kafka menjamin consumer membaca satu partition <em>"in exactly the same order as they were written."</em> <sup class="cite"><a href="https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology">[3]</a></sup></li>
+  <li><strong>Tidak dihapus setelah dibaca.</strong> <em>"Unlike traditional messaging systems, events are not deleted after consumption."</em> Lama penyimpanan diatur per topik (retention), jadi consumer baru bisa membaca riwayat. <sup class="cite"><a href="https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology">[3]</a></sup></li>
+  <li><strong>Consumer group.</strong> Setiap partition <em>"is consumed by exactly one consumer within each subscribing consumer group at any given time."</em> Posisi consumer cukup satu angka per partition, yaitu <strong>offset</strong>, dan consumer bisa <em>"deliberately rewind back to an old offset and re-consume data."</em>
+    <sup class="cite"><a href="https://kafka.apache.org/44/design/design/#consumer-position">[4]</a></sup></li>
+</ul>
+<p>
+  Konsekuensinya: <strong>di dalam satu group, Kafka bersifat queue</strong> (setiap partition dikerjakan satu instance), sedangkan <strong>antar-group, Kafka bersifat pub/sub</strong> (group <code>billing</code> dan group <code>analytics</code> masing-masing membaca semua event).
+  Jumlah partition adalah batas paralelisme satu group: 6 partition dengan 8 instance berarti 2 instance menganggur.
+</p>
+
+<h3>RabbitMQ: broker dengan exchange dan queue</h3>
+<ul>
+  <li><strong>Exchange, binding, queue.</strong> Producer mengirim ke <em>exchange</em>, yang <em>"distribute message copies to queues using rules called bindings."</em>
+    Fanout exchange mengirim salinan ke semua queue yang terikat (pub/sub); direct exchange memakai routing key yang cocok. <sup class="cite"><a href="https://www.rabbitmq.com/tutorials/amqp-concepts">[5]</a></sup></li>
+  <li><strong>Dihapus setelah ack.</strong> Dengan acknowledgement, broker <em>"will only completely remove a message from a queue when it receives a notification for that message."</em> Setelah itu pesan tidak bisa dibaca ulang. <sup class="cite"><a href="https://www.rabbitmq.com/tutorials/amqp-concepts">[5]</a></sup></li>
+</ul>
+<table>
+  <thead><tr><th></th><th>Kafka (log)</th><th>RabbitMQ (broker AMQP)</th></tr></thead>
+  <tbody>
+    <tr><td>Setelah dibaca</td><td>Tetap tersimpan sampai retention habis</td><td>Dihapus setelah ack</td></tr>
+    <tr><td>Baca ulang / consumer baru membaca riwayat</td><td>Ya, mundurkan offset</td><td>Tidak (pesan sudah hilang)</td></tr>
+    <tr><td>Urutan</td><td>Per partition (pilih key dengan hati-hati)</td><td>Per queue, selama satu consumer</td></tr>
+    <tr><td>Routing</td><td>Sederhana: topik + key</td><td>Fleksibel: exchange direct/fanout/topic/headers</td></tr>
+    <tr><td>Cocok untuk</td><td>Event stream throughput tinggi, beberapa tim membaca event yang sama, replay</td><td>Job queue, routing per tipe pesan, pola request/reply</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Redis Pub/Sub juga sering disebut, tapi semantiknya <em>"at-most-once"</em>: kalau subscriber terputus, <em>"the message is forever lost."</em> Cocok untuk notifikasi yang boleh hilang, bukan untuk pesanan. <sup class="cite"><a href="https://redis.io/docs/latest/develop/pubsub/">[6]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Kafka, RabbitMQ, consumer group</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <div class="quiz" data-bank-lesson="0016" data-bank-topic="async-log-broker" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal yang membenarkan queue:</strong> pekerjaan yang lambat (detik, bukan milidetik) atau bergantung pada layanan pihak ketiga yang tidak stabil, dan hasilnya tidak dibutuhkan user saat itu juga;
+  lonjakan beban yang melebihi kapasitas downstream (lesson 0018); atau satu event yang harus diterima beberapa layanan dari tim berbeda. Ukur dulu: berapa p99 bagian yang ingin dipindah, dan seberapa sering layanan itu gagal.
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> satu komponen lagi untuk dijalankan, dipantau, dan di-upgrade (cluster Kafka bukan barang kecil); hasil yang tidak langsung konsisten; duplikat dan pesan gagal yang harus ditangani (lesson 0017);
+  dan debugging yang lebih sulit karena tidak ada satu call stack dari request sampai efek.
+</p>
+<p>
+  <strong>Alternatif lebih murah:</strong>
+</p>
+<ul>
+  <li><strong>Tetap sinkron</strong> kalau user butuh jawabannya sekarang dan layanan tujuan cepat. Jangan pecah sesuatu yang sudah cukup cepat.</li>
+  <li><strong>Tabel database sebagai job queue.</strong> Untuk beberapa ratus job per menit, tabel <code>jobs</code> dengan worker yang mengambil baris memakai <code>SELECT … FOR UPDATE SKIP LOCKED</code> sering cukup.
+    PostgreSQL menyebut <code>SKIP LOCKED</code> <em>"can be used to avoid lock contention with multiple consumers accessing a queue-like table."</em> <sup class="cite"><a href="https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE">[7]</a></sup>
+    Bonusnya: job ditulis dalam transaksi yang sama dengan data bisnis.</li>
+  <li><strong>Queue terkelola</strong> (mis. Amazon SQS) sebelum menjalankan cluster Kafka sendiri, kalau Anda tidak butuh replay atau throughput event stream.</li>
+</ul>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Kapan Anda memakai message queue, kapan pub/sub? Kapan Kafka dan kapan RabbitMQ? Dan kapan Anda tidak memakai keduanya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Asinkron saya pakai kalau pemanggil tidak butuh hasilnya sekarang, misalnya kirim email atau resize gambar, supaya request utama tidak menunggu. Kalau satu pekerjaan cukup dikerjakan satu worker, saya pakai queue dengan competing consumers. Kalau satu event harus diterima beberapa layanan, misalnya OrderPlaced ke email, stok, dan analitik, saya pakai pub/sub supaya masing-masing dapat salinan. Kafka saya pilih kalau butuh log yang bisa dibaca ulang, throughput tinggi, dan urutan per key; paralelismenya dibatasi jumlah partition per consumer group. RabbitMQ saya pilih untuk routing fleksibel lewat exchange dan binding, dengan pesan dihapus setelah ack. Tapi untuk beberapa ratus job per menit, tabel database dengan SELECT FOR UPDATE SKIP LOCKED sering cukup, dan kalau user butuh jawaban sekarang, panggilan sinkron tetap yang paling sederhana."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Alasan asinkron: pemanggil tidak menunggu pekerjaan yang boleh selesai belakangan</li>
+      <li>Queue = satu pesan ke satu consumer (competing consumers)</li>
+      <li>Pub/sub = setiap subscriber mendapat salinan pesan</li>
+      <li>Kafka: log dengan retention, baca ulang lewat offset, urutan per partition/key</li>
+      <li>RabbitMQ: exchange + binding untuk routing, pesan dihapus setelah ack</li>
+      <li>Membenarkan komponen dengan angka, atau menyebut alternatif lebih murah (tabel DB, panggilan sinkron)</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://kafka.apache.org/44/design/design/#consumer-position">Apache Kafka 4.4 docs: Design, bagian "The Consumer" dan "Consumer Position"</a>, ±15 menit. Menjelaskan kenapa offset per partition membuat state consumer sangat kecil.
+</div>
+
+<p>Berikutnya, <a href="0017-delivery-semantics-idempotency.html">lesson 0017</a>: pesan bisa hilang atau datang dua kali. At-most-once, at-least-once, exactly-once, dan idempotency key.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Asinkron") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa Kafka membatasi satu consumer per partition dalam satu group?", "Bandingkan SQS dengan RabbitMQ untuk job queue kecil."</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/publisher-subscriber">[1] Azure Architecture Center: Publisher-Subscriber pattern</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/competing-consumers">[2] Azure Architecture Center: Competing Consumers pattern</a> ·
+  <a href="https://kafka.apache.org/44/getting-started/introduction/">[3] Apache Kafka 4.4 docs: Introduction</a> ·
+  <a href="https://kafka.apache.org/44/design/design/">[4] Apache Kafka 4.4 docs: Design</a> ·
+  <a href="https://www.rabbitmq.com/tutorials/amqp-concepts">[5] RabbitMQ: AMQP 0-9-1 Model Explained</a> ·
+  <a href="https://redis.io/docs/latest/develop/pubsub/">[6] Redis docs: Pub/Sub</a> ·
+  <a href="https://www.postgresql.org/docs/current/sql-select.html">[7] PostgreSQL docs: SELECT (locking clause)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0015-thundering-herd-hot-key.html">← 0015 · Thundering herd, hot key, cache berlapis</a>
+  <a href="0017-delivery-semantics-idempotency.html">0017 · Delivery semantics dan idempotency →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

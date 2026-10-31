@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0010 · Sharding dan consistent hashing</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0010 · System Design · Modul Data · ±20 menit</div>
+  <h1>Sharding dan consistent hashing: membagi data ke banyak node</h1>
+  <p class="subtitle">Range vs hash partitioning, hot partition, resharding, lalu kenapa ring consistent hashing + virtual node membuat penambahan node murah</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0009-index-dan-replication.html">lesson 0009</a> menangani beban <em>baca</em> dengan index dan read replica.
+  Replica menyalin seluruh data, jadi tidak menolong kalau yang jenuh adalah <em>write</em> atau ukuran data melebihi satu server.
+  Jawabannya membagi data: setiap node menyimpan sebagian. Ini anak tangga yang mahal, jadi lesson ini juga membahas kapan belum perlu.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab
+  <em>"Bagaimana Anda membagi data ke banyak database, dan apa yang terjadi saat node ditambah?"</em>
+  tanpa catatan, dalam 60 detik: range vs hash partitioning, memilih shard key dan risiko hot partition,
+  kenapa <code>hash(key) mod N</code> buruk saat resharding, dan bagaimana consistent hashing dengan virtual node memindahkan data seminimal mungkin.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Partitioning: range vs hash</h2>
+<p>
+  <strong>Partitioning</strong> membagi satu tabel besar menjadi bagian-bagian. Kalau bagian-bagian itu berada di server berbeda, namanya <strong>sharding</strong> (satu bagian = satu shard).
+  Kolom yang menentukan sebuah baris masuk ke shard mana disebut <strong>shard key</strong> (partition key). Dua cara utama:
+</p>
+<ul>
+  <li><strong>Range partitioning.</strong> "The table is partitioned into 'ranges' defined by a key column or set of columns, with no overlap between the ranges", misalnya per rentang tanggal atau ID. <sup class="cite"><a href="https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-OVERVIEW">[1]</a></sup>
+    Bigtable memakai cara ini lintas mesin: rentang row key dibagi menjadi tablet, "the unit of distribution and load balancing", dan "reads of short row ranges are efficient and typically require communication with only a small number of machines." Tablet otomatis dipecah saat tabel tumbuh, masing-masing kira-kira 100–200 MB secara default. <sup class="cite"><a href="https://research.google/pubs/bigtable-a-distributed-storage-system-for-structured-data/">[2]</a></sup></li>
+  <li><strong>Hash partitioning.</strong> Partisi dipilih dari hash shard key; PostgreSQL mendefinisikannya dengan "a modulus and a remainder for each partition". <sup class="cite"><a href="https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-OVERVIEW-HASH">[1]</a></sup> Data tersebar rata, tapi query rentang (mis. "order bulan ini") harus bertanya ke semua shard.</li>
+</ul>
+
+<table>
+  <thead><tr><th></th><th>Range</th><th>Hash</th></tr></thead>
+  <tbody>
+    <tr><td>Query rentang</td><td>murah (sedikit shard)</td><td>mahal (semua shard)</td></tr>
+    <tr><td>Sebaran beban</td><td>rawan timpang (data terbaru di satu shard)</td><td>rata untuk key yang banyak</td></tr>
+    <tr><td>Contoh shard key</td><td><code>created_at</code>, <code>user_id</code> berurutan</td><td><code>hash(user_id)</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Hot partition</h3>
+<p>
+  <strong>Hot partition</strong> (hot spot) adalah shard yang menerima beban jauh di atas yang lain. Penyebab klasik: range partitioning per tanggal (semua write hari ini ke shard terakhir),
+  atau satu key yang sangat populer (akun selebriti) di hash partitioning. Dynamo mengandalkan banyaknya key: desainnya mengasumsikan bahwa walau akses timpang, "there are enough keys in the popular end of the distribution so that the load of handling popular keys can be spread across the nodes uniformly through partitioning." <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup>
+  Satu key tunggal yang terlalu panas tidak bisa dibagi oleh partitioning; obatnya di level lain (cache untuk read, memecah key untuk write, mis. <code>counter#1..#10</code>).
+</p>
+
+<h3>Shard key menentukan semuanya</h3>
+<p>
+  Pilih shard key dari query yang dominan, supaya query itu cukup ke satu shard: chat dibagi per <code>conversation_id</code>, data tenant per <code>tenant_id</code>.
+  Query lintas shard (JOIN, agregasi global, transaksi yang menyentuh dua shard) menjadi mahal atau harus dikerjakan di aplikasi.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Partitioning</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0019.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0019.</p>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="data-partisi" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Resharding dan consistent hashing</h2>
+<p>
+  <strong>Resharding</strong> adalah memindahkan data saat jumlah shard berubah. Dengan <code>shard = hash(key) mod N</code>, mengubah N dari 4 ke 5 memindahkan hampir semua key.
+  Paper Karger et al. menggambarkan masalah yang sama untuk cache: dengan hash klasik, "When the range of the hash function … changed, almost every item would be hashed to a new location. Suddenly, all cached data is useless". <sup class="cite"><a href="https://www.cs.princeton.edu/courses/archive/fall09/cos518/papers/chash.pdf">[4]</a></sup>
+  <strong>Consistent hashing</strong> adalah fungsi hash yang "changes minimally as the range of the function changes." <sup class="cite"><a href="https://www.cs.princeton.edu/courses/archive/fall09/cos518/papers/chash.pdf">[4]</a></sup>
+</p>
+<p>
+  Cara kerjanya menurut Dynamo: output hash diperlakukan sebagai "fixed circular space or 'ring'". Node dan key di-hash ke ring yang sama; sebuah key disimpan di node pertama yang ditemui searah jarum jam.
+  "The principle advantage of consistent hashing is that departure or arrival of a node only affects its immediate neighbors and other nodes remain unaffected." <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup>
+  Dengan N node, menambah satu node rata-rata hanya memindahkan sekitar 1/(N+1) key, bukan hampir semuanya.
+</p>
+
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 280" role="img" aria-label="Kiri: ring consistent hashing dengan empat node A, B, C, D; key disimpan di node berikutnya searah jarum jam. Kanan: tiga server, masing-masing dua virtual node yang tersebar di ring">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <text class="label" x="170" y="12">ring: key → node berikutnya searah jarum jam</text>
+  <circle class="edge" cx="170" cy="140" r="100"/>
+  <g class="node store"><rect x="148" y="27" width="44" height="26" rx="4"/><text x="170" y="40">A</text></g>
+  <g class="node store"><rect x="248" y="127" width="44" height="26" rx="4"/><text x="270" y="140">B</text></g>
+  <g class="node store"><rect x="148" y="227" width="44" height="26" rx="4"/><text x="170" y="240">C</text></g>
+  <g class="node store"><rect x="48" y="127" width="44" height="26" rx="4"/><text x="70" y="140">D</text></g>
+  <text class="label" x="232" y="82">k1 → B</text>
+  <text class="label" x="108" y="198">k2 → D</text>
+  <text class="label" x="170" y="140">tambah E di antara A dan B:</text>
+  <text class="label" x="170" y="156">hanya key A..E pindah</text>
+
+  <text class="label" x="470" y="12">virtual node: 3 server × 2 token</text>
+  <circle class="edge" cx="470" cy="140" r="100"/>
+  <g class="node store"><rect x="448" y="28" width="44" height="24" rx="4"/><text x="470" y="40">S1</text></g>
+  <g class="node service"><rect x="535" y="78" width="44" height="24" rx="4"/><text x="557" y="90">S2</text></g>
+  <g class="node cache"><rect x="535" y="178" width="44" height="24" rx="4"/><text x="557" y="190">S3</text></g>
+  <g class="node service"><rect x="448" y="228" width="44" height="24" rx="4"/><text x="470" y="240">S2</text></g>
+  <g class="node store"><rect x="361" y="178" width="44" height="24" rx="4"/><text x="383" y="190">S1</text></g>
+  <g class="node cache"><rect x="361" y="78" width="44" height="24" rx="4"/><text x="383" y="90">S3</text></g>
+  <text class="label" x="470" y="140">S2 mati: bebannya dibagi</text>
+  <text class="label" x="470" y="156">ke S1 dan S3, bukan satu tetangga</text>
+</svg>
+<figcaption>Kiri: hanya tetangga yang terdampak saat node bergabung atau pergi. Kanan: setiap server memegang beberapa titik di ring, sehingga beban lebih rata.</figcaption>
+</figure>
+
+<h3>Virtual node</h3>
+<p>
+  Ring dasar punya masalah: "the random position assignment of each node on the ring leads to non-uniform data and load distribution." Dynamo memakai varian dengan <strong>virtual node</strong>: "instead of mapping a node to a single point in the circle, each node gets assigned to multiple points in the ring." Keuntungannya:
+  saat node mati, "the load handled by this node is evenly dispersed across the remaining available nodes"; node baru menerima "a roughly equivalent amount of load from each of the other available nodes"; dan jumlah virtual node per server bisa disesuaikan dengan kapasitasnya. <sup class="cite"><a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Consistent hashing</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="data-consistent-hash" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Kapan tidak perlu</h2>
+<ul>
+  <li><strong>Sinyal yang membenarkan sharding.</strong> Write throughput sudah melewati kapasitas satu leader setelah index, tuning, dan scale vertical; atau total data tidak lagi muat di satu server terbesar yang wajar. Beban baca saja bukan sinyal sharding (itu read replica atau cache, lesson 0009 dan modul Caching).</li>
+  <li><strong>Biaya dan risiko.</strong> Query dan transaksi lintas shard, JOIN yang pindah ke aplikasi, resharding yang memindahkan data saat sistem hidup, hot partition kalau shard key salah, dan operasional N database. Shard key hampir mustahil diganti nanti.</li>
+  <li><strong>Alternatif lebih murah.</strong> Index dan query yang benar, scale vertical, arsip data lama, dan partitioning di <em>satu</em> server (PostgreSQL declarative partitioning). Untuk partitioning itu pun dokumentasi PostgreSQL mengingatkan bahwa manfaatnya "will normally be worthwhile only when a table would otherwise be very large", dengan patokan kasar "the size of the table should exceed the physical memory of the database server." <sup class="cite"><a href="https://www.postgresql.org/docs/current/ddl-partitioning.html#DDL-PARTITIONING-OVERVIEW">[1]</a></sup> Untuk 1.000 user aktif harian, sharding adalah over-engineering.</li>
+</ul>
+<p>Kalimat untuk interview: "Satu database cukup untuk angka ini. Kalau write melewati kapasitas satu leader setelah scale vertical, saya shard per <code>user_id</code> dengan consistent hashing supaya penambahan node hanya memindahkan sebagian kecil data."</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Data Anda tidak lagi muat di satu database. Bagaimana Anda membaginya, dan apa yang terjadi saat Anda menambah node?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Pertama saya pastikan memang perlu: write atau ukuran data sudah melewati satu server setelah index dan scale vertical; kalau hanya read, replica atau cache cukup.
+      Lalu pilih shard key dari query dominan, misalnya user_id, supaya sebagian besar query cukup ke satu shard. Range partitioning bagus untuk query rentang tapi rawan hot partition, misalnya semua write hari ini ke shard terakhir; hash partitioning menyebar rata tapi query rentang harus ke semua shard.
+      Untuk penempatan saya pakai consistent hashing, bukan hash mod N, karena mod N memindahkan hampir semua key saat N berubah. Di ring, node baru hanya mengambil key dari tetangganya. Dengan virtual node, setiap server punya banyak titik di ring, jadi beban rata dan saat node mati bebannya tersebar ke banyak node.
+      Biayanya: query lintas shard mahal dan shard key sulit diganti."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>range vs hash partitioning beserta trade-off-nya (query rentang vs sebaran rata)?</li>
+      <li>shard key dipilih dari query dominan, query lintas shard mahal?</li>
+      <li>hot partition: penyebab dan penanganannya?</li>
+      <li><code>hash mod N</code> memindahkan hampir semua key saat resharding?</li>
+      <li>consistent hashing (ring, hanya tetangga terdampak) + virtual node untuk sebaran rata?</li>
+      <li>membenarkan sharding dengan angka atau metrik (write/ukuran data melewati satu server setelah tuning)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">DeCandia et al. 2007, "Dynamo"</a>, bagian 4.2 Partitioning dan 6.2 (strategi partitioning), ±15 menit.
+</div>
+
+<p>Berikutnya, <a href="0011-cap-pacelc-consistency.html">lesson 0011</a>: data sekarang tersebar dan direplikasi di banyak node. Apa yang terjadi saat jaringan antar node putus? CAP, PACELC, dan consistency model.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Data") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "bagaimana memilih shard key untuk aplikasi multi-tenant dengan tenant yang sangat besar?", "bagaimana resharding dilakukan tanpa downtime?", atau "berapa virtual node per server yang masuk akal?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.postgresql.org/docs/current/ddl-partitioning.html">[1] PostgreSQL docs: Table Partitioning</a> ·
+  <a href="https://research.google/pubs/bigtable-a-distributed-storage-system-for-structured-data/">[2] Chang et al. 2006, Bigtable: A Distributed Storage System for Structured Data (OSDI)</a> ·
+  <a href="https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf">[3] DeCandia et al. 2007, Dynamo: Amazon's Highly Available Key-value Store (SOSP)</a> ·
+  <a href="https://www.cs.princeton.edu/courses/archive/fall09/cos518/papers/chash.pdf">[4] Karger et al. 1997, Consistent Hashing and Random Trees (STOC)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0009-index-dan-replication.html">← 0009 · Index dan replication</a>
+  <a href="0011-cap-pacelc-consistency.html">0011 · CAP, PACELC, dan consistency model →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

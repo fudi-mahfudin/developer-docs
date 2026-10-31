@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0027 · Kerangka 5 langkah menjawab soal desain</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0027 · System Design · Modul Studi kasus · ±20 menit</div>
+  <h1>Kerangka 5 langkah menjawab soal desain</h1>
+  <p class="subtitle">Urutan yang sama untuk setiap soal: requirement, estimasi, API + data model, desain v1, lalu deep dive yang dibenarkan angka</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0026-review-asinkron-reliabilitas.html">Review 3</a> menutup semua modul konsep. Mulai lesson ini, konsep dipakai untuk menjawab soal interview klasik.
+  Soal system design berbentuk terbuka ("rancang URL shortener"), jadi tanpa urutan tetap Anda mudah melompat ke komponen favorit dan kehabisan waktu sebelum menyebut angka.
+  Lesson ini memberi satu kerangka yang dipakai di semua studi kasus berikutnya (0028–0034) dan di mock interview 0036.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Rancang sistem X. Bagaimana Anda memakai 45 menit ini?"</em> tanpa catatan, dalam 60 detik:
+  lima langkah berurutan, pertanyaan klarifikasi standar, alokasi waktu per langkah, kenapa langkah 4 selalu dimulai dari desain v1 paling sederhana,
+  dan kenapa setiap komponen di langkah 5 harus dibenarkan dengan angka.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Lima langkah dan alokasi 45 menit</h2>
+<div class="flow">
+  <span class="box">1 · Requirement</span><span class="arrow">→</span>
+  <span class="box">2 · Estimasi</span><span class="arrow">→</span>
+  <span class="box">3 · API + data model</span><span class="arrow">→</span>
+  <span class="box">4 · High-level (v1)</span><span class="arrow">→</span>
+  <span class="box">5 · Deep dive</span>
+</div>
+
+<table>
+  <thead><tr><th>Langkah</th><th>Hasil yang ditulis di papan</th><th>Waktu</th></tr></thead>
+  <tbody>
+    <tr><td>1. Klarifikasi requirement</td><td>3–5 functional requirement ("user bisa …") dan non-functional requirement <strong>dalam angka</strong>: jumlah user, latency, availability, consistency</td><td>±5 menit</td></tr>
+    <tr><td>2. Estimasi</td><td>QPS rata-rata dan puncak, rasio baca:tulis, storage beberapa tahun, bandwidth bila relevan</td><td>±5 menit</td></tr>
+    <tr><td>3. API + data model</td><td>2–4 endpoint inti (method, path, input, output) dan tabel/entitas utama dengan key-nya</td><td>±7 menit</td></tr>
+    <tr><td>4. High-level design</td><td><strong>Desain v1 paling sederhana</strong> yang memenuhi angka langkah 2; telusuri satu request tulis dan satu request baca di diagram</td><td>±13 menit</td></tr>
+    <tr><td>5. Deep dive, bottleneck, trade-off</td><td>Bottleneck pertama yang muncul dari angka, komponen yang menyelesaikannya, biaya dan risikonya, lalu evolusi v2</td><td>±15 menit</td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Alokasi 5 + 5 + 7 + 13 + 15 = 45 menit adalah konvensi track ini (dipakai juga di timer mock 0036), bukan aturan resmi.
+  Kalau interviewer mengarahkan ke bagian tertentu lebih awal, ikuti arahannya; kerangka adalah peta, bukan naskah.
+</p>
+
+<p>
+  Kenapa angka dulu: non-functional requirement baru berguna kalau terukur. Google SRE Book mendefinisikan SLI sebagai
+  <em>"a carefully defined quantitative measure of some aspect of the level of service"</em>, dan menyebut layanan yang melayani user
+  umumnya peduli pada <em>availability</em>, <em>latency</em>, dan <em>throughput</em>. <sup class="cite"><a href="https://sre.google/sre-book/service-level-objectives/">[1]</a></sup>
+  Itu tiga angka pertama yang Anda tanyakan di langkah 1.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Pertanyaan klarifikasi standar (langkah 1)</h2>
+<p>Hafalkan daftar pendek ini. Tanyakan, tulis jawabannya, dan kalau interviewer berkata "terserah Anda", ajukan asumsi dengan angka lalu minta persetujuan.</p>
+<ul>
+  <li><strong>Functional:</strong> fitur inti apa saja (pilih 3–5, sisanya ditandai "di luar scope")? Siapa user-nya: manusia lewat aplikasi, atau service lain lewat API?</li>
+  <li><strong>Skala:</strong> berapa user aktif harian (DAU)? Berapa aksi per user per hari? Rasio baca:tulis?</li>
+  <li><strong>Latency:</strong> target p99 untuk operasi terpenting (mis. redirect &lt; 100 ms)?</li>
+  <li><strong>Availability:</strong> berapa "sembilan"? 99,9% berarti jatah downtime ±43,2 menit per bulan; 99,99% hanya ±4,32 menit. <sup class="cite"><a href="https://sre.google/sre-book/availability-table/">[2]</a></sup></li>
+  <li><strong>Consistency:</strong> boleh telat terlihat beberapa detik (eventual), atau harus langsung terlihat (strong)?</li>
+  <li><strong>Data:</strong> berapa lama data disimpan? Ukuran satu item? Ada data sensitif?</li>
+</ul>
+<p>
+  Langkah 2 langsung memakai jawaban ini: QPS = aksi per hari ÷ 10<sup>5</sup> detik (1 hari ≈ 86.400 detik, dibulatkan), puncak ≈ 2–3× rata-rata,
+  storage = item per hari × ukuran × 365 × tahun. Angka kasar cukup; yang dinilai adalah Anda memakainya untuk memilih desain.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Klarifikasi dan waktu</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0027" data-bank-topic="kasus-kerangka-waktu" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Langkah 4 selalu mulai dari v1; langkah 5 hanya menambah yang dibenarkan angka</h2>
+<p>
+  Desain v1 adalah desain paling sederhana yang memenuhi angka langkah 2: sering cukup satu app server (atau dua di belakang load balancer demi availability) dan satu database.
+  Gambar v1, telusuri satu request tulis dan satu request baca, lalu baru tanya: <em>angka mana yang tidak terpenuhi?</em>
+  Google SRE Book menyebut tujuan yang sama dari sisi operasional: tim harus <em>"push back when accidental complexity is introduced"</em>, yaitu kompleksitas yang tidak dituntut oleh masalahnya. <sup class="cite"><a href="https://sre.google/sre-book/simplicity/">[3]</a></sup>
+</p>
+<p>Di langkah 5, setiap komponen tambahan memakai pola kalimat yang sama:</p>
+<blockquote>"Untuk skala ini cukup <strong>X</strong>. Kalau metrik <strong>Y</strong> melewati <strong>Z</strong>, langkah berikutnya <strong>W</strong>, dengan biaya <strong>B</strong>."</blockquote>
+<p>
+  Contoh: "Untuk 1.000 QPS baca, satu PostgreSQL dengan index di kolom kode cukup. Kalau p99 query baca melewati 50 ms pada jam puncak,
+  saya tambah cache; biayanya stale data dan satu komponen lagi yang harus dipantau."
+  Komponen yang muncul tanpa angka (Kafka "untuk jaga-jaga", microservices untuk 1.000 user) adalah tanda over-engineering yang dinilai negatif.
+</p>
+
+<table>
+  <thead><tr><th>Jebakan</th><th>Perbaikan</th></tr></thead>
+  <tbody>
+    <tr><td>Langsung menggambar diagram akhir dengan 10 kotak</td><td>Gambar v1 dulu, lalu evolusi v2 dengan alasan per kotak</td></tr>
+    <tr><td>Estimasi dihitung lalu dilupakan</td><td>Rujuk angka langkah 2 setiap kali menambah komponen</td></tr>
+    <tr><td>Deep dive di topik yang Anda suka, bukan bottleneck</td><td>Pilih bottleneck terbesar menurut angka, atau tanya interviewer mana yang ingin dibahas</td></tr>
+    <tr><td>Menyebut satu pilihan tanpa trade-off</td><td>Selalu sebut biaya: latency, konsistensi, biaya operasional, risiko</td></tr>
+  </tbody>
+</table>
+
+<section class="exercise">
+  <h2>Latihan 2 — Susun urutan kerangka</h2>
+  <p>Urutkan lima langkahnya. Gunakan ↑/↓, lalu Periksa.</p>
+  <div class="order">
+    <ol>
+      <li>Klarifikasi requirement: functional dan non-functional dalam angka</li>
+      <li>Estimasi: QPS rata-rata dan puncak, rasio baca:tulis, storage</li>
+      <li>API + data model: endpoint inti dan tabel utama dengan key</li>
+      <li>High-level design: desain v1 paling sederhana yang memenuhi angka</li>
+      <li>Deep dive: bottleneck, komponen yang dibenarkan angka, trade-off</li>
+    </ol>
+    <p class="explain">Requirement menentukan angka, angka menentukan seberapa besar desain, API dan data model membuat diagram konkret, v1 menjadi titik awal, dan deep dive hanya menambah komponen yang dibenarkan bottleneck. Waktu: ±5, 5, 7, 13, 15 menit.</p>
+  </div>
+  <div class="quiz" data-bank-lesson="0027" data-bank-topic="kasus-kerangka-langkah" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Interviewer berkata: 'Rancang sebuah sistem; Anda punya 45 menit.' Jelaskan bagaimana Anda akan memakai waktunya." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Saya pakai lima langkah. Lima menit pertama untuk klarifikasi: fitur inti, lalu non-functional dalam angka, yaitu DAU, rasio baca:tulis, target p99, availability, dan consistency. Lima menit berikutnya estimasi: QPS rata-rata dan puncak, storage beberapa tahun. Sekitar tujuh menit untuk API dan data model. Lalu tiga belas menit high-level design, dan saya mulai dari v1 paling sederhana yang memenuhi angka tadi, biasanya app server dan satu database, dan saya telusuri satu request baca dan tulis. Lima belas menit terakhir deep dive: saya cari bottleneck dari angka, menambah komponen hanya kalau angkanya menuntut, dan menyebut trade-off-nya, misalnya cache menambah risiko stale data."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>lima langkah dalam urutan yang benar?</li>
+      <li>non-functional requirement ditanyakan dalam angka (DAU, p99, availability)?</li>
+      <li>estimasi QPS puncak dan storage sebelum menggambar?</li>
+      <li>langkah 4 dimulai dari desain v1 paling sederhana?</li>
+      <li>alokasi waktu kira-kira 5, 5, 7, 13, 15 menit?</li>
+      <li>membenarkan komponen dengan angka di langkah 5, beserta trade-off-nya?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://sre.google/sre-book/service-level-objectives/">Google SRE Book, bab 4: Service Level Objectives</a>, ±25 menit. Cara memilih beberapa angka yang benar-benar penting untuk user.
+</div>
+
+<p>Berikutnya, <a href="0028-kasus-url-shortener.html">lesson 0028</a>: kerangka ini dijalankan penuh untuk URL shortener.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Prinsip dan kerangka" dan "Studi kasus") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "apa yang saya katakan kalau interviewer menolak memberi angka DAU?", "bagaimana kalau waktu tinggal 10 menit dan saya baru di langkah 3?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://sre.google/sre-book/service-level-objectives/">[1] Google SRE Book, bab 4: Service Level Objectives</a> ·
+  <a href="https://sre.google/sre-book/availability-table/">[2] Google SRE Book, Appendix A: Availability Table</a> ·
+  <a href="https://sre.google/sre-book/simplicity/">[3] Google SRE Book, bab 9: Simplicity</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0026-review-asinkron-reliabilitas.html">← 0026 · Review 3: Asinkron + Reliabilitas &amp; API</a>
+  <a href="0028-kasus-url-shortener.html">0028 · Studi kasus: URL shortener →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0027.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

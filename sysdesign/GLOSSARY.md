@@ -154,6 +154,77 @@ _Avoid_: cache busting dengan query string acak
 
 ## Data
 
+Slug topik bank soal modul ini: `data-model-db`, `data-acid-base` (0008) · `data-index`, `data-replikasi` (0009) · `data-partisi`, `data-consistent-hash` (0010) · `data-cap-pacelc`, `data-konsistensi` (0011).
+
+**ACID**:
+Atomicity, Consistency, Isolation, Durability: jaminan transaksi database relasional; banyak langkah menjadi satu operasi all-or-nothing (lesson 0008).
+_Avoid_: "transaksional" tanpa menyebut jaminannya
+
+**BASE**:
+Basically Available, Soft state, Eventually consistent: sikap mengutamakan ketersediaan dan menerima replika yang sempat berbeda (lesson 0008).
+_Avoid_: "NoSQL = tanpa konsistensi"
+
+**Key-value store / document store / wide-column store / graph database**:
+Keluarga NoSQL, dipilih dari pola akses: get/put per key, objek bersarang utuh, scan rentang row key pada volume besar, traversal relasi (lesson 0008).
+_Avoid_: "NoSQL" sebagai satu jenis database
+
+**B-tree index**:
+Index default PostgreSQL; pohon terurut untuk query equality dan range (`=`, `<`, `BETWEEN`). Mempercepat read, menambah overhead write (lesson 0009).
+_Avoid_: "index semua kolom"
+
+**Leader-follower replication**:
+Semua write ke satu leader; leader mengirim log perubahan ke follower. PostgreSQL menyebutnya primary-standby (lesson 0009).
+_Avoid_: master-slave
+
+**Synchronous vs asynchronous replication**:
+Sync: commit menunggu konfirmasi standby (aman, write lebih lambat). Async (default PostgreSQL): commit tidak menunggu (cepat, bisa lag dan kehilangan transaksi terakhir saat leader crash) (lesson 0009).
+
+**Replication lag**:
+Jeda sebelum perubahan di leader terlihat di follower (lesson 0009).
+_Avoid_: delay replikasi
+
+**Read replica**:
+Follower yang melayani query baca (hot standby di PostgreSQL, read-only). Menolong beban read, tidak menolong write (lesson 0009).
+
+**Partitioning / sharding**:
+Membagi tabel menjadi bagian; sharding = bagian-bagian itu di server berbeda. Range (per rentang key) atau hash (per hash key) (lesson 0010).
+_Avoid_: "sharding" untuk partitioning di satu server
+
+**Shard key**:
+Kolom yang menentukan baris masuk ke shard mana; dipilih dari query dominan. Hampir mustahil diganti nanti (lesson 0010).
+_Avoid_: partition key (boleh, tapi konsisten dalam satu jawaban)
+
+**Hot partition**:
+Shard yang menerima beban jauh di atas shard lain, mis. range per tanggal atau satu key selebriti (lesson 0010).
+_Avoid_: hot key (itu untuk satu key di cache, modul Caching)
+
+**Resharding**:
+Memindahkan data saat jumlah shard berubah. Dengan `hash mod N` hampir semua key pindah (lesson 0010).
+
+**Consistent hashing**:
+Node dan key di-hash ke ring; key milik node berikutnya searah jarum jam, sehingga node datang/pergi hanya memengaruhi tetangga (Karger et al. 1997; Dynamo) (lesson 0010).
+
+**Virtual node**:
+Satu server memegang banyak titik di ring supaya beban rata dan beban node yang mati tersebar ke banyak node (lesson 0010).
+_Avoid_: vnode tanpa penjelasan
+
+**CAP**:
+Saat network partition, sistem yang direplikasi memilih consistency (CP, menolak request) atau availability (AP, menjawab data lama) (Gilbert & Lynch 2002) (lesson 0011).
+_Avoid_: "pilih 2 dari 3" bebas, "CA" untuk sistem terdistribusi
+
+**PACELC**:
+Perluasan CAP: saat Partition pilih A atau C; Else (normal) pilih Latency atau Consistency. Contoh: Dynamo/Cassandra PA/EL, BigTable/HBase PC/EC (Abadi 2012) (lesson 0011).
+
+**Strong consistency / eventual consistency**:
+Strong: setiap read melihat write terakhir. Eventual: replika boleh sempat berbeda, akhirnya sama (lesson 0011).
+
+**Read-your-writes**:
+Jaminan user selalu melihat tulisannya sendiri, walau user lain mungkin melihat data lama (lesson 0009, 0011).
+
+**Quorum (N, R, W)**:
+Data disalin ke N node; read butuh R node, write butuh W node; R + W > N membuat set baca dan tulis beririsan. Umum: (3, 2, 2) (Dynamo) (lesson 0011).
+_Avoid_: "quorum = strong consistency penuh"
+
 ## Caching
 
 Slug topik bank soal modul ini: `cache-lokasi`, `cache-pola` (0013), `cache-ttl-eviction`, `cache-invalidation` (0014), `cache-stampede`, `cache-hot-key` (0015).
@@ -213,8 +284,113 @@ _Avoid_: multi-tier (boleh dalam bahasa Inggris)
 
 ## Asinkron
 
+Slug topik bank soal modul ini: `async-queue-pubsub`, `async-log-broker` (0016), `async-delivery`, `async-idempotency` (0017), `async-event-outbox`, `async-backpressure` (0018).
+
+**Message queue**:
+Antrean point-to-point: producer menaruh pesan, dan setiap pesan diambil oleh satu consumer saja. Beberapa consumer pada satu queue disebut competing consumers (lesson 0016).
+_Avoid_: queue (untuk pub/sub)
+
+**Pub/sub**:
+Publish-subscribe: setiap subscriber yang tertarik mendapat salinan setiap pesan. Publisher tidak tahu siapa subscriber-nya (lesson 0016).
+_Avoid_: broadcast queue
+
+**Consumer group**:
+Di Kafka, sekumpulan consumer yang berbagi kerja: setiap partition dibaca oleh tepat satu consumer di dalam group. Jumlah partition membatasi paralelisme satu group; group yang berbeda masing-masing membaca semua event (lesson 0016).
+_Avoid_: consumer pool
+
+**Offset**:
+Posisi consumer di satu partition Kafka, berupa satu angka. Bisa dimundurkan untuk membaca ulang (lesson 0016, 0017).
+_Avoid_: cursor, pointer
+
+**Log vs broker**:
+Log (Kafka) menyimpan event sesuai retention dan bisa dibaca ulang; broker AMQP (RabbitMQ) merutekan pesan lewat exchange dan binding ke queue, lalu menghapusnya setelah ack (lesson 0016).
+_Avoid_: "Kafka = queue biasa"
+
+**Delivery semantics**:
+Jaminan pengantaran pesan: at-most-once (bisa hilang, tidak pernah diulang), at-least-once (tidak hilang, bisa diulang), exactly-once (diproses tepat sekali). Default realistis: at-least-once + consumer idempotent (lesson 0017).
+_Avoid_: guaranteed delivery (tanpa menyebut yang mana)
+
+**Idempotency key**:
+Key unik dari client (mis. UUID v4) yang dikirim ulang saat retry, supaya server mengenali request yang sama dan mengembalikan hasil tersimpan, bukan mengulang efeknya (lesson 0017).
+_Avoid_: request ID (kalau tidak dipakai untuk deduplikasi)
+
+**Consumer idempotent**:
+Consumer yang aman menerima pesan yang sama berkali-kali, biasanya dengan mencatat ID pesan yang sudah diproses dalam transaksi yang sama dengan efeknya (lesson 0017).
+_Avoid_: "broker exactly-once" (sebagai pengganti)
+
+**Dead letter queue (DLQ)**:
+Queue tujuan untuk pesan yang gagal diproses setelah batas percobaan (SQS `maxReceiveCount`, RabbitMQ `delivery-limit`), untuk diselidiki dan dikirim ulang. Butuh alarm (lesson 0017).
+_Avoid_: tempat sampah pesan
+
+**Ordering per key**:
+Urutan yang dijamin hanya untuk pesan dengan key sama (mis. satu partition Kafka per account ID, atau message group SQS FIFO), bukan urutan global (lesson 0017).
+_Avoid_: global ordering (kecuali benar-benar dibutuhkan)
+
+**Event-driven**:
+Arsitektur di mana producer mengumumkan event (fakta, bentuk lampau: `OrderPlaced`) ke channel, dan consumer yang tertarik bereaksi. Producer tidak tahu consumer-nya; datanya eventually consistent (lesson 0018).
+_Avoid_: event (untuk command seperti `SendEmail`)
+
+**Dual write**:
+Menulis ke dua sistem berbeda (mis. database dan broker) dalam satu operasi tanpa transaksi bersama; kegagalan di tengah membuat keduanya tidak konsisten (lesson 0018).
+_Avoid_: "publish setelah commit" (sebagai solusi)
+
+**Transactional outbox**:
+Data bisnis dan baris event ditulis ke tabel outbox dalam satu transaksi database; relay terpisah (polling atau CDC) mem-publish baris yang sudah commit. Consumer tetap harus idempotent (lesson 0018).
+_Avoid_: outbox tanpa transaksi
+
+**Load leveling**:
+Memakai queue sebagai buffer untuk meratakan lonjakan sesaat, supaya downstream bekerja dengan kecepatan aman. Tidak menolong kalau rata-rata beban melebihi kapasitas (lesson 0018).
+_Avoid_: "queue menambah kapasitas"
+
+**Back-pressure**:
+Sinyal dari consumer yang kewalahan ke hulu supaya producer melambat: batas in-flight (prefetch), throttle, atau penolakan (429). Dipicu metrik seperti umur pesan tertua di queue (lesson 0018).
+_Avoid_: backpressure tanpa metrik pemicu
+
 ## Reliabilitas & API
 
 ## Studi kasus
+
+**Slug topik 0027–0030**:
+`kasus-kerangka-langkah`, `kasus-kerangka-waktu` (0027); `kasus-url-kode`, `kasus-url-redirect` (0028); `kasus-rl-posisi`, `kasus-rl-counter` (0029); `kasus-notif-queue`, `kasus-notif-idempotensi` (0030). Semua soal modul ini memakai prefix `kasus-`.
+
+**Pertanyaan klarifikasi standar**:
+Daftar pendek yang ditanyakan di langkah 1: fitur inti, siapa user, DAU, rasio baca:tulis, target p99, availability, consistency, lama penyimpanan data (lesson 0027).
+_Avoid_: requirement gathering (proses produk yang panjang)
+
+**Base62**:
+Penulisan angka dengan 62 simbol `0-9a-zA-Z`; 7 karakter memberi 62⁷ ≈ 3,5 × 10¹² kode. Dipakai untuk mengubah ID dari sequence menjadi kode pendek (lesson 0028).
+_Avoid_: base64 (punya `+` dan `/` yang tidak aman di URL)
+
+**Hash collision**:
+Dua input berbeda menghasilkan kode yang sama setelah hash dipotong. Di skala miliaran pasti terjadi (perkiraan birthday n²/2N), jadi ditangkap dengan unique constraint lalu diulang dengan salt (lesson 0028).
+_Avoid_: "hash selalu unik"
+
+**Read-heavy**:
+Sistem yang jauh lebih banyak dibaca daripada ditulis (mis. 100:1). Deep dive-nya berfokus pada jalur baca: index, cache, read replica (lesson 0028).
+_Avoid_: high-traffic (tidak menyebut arah beban)
+
+**Heuristically cacheable**:
+Status HTTP yang boleh disimpan cache tanpa header kedaluwarsa eksplisit menurut RFC 9110/9111, misalnya 301. 302 tidak, sehingga setiap klik sampai ke server (lesson 0028).
+_Avoid_: "cacheable by default" (nama lama)
+
+**Check-then-act**:
+Race condition saat nilai dibaca, diputuskan, lalu ditulis dalam langkah terpisah, sehingga dua proses bisa lolos bersamaan. Pada rate limiter: `GET` lalu `INCR`. Perbaikan: operasi atomic seperti `INCR` lalu bandingkan hasilnya, atau Lua script (lesson 0029).
+_Avoid_: bug timing
+
+**Lua script (Redis)**:
+Script yang dijalankan Redis secara atomic dengan `EVAL`; tidak ada perintah lain yang menyisip di tengah. Dipakai untuk menggabungkan `INCR` + `EXPIRE` atau token bucket dalam satu round trip (lesson 0029).
+_Avoid_: stored procedure
+
+**Fail-open**:
+Kalau komponen pelindung (mis. rate limiter) gagal, request tetap diloloskan dan kegagalannya dicatat. Kebalikannya fail-closed: request ditolak. Pilihan bergantung pada requirement (lesson 0029).
+_Avoid_: "abaikan error"
+
+**Queue per channel**:
+Satu queue + worker terpisah untuk setiap channel (push, SMS, email), supaya provider yang lambat tidak menahan channel lain dan setiap channel bisa diskalakan sesuai kuota provider-nya (lesson 0030).
+_Avoid_: satu queue besar untuk semua
+
+**Provider eksternal**:
+Layanan pihak ketiga yang benar-benar mengirim notifikasi: APNs (Apple) dan FCM untuk push, gateway SMS, layanan email. Lambat atau gagal di luar kendali Anda, jadi dipanggil dari worker dengan retry (lesson 0030).
+_Avoid_: vendor (terlalu umum)
 
 ## Penutup

@@ -1,0 +1,121 @@
+// Run from repo root: node --test
+// Track System Design, modul Studi kasus (0027–0034): kerangka 5 langkah, cakupan topik, sitasi, diagram,
+// latihan "gambar sendiri dulu, lalu Lihat jawaban", v1 sederhana dulu, checklist "membenarkan komponen dengan angka".
+// Aturan teach umum (kata opsi, posisi jawaban, format lisan, kicker, nav ke tetangga) diuji track.test.js.
+// Issue 11 membuat 0027–0030; issue 12 menambah 0031–0034 ke LESSONS, KEYWORDS, dan NAV_AFTER.
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const { ROOT, forTrack } = require("../helpers.js");
+
+const sd = forTrack("sysdesign");
+// kasus: lesson studi kasus yang mengikuti kerangka 5 langkah dengan heading per langkah.
+const LESSONS = {
+  "0027": { file: "0027-kerangka-5-langkah.html", topics: ["kasus-kerangka-langkah", "kasus-kerangka-waktu"], kasus: false },
+  "0028": { file: "0028-kasus-url-shortener.html", topics: ["kasus-url-kode", "kasus-url-redirect"], kasus: true },
+  "0029": { file: "0029-kasus-rate-limiter.html", topics: ["kasus-rl-posisi", "kasus-rl-counter"], kasus: true },
+  "0030": { file: "0030-kasus-notification.html", topics: ["kasus-notif-queue", "kasus-notif-idempotensi"], kasus: true },
+};
+const KEYWORDS = {
+  "0027": ["functional", "non-functional", "estimasi", "API", "data model", "high-level", "deep dive", "v1", "45 menit", "class=\"order\""],
+  "0028": ["base62", "hash", "read-heavy", "cache", "301", "302", "collision"],
+  "0029": ["gateway", "middleware", "Redis", "INCR", "race condition", "429", "Retry-After", "token bucket"],
+  "0030": ["queue", "channel", "retry", "idempotency", "preferensi", "dead letter queue", "backoff"],
+};
+const NAV_BEFORE = "0026-review-asinkron-reliabilitas.html";
+const NAV_AFTER = "0031-kasus-news-feed-a.html";
+const NUMS = Object.keys(LESSONS);
+const read = n => fs.readFileSync(path.join(ROOT, "sysdesign", "lessons", LESSONS[n].file), "utf8");
+
+test("modul Studi kasus: topics, kasus- prefix, >=2 mc per topic, >=1 oral per lesson", () => {
+  NUMS.forEach(n => {
+    const { qs, oral } = sd.lessonQuestions(n);
+    qs.forEach(q => {
+      assert.match(q.topic, /^kasus-/);
+      assert.ok(LESSONS[n].topics.includes(q.topic), `${q.id}: topik ${q.topic} bukan milik ${n}`);
+    });
+    assert.ok(oral.length >= 1, `${n}: butuh soal lisan`);
+  });
+  const mc = NUMS.flatMap(n => sd.lessonQuestions(n).mc);
+  NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(mc.filter(q => q.topic === t).length >= 2, t));
+});
+
+test("every oral checklist awards 'membenarkan komponen dengan angka'", () => {
+  NUMS.forEach(n => sd.lessonQuestions(n).oral.forEach(q =>
+    assert.ok(q.checklist.some(c => /membenarkan komponen dengan angka/.test(c)), `${q.id}: checklist tanpa poin angka`)));
+});
+
+test("modul Studi kasus covers the spec keywords per lesson", () => {
+  NUMS.forEach(n => {
+    const html = read(n);
+    KEYWORDS[n].forEach(k => assert.ok(html.includes(k), `${n} belum membahas ${k}`));
+  });
+});
+
+test("each lesson: one win, module kicker, cite numbering, diagram, quiz per topic, oral blocks, no lab", () => {
+  NUMS.forEach(n => {
+    const html = read(n);
+    assert.equal((html.match(/<div class="win">/g) || []).length, 1, `${n}: satu win`);
+    assert.match(html, new RegExp(`<div class="kicker">Lesson ${n} · System Design · Modul Studi kasus · ±\\d+ menit</div>`));
+    const cites = [...html.matchAll(/<sup class="cite"><a [^>]*>\[(\d+)\]<\/a><\/sup>/g)].map(m => Number(m[1]));
+    const listed = [...html.matchAll(/<a href="[^"]+">\[(\d+)\] /g)].map(m => Number(m[1]));
+    assert.ok(cites.length >= 1, `${n}: butuh >= 1 .cite`);
+    assert.deepEqual(listed, listed.map((_, i) => i + 1), `${n}: Sumber bernomor urut`);
+    assert.deepEqual([...new Set(cites)].sort((a, b) => a - b), listed, `${n}: sitasi = daftar Sumber`);
+    assert.match(html, /<svg class="diagram"|<div class="flow">/, `${n}: butuh diagram`);
+    LESSONS[n].topics.forEach(t => assert.match(html, new RegExp(`data-bank-lesson="${n}" data-bank-topic="[^"]*${t}`), `${n}: kuis ${t}`));
+    const blocks = (html.match(/Lulus (jika|kalau) minimal 4 dari 6\./g) || []).length;
+    assert.equal(blocks, sd.lessonQuestions(n).oral.length, `${n}: blok lisan statis = soal lisan bank`);
+    assert.match(html, /membenarkan komponen dengan angka/, `${n}: checklist statis memuat poin angka`);
+    assert.doesNotMatch(html, /hands-on\.js|class="script"|sql-exercise/, "tanpa lab");
+    assert.equal((html.match(/<marker id="panah"/g) || []).length <= 1, true, `${n}: marker panah hanya sekali`);
+  });
+});
+
+test("0027 teaches the 5-step frame with an order exercise and starts step 4 from v1", () => {
+  const html = read("0027");
+  assert.match(html, /<div class="order">\s*<ol>(\s*<li>[\s\S]*?<\/li>){5}\s*<\/ol>/, "order 5 langkah");
+  assert.ok(html.includes('<script src="../../assets/order.js"></script>'), "memuat order.js");
+  const order = html.match(/<div class="order">\s*<ol>([\s\S]*?)<\/ol>/)[1];
+  const items = [...order.matchAll(/<li>([\s\S]*?)<\/li>/g)].map(m => m[1]);
+  ["requirement", "Estimasi", "API", "High-level", "Deep dive"].forEach((k, i) =>
+    assert.ok(items[i] && items[i].includes(k), `langkah ${i + 1} harus memuat ${k}`));
+  assert.match(items[3], /v1/, "langkah 4 dimulai dari v1");
+});
+
+test("each case study: heading per langkah 1–5, v1 before evolution, numbers, draw-first reveal with svg", () => {
+  NUMS.filter(n => LESSONS[n].kasus).forEach(n => {
+    const html = read(n);
+    const steps = [1, 2, 3, 4, 5].map(i => {
+      const m = html.match(new RegExp(`<h2>[^<]*Langkah ${i}\\b[^<]*</h2>`));
+      assert.ok(m, `${n}: butuh h2 Langkah ${i}`);
+      return m.index;
+    });
+    assert.deepEqual(steps, [...steps].sort((a, b) => a - b), `${n}: langkah berurutan`);
+    const step4 = html.slice(steps[3], steps[4]);
+    const step5 = html.slice(steps[4]);
+    assert.match(step4, /v1/, `${n}: langkah 4 memulai dari desain v1`);
+    assert.match(step5, /v2|evolusi/, `${n}: langkah 5 menunjukkan evolusi`);
+    assert.match(html.slice(steps[1], steps[2]), /QPS/, `${n}: estimasi memuat QPS`);
+    const reveal = html.match(/<details>\s*<summary>Lihat jawaban<\/summary>([\s\S]*?)<\/details>/g) || [];
+    assert.ok(reveal.some(d => d.includes('<svg class="diagram"')), `${n}: Lihat jawaban berisi svg.diagram`);
+    assert.match(html, /[Gg]ambar[^<]*sendiri/, `${n}: instruksi gambar sendiri dulu`);
+  });
+});
+
+test("modul Studi kasus nav: 0026 → 0027 → … → 0030 → 0031", () => {
+  const files = [NAV_BEFORE, ...NUMS.map(n => LESSONS[n].file), NAV_AFTER];
+  NUMS.forEach((n, i) => {
+    const nav = (read(n).match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
+    assert.deepEqual([...nav.matchAll(/href="([^"]+)"/g)].map(m => m[1]), [files[i], files[i + 2]]);
+  });
+});
+
+test("index lists 0027–0030 as tersedia and glossary records the new topic slugs", () => {
+  const index = fs.readFileSync(path.join(ROOT, "sysdesign", "index.html"), "utf8");
+  NUMS.forEach(n => assert.match(index, new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`)));
+  const glossary = fs.readFileSync(path.join(ROOT, "sysdesign", "GLOSSARY.md"), "utf8");
+  const section = glossary.split("## Studi kasus")[1].split(/\n## /)[0];
+  NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(section.includes(t), `slug ${t} belum di GLOSSARY Studi kasus`));
+});
