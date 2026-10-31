@@ -27,6 +27,41 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003). Agent lesson menambah
 
 ### Asinkron
 
+- [Apache Kafka 4.4 docs: Introduction](https://kafka.apache.org/44/getting-started/introduction/#main-concepts-and-terminology)
+  Use for: topic, partition, key → partition yang sama, urutan per partition, event tidak dihapus setelah dibaca (lesson 0016, 0017).
+- [Apache Kafka 4.4 docs: Design](https://kafka.apache.org/44/design/design/#message-delivery-semantics)
+  Use for: consumer group + offset (`#consumer-position`), at-most/at-least/exactly-once, default at-least-once, idempotent producer (lesson 0016, 0017).
+- [RabbitMQ: AMQP 0-9-1 Model Explained](https://www.rabbitmq.com/tutorials/amqp-concepts)
+  Use for: exchange, binding, fanout/direct, pesan dihapus setelah ack (lesson 0016).
+- [RabbitMQ: Consumer Acknowledgements and Publisher Confirms](https://www.rabbitmq.com/docs/confirms)
+  Use for: automatic requeueing, requeue/redelivery loop, prefetch sebagai batas in-flight (lesson 0017, 0018).
+- [RabbitMQ: Dead Letter Exchanges](https://www.rabbitmq.com/docs/dlx)
+  Use for: empat kondisi dead-lettering, `delivery-limit` (lesson 0017).
+- [Redis docs: Pub/Sub](https://redis.io/docs/latest/develop/pubsub/)
+  Use for: Redis Pub/Sub at-most-once (lesson 0016).
+- [PostgreSQL docs: SELECT, locking clause](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE)
+  Use for: `SKIP LOCKED` untuk tabel mirip queue, alternatif murah sebelum broker (lesson 0016).
+- [Azure Architecture Center: Publisher-Subscriber pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/publisher-subscriber)
+  Use for: alasan asinkron (sender tidak blocking), salinan per subscriber, urutan tidak dijamin (lesson 0016).
+- [Azure Architecture Center: Competing Consumers pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/competing-consumers)
+  Use for: setiap pesan ke satu consumer, idempotent, poison message (lesson 0016).
+- [Amazon SQS: At-least-once delivery](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html)
+  Use for: standard queue bisa mengantar duplikat, desain idempotent (lesson 0017).
+- [Amazon SQS: Using dead-letter queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
+  Use for: `maxReceiveCount`, DLQ untuk debugging, DLQ merusak urutan FIFO (lesson 0017).
+- [Amazon SQS: Exactly-once processing (FIFO)](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-exactly-once-processing.html)
+  Use for: deduplication interval 5 menit di FIFO queue (lesson 0017).
+- [Stripe API Reference: Idempotent requests](https://docs.stripe.com/api/idempotent_requests)
+  Use for: idempotency key, UUID v4, maks 255 karakter, respons tersimpan termasuk 500, key dibuang setelah ≥ 24 jam (lesson 0017).
+- [Azure Architecture Center: Event-driven architecture style](https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/event-driven)
+  Use for: producer/consumer/channel, decoupling, eventual consistency, observability (lesson 0018).
+- [AWS Prescriptive Guidance: Transactional outbox pattern](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html)
+  Use for: dual write, outbox dalam satu transaksi, duplikat dan urutan, CDC (lesson 0018).
+- [Azure Architecture Center: Queue-Based Load Leveling pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling)
+  Use for: queue sebagai buffer, tidak cocok untuk respons sinkron latency rendah, autoscaling memindahkan overload (lesson 0018).
+- [AWS Builders' Library: Avoiding insurmountable queue backlogs](https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/)
+  Use for: perilaku bimodal, umur pesan sebagai metrik, back-pressure ke producer, TTL/sidelining (lesson 0018).
+
 ### Reliabilitas & API
 
 ### Studi kasus

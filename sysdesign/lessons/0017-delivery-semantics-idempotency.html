@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0017 · Delivery semantics, idempotency key, dead letter queue, ordering</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0017 · System Design · Modul Asinkron · ±20 menit</div>
+  <h1>At-most-once, at-least-once, exactly-once; idempotency key, DLQ, ordering</h1>
+  <p class="subtitle">Pesan bisa hilang atau datang dua kali. Pilih mana yang Anda terima, lalu buat consumer yang aman terhadap duplikat</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0016-queue-dan-pubsub.html">lesson 0016</a>: queue dan pub/sub memisahkan producer dari consumer, dan Kafka menyimpan posisi consumer sebagai offset.
+  Lesson ini menjawab pertanyaan lanjutan yang hampir selalu muncul di interview: "Bagaimana kalau consumer crash di tengah jalan?"
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Queue Anda at-least-once. Bagaimana Anda memastikan pembayaran tidak terjadi dua kali, dan apa yang Anda lakukan dengan pesan yang terus gagal?"</em>
+  tanpa catatan, dalam 60 detik: tiga delivery semantics, kenapa default yang realistis adalah at-least-once, consumer idempotent dengan idempotency key, batas retry + dead letter queue, dan ordering per key.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Tiga delivery semantics</h2>
+<p>Kafka docs mendefinisikan ketiganya dengan ringkas <sup class="cite"><a href="https://kafka.apache.org/44/design/design/#message-delivery-semantics">[1]</a></sup>:</p>
+<table>
+  <thead><tr><th>Semantik</th><th>Definisi (Kafka docs)</th><th>Artinya untuk Anda</th></tr></thead>
+  <tbody>
+    <tr><td><strong>at-most-once</strong></td><td>"Messages may be lost but are never redelivered."</td><td>Boleh hilang: metrik, log debug, notifikasi "sedang mengetik"</td></tr>
+    <tr><td><strong>at-least-once</strong></td><td>"Messages are never lost but may be redelivered."</td><td>Tidak boleh hilang, tapi consumer harus tahan duplikat</td></tr>
+    <tr><td><strong>exactly-once</strong></td><td>"Each message is processed once and only once."</td><td>Paling mahal, dan biasanya hanya berlaku di dalam satu sistem</td></tr>
+  </tbody>
+</table>
+<p>Semantik mana yang Anda dapat ditentukan oleh <strong>urutan</strong> dua langkah di consumer: memproses pesan dan menyimpan posisi (offset atau ack).</p>
+<div class="flow">
+  <span class="box">baca pesan</span><span class="arrow">→</span>
+  <span class="box">simpan posisi</span><span class="arrow">→</span>
+  <span class="box">proses</span><span class="arrow">→</span>
+  <span class="box">crash sebelum selesai = pesan terlewat (at-most-once)</span>
+</div>
+<div class="flow">
+  <span class="box">baca pesan</span><span class="arrow">→</span>
+  <span class="box">proses</span><span class="arrow">→</span>
+  <span class="box">crash sebelum simpan posisi</span><span class="arrow">→</span>
+  <span class="box">consumer pengganti memproses ulang (at-least-once)</span>
+</div>
+<p>
+  Kafka docs menjelaskan kedua urutan ini persis seperti di atas, lalu menyimpulkan bahwa Kafka <em>"guarantees at-least-once delivery by default"</em>. At-most-once didapat dengan mematikan retry di producer dan commit offset sebelum memproses.
+  Exactly-once tersedia untuk alur baca-proses-tulis <strong>di dalam Kafka</strong> (Kafka Streams, transactional producer), tetapi <em>"exactly-once delivery for other destination systems generally requires cooperation with such systems."</em>
+  <sup class="cite"><a href="https://kafka.apache.org/44/design/design/#message-delivery-semantics">[1]</a></sup>
+</p>
+<p>
+  RabbitMQ sama: dengan manual ack, pesan yang belum di-ack <em>"is automatically requeued"</em> saat koneksi consumer putus, sehingga <em>"consumers must be prepared to handle redeliveries and otherwise be implemented with idempotence in mind."</em>
+  <sup class="cite"><a href="https://www.rabbitmq.com/docs/confirms#automatic-requeueing">[2]</a></sup>
+  Amazon SQS standard queue juga terus terang: Anda <em>"might get that message copy again"</em>, jadi <em>"design your applications to be idempotent."</em>
+  <sup class="cite"><a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html">[3]</a></sup>
+</p>
+<p class="note">Kalimat yang aman di interview: "Saya asumsikan at-least-once, lalu membuat efeknya exactly-once dengan consumer yang idempotent." Ini lebih jujur daripada "broker kami exactly-once".</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Idempotency: duplikat tidak boleh berefek dua kali</h2>
+<p>
+  <strong>Idempotent</strong> berarti menjalankan operasi yang sama berkali-kali menghasilkan efek yang sama dengan menjalankannya sekali.
+  Kafka docs memberi contoh termurah: kalau pesan punya primary key, update-nya sudah idempotent, karena <em>"receiving the same message twice just overwrites a record with another copy of itself."</em>
+  <sup class="cite"><a href="https://kafka.apache.org/44/design/design/#message-delivery-semantics">[1]</a></sup>
+  Masalahnya ada pada operasi yang <em>menambah</em> sesuatu: tagih kartu, kirim email, kurangi stok.
+</p>
+
+<h3>Idempotency key di API</h3>
+<p>
+  Untuk request HTTP yang di-retry (timeout, koneksi putus), Stripe memakai <strong>idempotency key</strong>: client membuat <em>"a unique key that the server uses to recognize subsequent retries of the same request"</em>, disarankan V4 UUID, maksimal 255 karakter.
+  Server menyimpan status code dan body hasil pertama, dan <em>"retries with the same key return the saved response, including 500 errors."</em>
+  Server juga membandingkan parameter request; kalau berbeda untuk key yang sama, request ditolak. Key boleh dibuang setelah minimal 24 jam.
+  <sup class="cite"><a href="https://docs.stripe.com/api/idempotent_requests">[4]</a></sup>
+</p>
+<pre><code>POST /v1/payments
+Idempotency-Key: 6f1c2a3e-9b7d-4e21-a0c4-5d8e7f9a1b2c
+{"order_id": 42, "amount": 150000}
+
+→ 201 Created  {"payment_id": "pay_901"}      ← request pertama, hasil disimpan per key
+(timeout di sisi client, client mengulang dengan key yang sama)
+→ 201 Created  {"payment_id": "pay_901"}      ← hasil tersimpan, kartu tidak ditagih lagi</code></pre>
+
+<h3>Consumer idempotent</h3>
+<p>Di sisi consumer queue, polanya sama: setiap pesan membawa ID unik, dan consumer mencatat ID yang sudah diproses <strong>dalam transaksi yang sama</strong> dengan efeknya.</p>
+<pre><code>// Dibaca, bukan dijalankan. processed_messages.message_id punya UNIQUE constraint.
+async function handle(msg: { id: string; orderId: number; amount: number }) {
+  await db.transaction(async tx =&gt; {
+    const inserted = await tx.query(
+      "INSERT INTO processed_messages (message_id) VALUES ($1) ON CONFLICT DO NOTHING",
+      [msg.id]);
+    if (inserted.rowCount === 0) return;          // duplikat: sudah pernah diproses, lewati
+    await tx.query("INSERT INTO payments (order_id, amount) VALUES ($1, $2)", [msg.orderId, msg.amount]);
+  });                                             // ack/commit offset SETELAH transaksi commit
+}</code></pre>
+<p class="note">Kalau efeknya ada di sistem luar (gateway pembayaran), teruskan ID yang sama sebagai idempotency key ke sistem itu. Itulah "cooperation with such systems" yang dimaksud Kafka docs.</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Idempotency key dan consumer idempotent</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0026.</p>
+  <div class="quiz" data-bank-lesson="0017" data-bank-topic="async-idempotency" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Dead letter queue: pesan yang terus gagal</h2>
+<p>
+  Pesan dengan format rusak (sering disebut <em>poison message</em>) akan gagal setiap kali diproses. Kalau consumer terus me-requeue, RabbitMQ docs memperingatkan terjadinya <em>"a requeue/redelivery loop"</em>.
+  <sup class="cite"><a href="https://www.rabbitmq.com/docs/confirms#consumer-nacks-requeue">[2]</a></sup>
+  Obatnya adalah batas percobaan, lalu pindahkan ke <strong>dead letter queue</strong> (DLQ):
+</p>
+<ul>
+  <li><strong>Amazon SQS:</strong> redrive policy dengan <code>maxReceiveCount</code>, yaitu <em>"the number of times a consumer can receive a message from a source queue before it is moved to a dead-letter queue."</em> Set cukup tinggi untuk retry yang wajar. DLQ <em>"are useful for debugging your application because you can isolate unconsumed messages."</em>
+    <sup class="cite"><a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html#policies-for-dead-letter-queues">[5]</a></sup></li>
+  <li><strong>RabbitMQ:</strong> pesan di-<em>dead-letter</em> ke sebuah exchange (DLX) saat di-reject/nack tanpa requeue, kedaluwarsa karena TTL, dibuang karena queue melewati batas panjang, atau dikembalikan ke quorum queue lebih dari <code>delivery-limit</code>.
+    <sup class="cite"><a href="https://www.rabbitmq.com/docs/dlx">[6]</a></sup></li>
+</ul>
+<p>DLQ bukan tempat sampah: pasang alarm pada jumlah pesannya, selidiki penyebabnya, perbaiki, lalu kirim ulang (redrive).</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Ordering: hanya per key, dan ada harganya</h2>
+<p>
+  Urutan global di sistem terdistribusi itu mahal. Yang realistis adalah <strong>ordering per key</strong>: di Kafka, event dengan key sama (mis. <code>account_id</code>) masuk ke partition yang sama dan dibaca berurutan (lesson 0016).
+  Di Amazon SQS, FIFO (first-in-first-out) queue menjaga urutan dan menghindari duplikat saat producer mengulang <code>SendMessage</code> <em>"within the 5-minute deduplication interval"</em>.
+  <sup class="cite"><a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-exactly-once-processing.html">[7]</a></sup>
+</p>
+<p>
+  Dua jebakan: (1) menambah consumer paralel tanpa key merusak urutan; (2) DLQ juga bisa merusak urutan. SQS docs: <em>"Don't use a dead-letter queue with a FIFO queue if you don't want to break the exact order of messages or operations."</em>
+  <sup class="cite"><a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html">[5]</a></sup>
+  Jadi tanyakan dulu ke interviewer: urutan apa yang <em>benar-benar</em> penting, per akun, per pesanan, atau tidak sama sekali?
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Semantik, DLQ, ordering</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <div class="quiz" data-bank-lesson="0017" data-bank-topic="async-delivery" data-stack></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<h2>5. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal yang membenarkan:</strong> exactly-once "sungguhan" (transaksi Kafka, FIFO queue) layak dibayar kalau duplikat berarti uang hilang dan efeknya tidak bisa dibuat idempotent dengan murah.
+  DLQ layak kalau ada pesan yang bisa gagal permanen dan Anda tidak boleh membuangnya diam-diam. Ordering ketat layak kalau urutan mengubah hasil (debit sebelum kredit), bukan hanya "lebih rapi".
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> jaminan yang lebih kuat dibayar dengan latency dan throughput (contoh kecil: producer Kafka yang menunggu pesan ter-commit ke semua replica in-sync bisa butuh <em>"on the order of 10 ms"</em> per pengiriman <sup class="cite"><a href="https://kafka.apache.org/44/design/design/#message-delivery-semantics">[1]</a></sup>);
+  ordering per key membatasi paralelisme pada jumlah key aktif; tabel <code>processed_messages</code> tumbuh dan butuh pembersihan; DLQ tanpa alarm hanya menunda masalah.
+</p>
+<p><strong>Alternatif lebih murah:</strong></p>
+<ul>
+  <li><strong>Upsert berdasarkan primary key</strong> sudah idempotent; tidak butuh tabel dedup.</li>
+  <li><strong>At-least-once + consumer idempotent</strong> hampir selalu cukup dan lebih murah daripada exactly-once di broker.</li>
+  <li><strong>At-most-once</strong> untuk data yang boleh hilang (metrik, presence): jangan bayar retry untuk itu.</li>
+  <li><strong>Satu transaksi database</strong> kalau semua efek ada di satu database: tidak perlu queue, tidak perlu idempotency layer.</li>
+</ul>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Queue Anda at-least-once. Bagaimana Anda memastikan pembayaran tidak terjadi dua kali, dan apa yang Anda lakukan dengan pesan yang terus gagal?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"At-least-once berarti pesan tidak hilang tapi bisa datang dua kali, misalnya kalau consumer crash setelah memproses tapi sebelum ack atau commit offset. Exactly-once end-to-end ke sistem eksternal tidak saya andalkan dari broker, jadi consumer saya buat idempotent. Setiap pesan membawa ID unik; dari sisi API, client mengirim Idempotency-Key, misalnya UUID. Consumer mencatat ID yang sudah diproses di tabel dengan unique constraint, dalam transaksi yang sama dengan efek pembayarannya, jadi duplikat dilewati dan mengembalikan hasil lama. Pesan yang terus gagal saya batasi, misalnya lima percobaan dengan backoff, lalu dipindah ke dead letter queue dan diberi alarm, supaya tidak memblokir pesan lain. Kalau volumenya kecil dan semua dalam satu database, cukup transaksi biasa tanpa queue sama sekali."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>At-least-once: pesan bisa duplikat, dengan contoh penyebabnya (crash sebelum ack/commit offset)</li>
+      <li>Tidak mengandalkan exactly-once dari broker untuk sistem eksternal</li>
+      <li>Idempotency key / ID pesan unik, dicatat bersama efeknya (unique constraint atau transaksi)</li>
+      <li>Duplikat mengembalikan hasil tersimpan, bukan menagih lagi</li>
+      <li>Batas retry lalu dead letter queue, dengan monitoring/alarm</li>
+      <li>Membenarkan komponen dengan angka, atau menyebut kapan cukup transaksi database biasa</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://kafka.apache.org/44/design/design/#message-delivery-semantics">Apache Kafka 4.4 docs: Message Delivery Semantics</a>, ±10 menit. Sumber paling jelas tentang kenapa urutan "simpan posisi" dan "proses" menentukan semantik.
+</div>
+
+<p>Berikutnya, <a href="0018-event-driven-backpressure.html">lesson 0018</a>: event-driven, outbox pattern untuk menghindari dual write, dan back-pressure saat consumer tertinggal.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Asinkron") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa ack setelah commit transaksi, bukan sebelumnya?", "Berapa maxReceiveCount yang masuk akal untuk job yang memanggil API pihak ketiga?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://kafka.apache.org/44/design/design/">[1] Apache Kafka 4.4 docs: Design (Message Delivery Semantics)</a> ·
+  <a href="https://www.rabbitmq.com/docs/confirms">[2] RabbitMQ: Consumer Acknowledgements and Publisher Confirms</a> ·
+  <a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/standard-queues-at-least-once-delivery.html">[3] Amazon SQS: At-least-once delivery</a> ·
+  <a href="https://docs.stripe.com/api/idempotent_requests">[4] Stripe API Reference: Idempotent requests</a> ·
+  <a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html">[5] Amazon SQS: Using dead-letter queues</a> ·
+  <a href="https://www.rabbitmq.com/docs/dlx">[6] RabbitMQ: Dead Letter Exchanges</a> ·
+  <a href="https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-exactly-once-processing.html">[7] Amazon SQS: Exactly-once processing (FIFO)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0016-queue-dan-pubsub.html">← 0016 · Message queue vs pub/sub</a>
+  <a href="0018-event-driven-backpressure.html">0018 · Event-driven dan back-pressure →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

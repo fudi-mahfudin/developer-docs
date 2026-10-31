@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0018 · Event-driven, outbox pattern, back-pressure, load leveling</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0018 · System Design · Modul Asinkron · ±20 menit</div>
+  <h1>Event-driven, outbox pattern, back-pressure, load leveling</h1>
+  <p class="subtitle">Cara mengirim event tanpa kehilangannya, dan apa yang terjadi saat producer lebih cepat daripada consumer</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0017-delivery-semantics-idempotency.html">lesson 0017</a>: anggap pesan at-least-once dan buat consumer idempotent.
+  Lesson terakhir modul Asinkron ini menjawab dua pertanyaan sisanya: bagaimana event sampai ke broker dengan aman dari database, dan bagaimana sistem tidak tenggelam saat consumer tertinggal.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Saat pesanan dibuat, layanan email, stok, dan analitik harus tahu. Bagaimana Anda memastikan event tidak hilang, dan apa yang terjadi kalau consumer tertinggal?"</em>
+  tanpa catatan, dalam 60 detik: event-driven, masalah dual write, outbox dalam satu transaksi, consumer idempotent, load leveling, dan back-pressure berdasarkan umur pesan.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Event-driven secara singkat</h2>
+<p>
+  Arsitektur <strong>event-driven</strong> terdiri dari <em>"event producers that generate a stream of events, event consumers that listen for these events, and event channels"</em> (biasanya broker) di antaranya.
+  Producer <em>"doesn't know which consumers are listening"</em>, dan <em>"new consumers can be added without modifying producers or other consumers."</em>
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/event-driven#architecture">[1]</a></sup>
+</p>
+<p>
+  Event biasanya ditulis dalam bentuk lampau: <code>OrderPlaced</code>, <code>PaymentCaptured</code>. Bedanya dengan command (<code>SendEmail</code>): command meminta satu penerima melakukan sesuatu, event mengumumkan fakta ke siapa pun yang peduli.
+  Harganya, menurut dokumen yang sama: data antarlayanan <em>"isn't immediately consistent after an event is published"</em> (eventual consistency), dan observability lebih sulit karena tidak ada satu call stack, jadi tracing harus direncanakan dari awal.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/event-driven#challenges">[1]</a></sup>
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Dual write dan outbox pattern</h2>
+<p>
+  Kode yang terlihat wajar: simpan pesanan ke database, lalu publish <code>OrderPlaced</code> ke broker. Kalau broker down setelah commit database, pesanan ada tapi event hilang; kalau urutannya dibalik, event terkirim untuk pesanan yang mungkin rollback.
+  AWS menyebut ini <strong>dual write</strong>: <em>"when an application writes to two different systems"</em>, misalnya database dan sistem pesan.
+  <sup class="cite"><a href="https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html">[2]</a></sup>
+</p>
+<p>
+  <strong>Transactional outbox</strong> menyelesaikannya dengan memakai satu-satunya transaksi yang Anda punya, yaitu transaksi database. Tabel bisnis dan tabel <code>outbox</code> di-update <em>"in the same transaction"</em>;
+  kalau salah satu gagal, <em>"the entire transaction is rolled back."</em> Proses terpisah (sering disebut relay) membaca baris outbox yang sudah commit dan mengirimnya ke broker.
+  <sup class="cite"><a href="https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html">[2]</a></sup>
+</p>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 220" role="img" aria-label="Order service menulis tabel orders dan outbox dalam satu transaksi database. Relay membaca outbox lalu publish ke broker secara asinkron. Broker mengirim ke consumer email dan stok.">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="92" width="70" height="36" rx="4"/><text x="45" y="110">Client</text></g>
+  <g class="node service"><rect x="110" y="92" width="100" height="36" rx="4"/><text x="160" y="110">Order service</text></g>
+  <g class="node store"><rect x="240" y="40" width="120" height="36" rx="4"/><text x="300" y="58">tabel orders</text></g>
+  <g class="node store"><rect x="240" y="144" width="120" height="36" rx="4"/><text x="300" y="162">tabel outbox</text></g>
+  <g class="node service"><rect x="390" y="144" width="70" height="36" rx="4"/><text x="425" y="162">Relay</text></g>
+  <g class="node queue"><rect x="490" y="92" width="60" height="36" rx="4"/><text x="520" y="110">Broker</text></g>
+  <g class="node service"><rect x="570" y="40" width="64" height="36" rx="4"/><text x="602" y="58">Email</text></g>
+  <g class="node service"><rect x="570" y="144" width="64" height="36" rx="4"/><text x="602" y="162">Stok</text></g>
+  <path class="edge" d="M80,110 H108"/>
+  <path class="edge" d="M210,104 L238,64"/>
+  <path class="edge" d="M210,116 L238,156"/>
+  <text class="label" x="300" y="110">satu transaksi</text>
+  <path class="edge" d="M360,162 H388"/>
+  <path class="edge async" d="M460,156 L488,120"/>
+  <path class="edge async" d="M550,104 L568,66"/>
+  <path class="edge async" d="M550,116 L568,154"/>
+  <text class="label" x="425" y="200">polling / CDC</text>
+</svg>
+<figcaption>Garis penuh = sinkron, di dalam satu transaksi database. Garis putus-putus = asinkron, setelah commit.</figcaption>
+</figure>
+<p>Dua konsekuensi yang perlu Anda sebut sendiri sebelum interviewer menanyakannya <sup class="cite"><a href="https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html">[2]</a></sup>:</p>
+<ul>
+  <li><strong>Duplikat.</strong> Relay bisa crash setelah publish tapi sebelum menandai baris terkirim, sehingga event dikirim lagi. AWS: <em>"make the consuming service idempotent by tracking the processed messages"</em> (lesson 0017).</li>
+  <li><strong>Urutan.</strong> Kirim event dalam urutan update database; AWS menyimpan timestamp dan sequence number di baris outbox untuk itu.</li>
+</ul>
+<p class="note">Selain polling tabel outbox, relay bisa memakai <em>change data capture</em> (CDC): membaca log perubahan database (mis. WAL di PostgreSQL) dan mengubahnya menjadi event. Lebih sedikit beban polling, tapi satu komponen lagi.</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Dual write dan outbox</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0026.</p>
+  <div class="quiz" data-bank-lesson="0018" data-bank-topic="async-event-outbox" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Load leveling: queue sebagai buffer</h2>
+<p>
+  <strong>Queue-based load leveling</strong> memakai queue <em>"that acts as a buffer between a task and the service that it invokes"</em>, untuk <em>"smooth intermittent heavy loads"</em>.
+  Contoh: flash sale 2.000 request/detik selama 5 menit, sementara database hanya sanggup 500 tulis/detik. Request ditaruh di queue, worker menulis dengan kecepatan yang aman, dan backlog habis setelah lonjakan reda.
+  Pola ini <em>"might not be suitable when the caller requires a low-latency, synchronous response."</em>
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling#when-to-use-this-pattern">[3]</a></sup>
+</p>
+<p>
+  Kata kuncinya <em>intermittent</em>. Hitung: kalau rata-rata kedatangan 1.000 pesan/detik dan consumer hanya 200 pesan/detik <strong>terus-menerus</strong>, backlog tumbuh 800 pesan/detik, sekitar 2,9 juta pesan per jam.
+  Queue tidak menyelesaikan itu; queue hanya menunda masalah sambil latency naik. Azure juga mengingatkan bahwa menambah consumer tanpa batas <em>"only moves the overload to downstream dependencies"</em>, jadi pantau kedalaman queue dan skalakan consumer dalam batas aman.
+  <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling#problems-and-considerations">[3]</a></sup>
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Back-pressure</h2>
+<p>
+  <strong>Back-pressure</strong> artinya sinyal "pelan-pelan" mengalir ke hulu, dari consumer yang kewalahan ke producer. AWS Builders' Library menjelaskan kenapa ini penting:
+  sistem berbasis queue punya perilaku <em>bimodal</em>; tanpa backlog latency rendah, tapi setelah backlog terbentuk butuh waktu lama untuk kembali normal. Contoh mereka: kalau butuh sekitar 30 menit sampai operator turun tangan, dan pesan yang terkumpul 10× kapasitas consumer, backlog itu butuh 300 menit untuk dihabiskan.
+  <sup class="cite"><a href="https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/">[4]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">ukur umur pesan tertua</span><span class="arrow">→</span>
+  <span class="box">batasi in-flight di consumer (prefetch)</span><span class="arrow">→</span>
+  <span class="box">tambah consumer dalam batas downstream</span><span class="arrow">→</span>
+  <span class="box">throttle / tolak di producer (429)</span>
+</div>
+<ul>
+  <li><strong>Ukur yang benar.</strong> Alarm DLQ datang terlambat; Amazon <em>"focus more on measuring the age of messages that are in the queue."</em> <sup class="cite"><a href="https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/">[4]</a></sup></li>
+  <li><strong>Batasi kerja yang sedang berjalan di consumer.</strong> RabbitMQ memakai prefetch count: saat jumlah pesan belum di-ack mencapai batas, RabbitMQ <em>"will stop delivering more messages on the channel until at least one of the outstanding ones is acknowledged."</em>
+    <sup class="cite"><a href="https://www.rabbitmq.com/docs/confirms#channel-qos-prefetch">[5]</a></sup></li>
+  <li><strong>Kirim back-pressure ke producer.</strong> Kalau satu workload membuat backlog yang tidak terkejar, banyak sistem Amazon <em>"automatically start rejecting work more aggressively in the producer"</em>, misalnya dengan menurunkan batas throttle sebanding dengan ukuran backlog. Di HTTP, bentuknya biasanya <code>429 Too Many Requests</code> (rate limiting di lesson 0021).
+    <sup class="cite"><a href="https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/">[4]</a></sup></li>
+  <li><strong>Buang atau sisihkan yang basi.</strong> Untuk pesan yang tidak berguna lagi kalau terlambat, AWS memakai TTL pesan atau memindahkan traffic lama ke queue terpisah supaya traffic baru tetap cepat. <sup class="cite"><a href="https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/">[4]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 2 — Load leveling dan back-pressure</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0026.</p>
+  <div class="quiz" data-bank-lesson="0018" data-bank-topic="async-backpressure" data-stack></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<h2>5. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal yang membenarkan:</strong> event-driven layak kalau satu kejadian ditunggu oleh beberapa layanan milik tim berbeda dan daftar penerimanya terus bertambah.
+  Outbox layak begitu Anda punya database <em>dan</em> broker, dan kehilangan event berarti data tidak konsisten (stok tidak berkurang, email konfirmasi tidak terkirim).
+  Load leveling layak kalau lonjakan puncak (angka dari estimasi, lesson 0004) melebihi kapasitas tulis downstream, tapi rata-ratanya masih di bawah.
+</p>
+<p>
+  <strong>Biaya dan risiko:</strong> eventual consistency yang harus dijelaskan ke product owner; debugging dan tracing lintas layanan; relay outbox yang harus dijalankan dan dipantau; tabel outbox yang tumbuh dan perlu dibersihkan;
+  dan backlog yang bisa menyembunyikan masalah kapasitas sampai latency melonjak.
+</p>
+<p><strong>Alternatif lebih murah:</strong></p>
+<ul>
+  <li><strong>Panggilan langsung</strong> kalau hanya satu layanan yang perlu tahu dan ia cepat serta stabil.</li>
+  <li><strong>Satu transaksi database</strong> kalau semua efek (pesanan, stok) ada di database yang sama: tidak ada dual write, tidak perlu outbox.</li>
+  <li><strong>Tabel job di database</strong> (lesson 0016) sebagai queue sekaligus outbox, sebelum menambah broker.</li>
+  <li><strong>Perbaiki kapasitas dulu</strong> (index, batching tulis, scale vertical) kalau rata-rata beban, bukan hanya puncaknya, sudah melebihi kemampuan consumer. Queue tidak menambah kapasitas.</li>
+</ul>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Saat pesanan dibuat, layanan email, stok, dan analitik harus tahu. Bagaimana Anda memastikan event tidak hilang, dan apa yang terjadi kalau consumer tertinggal?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Saya publish event OrderPlaced lewat pub/sub, jadi checkout tidak perlu tahu siapa saja yang mendengarkan. Supaya tidak ada dual write, pesanan dan baris outbox ditulis dalam satu transaksi database; relay terpisah membaca outbox yang sudah commit dan publish ke broker. Relay bisa mengirim duplikat, jadi setiap consumer idempotent berdasarkan event ID. Kalau consumer tertinggal, queue meratakan lonjakan, tapi kalau rata-rata kedatangan melebihi kapasitas, backlog tumbuh terus. Saya pantau umur pesan tertua, bukan hanya DLQ, lalu tambah consumer dalam batas yang sanggup ditanggung database, atau kirim back-pressure ke producer, misalnya throttle atau 429. Kalau hanya satu layanan yang perlu tahu dan volumenya kecil, panggilan langsung atau job di tabel database lebih sederhana."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Event-driven/pub/sub: producer tidak tahu siapa consumer-nya</li>
+      <li>Menyebut masalah dual write antara database dan broker</li>
+      <li>Outbox: data + baris outbox dalam satu transaksi, relay publish setelah commit</li>
+      <li>Consumer idempotent karena relay bisa mengirim duplikat</li>
+      <li>Back-pressure/load leveling: pantau umur pesan atau backlog, tambah consumer atau throttle producer</li>
+      <li>Membenarkan komponen dengan angka, atau menyebut alternatif lebih murah</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/">AWS Builders' Library: Avoiding insurmountable queue backlogs</a>, ±20 menit. Pengalaman Amazon menjalankan sistem asinkron multitenant: umur pesan, spillover queue, back-pressure.
+</div>
+
+<p>Berikutnya, <a href="0019-review-data-caching.html">lesson 0019</a>: Review 2 untuk modul Data dan Caching. Modul Asinkron ini diuji di Review 3 (lesson 0026), bersama modul Reliabilitas &amp; API.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Asinkron") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Bandingkan outbox dengan polling dan outbox dengan CDC.", "Bagaimana back-pressure bekerja kalau producer-nya adalah browser user?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/guide/architecture-styles/event-driven">[1] Azure Architecture Center: Event-driven architecture style</a> ·
+  <a href="https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html">[2] AWS Prescriptive Guidance: Transactional outbox pattern</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling">[3] Azure Architecture Center: Queue-Based Load Leveling pattern</a> ·
+  <a href="https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/">[4] AWS Builders' Library: Avoiding insurmountable queue backlogs</a> ·
+  <a href="https://www.rabbitmq.com/docs/confirms">[5] RabbitMQ: Consumer Acknowledgements and Publisher Confirms (prefetch)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0017-delivery-semantics-idempotency.html">← 0017 · Delivery semantics dan idempotency</a>
+  <a href="0019-review-data-caching.html">0019 · Review 2: Data + Caching →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0018.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
