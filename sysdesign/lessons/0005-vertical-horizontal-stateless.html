@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0005 · Vertical vs horizontal scaling; stateless service</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0005 · System Design · Modul Skalabilitas · ±20 menit</div>
+  <h1>Vertical vs horizontal scaling; stateless service</h1>
+  <p class="subtitle">Dua cara menambah kapasitas, kenapa horizontal scaling menuntut service yang stateless, dan di mana session disimpan</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0004-estimasi-back-of-envelope.html">lesson 0004</a> menunjukkan bahwa 1.000 user aktif harian berarti di bawah 1 QPS rata-rata: satu server dan satu database sudah cukup.
+  Lesson ini menjawab pertanyaan berikutnya: kalau angka itu naik 100 kali dan satu server mulai kewalahan, apa pilihan Anda, dan apa yang harus diubah di aplikasi supaya pilihan itu bisa dipakai?
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Server Anda kewalahan. Scale up atau scale out? Apa yang harus diubah supaya bisa scale out?"</em>
+  tanpa catatan, dalam 60 detik: beda vertical dan horizontal, kenapa server harus stateless, tiga tempat menyimpan session, dan angka yang membenarkan langkah itu.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Dua cara menambah kapasitas</h2>
+<p>
+  <strong>Vertical scaling</strong> (scale up) berarti mengganti kapasitas satu resource, misalnya memindahkan aplikasi ke virtual machine yang lebih besar.
+  <strong>Horizontal scaling</strong> (scale out) berarti menambah atau mengurangi jumlah instance. Dokumentasi Azure mencatat bahwa vertical scaling
+  sering membuat sistem tidak tersedia sementara selama redeploy, sedangkan pada horizontal scaling instance lama tetap melayani request saat instance baru menyala. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/best-practices/auto-scaling">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th>Vertical (scale up)</th><th>Horizontal (scale out)</th></tr></thead>
+  <tbody>
+    <tr><td>Perubahan</td><td>Mesin lebih besar: CPU, RAM, disk</td><td>Mesin lebih banyak di belakang load balancer</td></tr>
+    <tr><td>Perubahan kode</td><td>Tidak ada</td><td>Server harus stateless (bagian 2)</td></tr>
+    <tr><td>Batas</td><td>Ukuran mesin terbesar yang tersedia</td><td>Bottleneck lain, biasanya database</td></tr>
+    <tr><td>Saat satu mesin mati</td><td>Seluruh layanan mati</td><td>Instance lain tetap melayani</td></tr>
+    <tr><td>Biaya tambahan</td><td>Harga mesin besar</td><td>Load balancer, session store, deploy lebih rumit</td></tr>
+  </tbody>
+</table>
+<p>
+  Ukuran keberhasilannya: <em>"Scalability is measured by the ratio of throughput gain to resource increase."</em> Idealnya dua kali resource memberi dua kali throughput.
+  Yang merusak rasio itu adalah bottleneck atau titik sinkronisasi di dalam sistem. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[2]</a></sup>
+  Throughput dan latency sudah dibahas di <a href="0003-latency-dan-throughput.html">lesson 0003</a>.
+</p>
+<p class="note">
+  Kalimat penting untuk interview: menambah web server tidak menolong kalau database yang menjadi bottleneck.
+  Azure menyarankan <em>"Identify and resolve the bottlenecks in the system first, before throwing more instances at the problem"</em>, dan bagian stateful dari sistem adalah penyebab bottleneck yang paling mungkin. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Vertical atau horizontal?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0012.</p>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="skala-vertical-horizontal" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Syarat horizontal scaling: service yang stateless</h2>
+<p>
+  Begitu ada dua server di belakang load balancer, request kedua dari user yang sama bisa jatuh ke server lain.
+  Kalau server pertama menyimpan session login di memorinya, server kedua tidak mengenal user itu.
+  Azure merumuskan aturannya: <em>"Make sure that any instance can handle any request."</em> Penyebab umum pelanggarannya adalah menyimpan session state di memori dan memakai kunci enkripsi yang khusus per mesin. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[2]</a></sup>
+</p>
+<p>
+  <strong>Stateless service</strong> berarti server tidak menyimpan data per user di antara dua request. Data itu tetap ada, tapi dipindah ke tempat yang bisa dibaca semua instance:
+</p>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 230" role="img" aria-label="Client ke load balancer, lalu ke tiga app server stateless yang sama-sama membaca session store dan database">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="97" width="80" height="36" rx="4"/><text x="50" y="115">Client</text></g>
+  <g class="node service"><rect x="130" y="97" width="110" height="36" rx="4"/><text x="185" y="115">Load balancer</text></g>
+  <g class="node service"><rect x="290" y="27" width="110" height="36" rx="4"/><text x="345" y="45">App 1</text></g>
+  <g class="node service"><rect x="290" y="97" width="110" height="36" rx="4"/><text x="345" y="115">App 2</text></g>
+  <g class="node service"><rect x="290" y="167" width="110" height="36" rx="4"/><text x="345" y="185">App 3</text></g>
+  <g class="node cache"><rect x="480" y="47" width="140" height="36" rx="4"/><text x="550" y="65">Session store</text></g>
+  <g class="node store"><rect x="480" y="147" width="140" height="36" rx="4"/><text x="550" y="165">Database</text></g>
+  <path class="edge" d="M90,115 H128"/>
+  <path class="edge" d="M240,108 L288,52"/>
+  <path class="edge" d="M240,115 H288"/>
+  <path class="edge" d="M240,122 L288,178"/>
+  <path class="edge" d="M400,45 L478,62"/>
+  <path class="edge" d="M400,112 L478,72"/>
+  <path class="edge" d="M400,178 L478,166"/>
+  <path class="edge" d="M400,120 L478,158"/>
+</svg>
+<figcaption>Setiap app server identik dan tidak menyimpan session di memori. Instance mana pun bisa melayani request mana pun, jadi menambah atau mematikan satu instance aman.</figcaption>
+</figure>
+<p>
+  Ada satu keuntungan lain: instance bisa dikurangi lagi saat beban turun (scale in). Aplikasi harus siap instance-nya dimatikan:
+  tangkap sinyal shutdown dan berhenti dengan rapi, dan taruh pekerjaan panjang di queue supaya instance lain bisa melanjutkan. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[2]</a></sup>
+</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Di mana session disimpan</h2>
+<p>
+  HTTP sendiri stateless, jadi aplikasi selalu butuh state di luar request untuk mengenali user yang kembali.
+  Dokumentasi Redis membandingkan pilihan-pilihannya: <sup class="cite"><a href="https://redis.io/docs/latest/develop/use-cases/session-store/#why-the-problem-is-hard">[3]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Pilihan</th><th>Cara kerja</th><th>Biaya dan risiko</th></tr></thead>
+  <tbody>
+    <tr><td>Memori server + sticky session</td><td>Load balancer selalu mengirim user ke server yang sama (lesson 0006)</td><td>Menurut Redis: menciptakan hot spot dan menghalangi failover. Server mati = user logout.</td></tr>
+    <tr><td>Database relasional</td><td>Session disimpan sebagai baris di tabel</td><td>Menurut Redis: menambah 5–20 ms per request, dan pada ribuan user bersamaan pembacaan session menghabiskan connection pool database utama.</td></tr>
+    <tr><td>Shared store di memori (Redis)</td><td>Satu key per session ID, dengan <code>EXPIRE</code> yang diperbarui di setiap request</td><td>Satu komponen lagi yang harus dijaga, tapi semua instance bisa melayani semua user.</td></tr>
+    <tr><td>Token di client</td><td>Server menandatangani data session dan client mengirimnya kembali di setiap request</td><td>Server tidak perlu menyimpan apa pun; mencabut token sebelum kedaluwarsa lebih sulit.</td></tr>
+  </tbody>
+</table>
+<p>
+  Redis menyimpan setiap session sebagai hash dengan TTL yang diperpanjang setiap kali ada request, sehingga session yang tidak aktif terhapus sendiri tanpa job pembersih. <sup class="cite"><a href="https://redis.io/docs/latest/develop/use-cases/session-store/#how-redis-supports-the-solution">[3]</a></sup>
+  Angka "5–20 ms" di tabel adalah klaim vendor Redis, bukan hukum alam; di interview cukup sebut "satu round trip database tambahan di setiap request".
+</p>
+<p>
+  Baris terakhir biasanya memakai <strong>JWT</strong> (JSON Web Token): format ringkas untuk membawa klaim (mis. user ID dan masa berlaku) antara dua pihak,
+  yang ditandatangani secara digital sehingga server bisa memeriksa keasliannya tanpa menyimpan session. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7519.html">[4]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Stateless dan session</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="skala-stateless" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Kapan tidak perlu</h2>
+<p>
+  <strong>Sinyal yang membenarkan horizontal scaling.</strong> Metrik menunjukkan app server yang jenuh (CPU atau memori tinggi terus-menerus, latency p99 naik bersama QPS) sementara database masih longgar;
+  atau target availability (mis. 99,9%, lesson 0001) tidak tercapai karena setiap deploy atau restart satu server berarti downtime.
+  Kalau database yang jenuh, menambah app server tidak menolong. <sup class="cite"><a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[2]</a></sup>
+</p>
+<p>
+  <strong>Biaya dan risiko.</strong> Load balancer, session store, dan cara deploy yang menangani beberapa instance sekaligus. Bug yang hanya muncul di satu instance lebih sulit dilacak.
+  Kode yang diam-diam menyimpan state di memori (cache lokal, file upload di disk) akan rusak begitu instance kedua menyala.
+</p>
+<p>
+  <strong>Alternatif lebih murah.</strong> Perbaiki query, index, atau kode yang lambat lebih dulu (ukur dengan profiling). Setelah itu scale up: satu perubahan konfigurasi, tanpa perubahan kode.
+  Untuk 1.000 user aktif harian dari lesson 0004, satu server sudah cukup; dua instance di belakang load balancer baru dibenarkan oleh target availability, bukan oleh beban.
+  Tetap tulis aplikasi yang stateless sejak awal: biayanya kecil, dan jalan ke scale out tetap terbuka.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+  <blockquote>"Aplikasi Anda berjalan di satu server dan CPU-nya penuh di jam sibuk. Apa yang Anda lakukan, dan apa yang harus diubah di aplikasi kalau ingin menambah server?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Pertama saya ukur: apakah yang jenuh benar-benar app server, atau database? Kalau database, menambah app server tidak menolong. Kalau app server, saya cek dulu query atau kode yang lambat, lalu langkah termurah adalah scale up ke mesin lebih besar, tanpa ubah kode, walau ada batas ukuran dan biasanya ada downtime sebentar. Kalau beban terus naik atau saya butuh availability karena satu server berarti single point of failure, saya scale out: beberapa instance di belakang load balancer. Syaratnya server harus stateless, jadi session tidak boleh di memori server. Saya pindahkan ke shared store seperti Redis dengan TTL, atau ke token yang ditandatangani di client. Sticky session saya hindari karena menciptakan hot spot dan menghalangi failover."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>mengukur dulu di mana bottleneck-nya (app server atau database)?</li>
+      <li>scale up sebagai langkah termurah, beserta batasnya (ukuran mesin, downtime)?</li>
+      <li>scale out: beberapa instance di belakang load balancer?</li>
+      <li>syarat stateless: instance mana pun bisa melayani request mana pun?</li>
+      <li>session dipindah ke shared store (Redis + TTL) atau token di client?</li>
+      <li>membenarkan scale out dengan angka atau metrik (CPU, p99, target availability)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">Azure Architecture Center, "Design to scale out"</a>, ±5 menit. Daftar rekomendasi singkat: hindari stickiness, temukan bottleneck dulu, siapkan scale in.
+</div>
+
+<p>Berikutnya, <a href="0006-load-balancer.html">lesson 0006</a>: komponen yang membagi request ke instance-instance itu, yaitu load balancer.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Skalabilitas") · Indeks: <a href="../index.html">semua lesson System Design</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa vertical scaling butuh downtime?", "Kapan JWT lebih baik daripada session di Redis?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/best-practices/auto-scaling">[1] Azure Architecture Center: Autoscaling (vertical vs horizontal scaling)</a> ·
+  <a href="https://learn.microsoft.com/en-us/azure/architecture/guide/design-principles/scale-out">[2] Azure Architecture Center: Design to scale out</a> ·
+  <a href="https://redis.io/docs/latest/develop/use-cases/session-store/">[3] Redis docs: Redis session store</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc7519.html">[4] RFC 7519: JSON Web Token (JWT)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0004-estimasi-back-of-envelope.html">← 0004 · Estimasi back-of-envelope: QPS, storage, bandwidth</a>
+  <a href="0006-load-balancer.html">0006 · Load balancer: L4 vs L7, algoritma, health check →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0005.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
