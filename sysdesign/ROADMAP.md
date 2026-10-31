@@ -21,4 +21,4 @@
 | **Review 4** | 0035 | Studi kasus + topik lemah Review 1–3 |
 | Penutup | 0036 | Mock interview 45 menit (**opsional, pengecualian durasi**) |
 
-Menjelang interview: baca ulang tiga reference di `reference/` (angka dan estimasi, kerangka 5 langkah, trade-off komponen), lalu ulangi mock 0036 dengan soal lain.
+Menjelang interview: baca ulang tiga reference di `reference/` ([angka dan estimasi](reference/angka-dan-estimasi.html), [kerangka 5 langkah](reference/kerangka-5-langkah.html), [trade-off komponen](reference/trade-off-komponen.html)), lalu ulangi [mock 0036](lessons/0036-mock-interview.html) dengan soal lain.

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Kerangka 5 langkah menjawab soal desain</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · System Design · Kerangka 5 langkah</div>
+<h1>Kerangka 5 langkah</h1>
+<p class="subtitle">Ringkasan satu halaman untuk dibaca ulang menjelang interview. Dari Lesson <a href="../lessons/0027-kerangka-5-langkah.html">0027</a>, dengan pola kalimat dari <a href="../lessons/0025-tangga-skala.html">0025</a>. Latihan penuhnya: mock <a href="../lessons/0036-mock-interview.html">0036</a>.</p>
+
+<h2>Lima langkah dan alokasi 45 menit</h2>
+<div class="flow">
+  <span class="box">1 · Requirement</span><span class="arrow">→</span>
+  <span class="box">2 · Estimasi</span><span class="arrow">→</span>
+  <span class="box">3 · API + data model</span><span class="arrow">→</span>
+  <span class="box">4 · High-level (v1)</span><span class="arrow">→</span>
+  <span class="box">5 · Deep dive</span>
+</div>
+<table>
+  <thead><tr><th>Langkah</th><th>Yang ditulis di papan</th><th>Waktu</th></tr></thead>
+  <tbody>
+    <tr><td>1. Klarifikasi requirement</td><td>3–5 functional requirement ("user bisa …"); non-functional dalam angka: DAU, latency, availability, consistency</td><td>±5 menit</td></tr>
+    <tr><td>2. Estimasi</td><td>QPS rata-rata dan puncak, rasio baca:tulis, storage beberapa tahun, bandwidth bila relevan</td><td>±5 menit</td></tr>
+    <tr><td>3. API + data model</td><td>2–4 endpoint inti (method, path, input, output); tabel/entitas utama dengan key</td><td>±7 menit</td></tr>
+    <tr><td>4. High-level design</td><td>Desain v1 paling sederhana yang memenuhi angka langkah 2; telusuri satu request tulis dan satu request baca</td><td>±13 menit</td></tr>
+    <tr><td>5. Deep dive, bottleneck, trade-off</td><td>Bottleneck pertama dari angka, komponen yang menyelesaikannya, biaya dan risikonya, evolusi v2</td><td>±15 menit</td></tr>
+  </tbody>
+</table>
+<p>5 + 5 + 7 + 13 + 15 = 45 menit adalah konvensi track ini, bukan aturan resmi. Kalau interviewer mengarahkan ke bagian tertentu, ikuti; kerangka adalah peta, bukan naskah.</p>
+
+<h2>Pertanyaan klarifikasi standar (langkah 1)</h2>
+<ul>
+  <li><strong>Functional:</strong> fitur inti apa (pilih 3–5, sisanya "di luar scope")? User-nya manusia lewat aplikasi atau service lain lewat API?</li>
+  <li><strong>Skala:</strong> berapa DAU? Berapa aksi per user per hari? Rasio baca:tulis?</li>
+  <li><strong>Latency:</strong> target p99 untuk operasi terpenting? Non-functional requirement baru berguna kalau terukur: SLI adalah <em>"a carefully defined quantitative measure of some aspect of the level of service"</em>. <sup class="cite"><a href="https://sre.google/sre-book/service-level-objectives/">[1]</a></sup></li>
+  <li><strong>Availability:</strong> berapa "sembilan"? 99,9% = ±43,2 menit downtime per bulan; 99,99% = ±4,32 menit. <sup class="cite"><a href="https://sre.google/sre-book/availability-table/">[2]</a></sup></li>
+  <li><strong>Consistency:</strong> boleh telat terlihat beberapa detik (eventual), atau harus langsung (strong)?</li>
+  <li><strong>Data:</strong> berapa lama disimpan? Ukuran satu item? Ada data sensitif?</li>
+</ul>
+<p>Kalau interviewer menjawab "terserah Anda": ajukan asumsi dengan angka, lalu minta persetujuan.</p>
+
+<h2>Langkah 4 dan 5: v1 dulu, komponen dibenarkan angka</h2>
+<ul>
+  <li>v1 sering cukup satu app server (atau dua di belakang load balancer demi availability) dan satu database. Tim harus <em>"push back when accidental complexity is introduced"</em>. <sup class="cite"><a href="https://sre.google/sre-book/simplicity/">[3]</a></sup></li>
+  <li>Setiap komponen tambahan memakai satu pola kalimat:<br><strong>"Untuk skala ini cukup X. Kalau metrik Y melewati Z, langkah berikutnya W, dengan biaya B."</strong></li>
+  <li>Contoh: "Untuk 1.000 QPS baca, satu PostgreSQL dengan index cukup. Kalau p99 query baca melewati 50 ms di jam puncak, saya tambah cache; biayanya stale data dan satu komponen lagi."</li>
+  <li>Komponen tanpa angka (Kafka "untuk jaga-jaga", microservices untuk 1.000 user) = over-engineering, dinilai negatif.</li>
+</ul>
+
+<h2>Jebakan dan perbaikan</h2>
+<table>
+  <thead><tr><th>Jebakan</th><th>Perbaikan</th></tr></thead>
+  <tbody>
+    <tr><td>Langsung menggambar diagram akhir dengan 10 kotak</td><td>Gambar v1 dulu, lalu evolusi v2 dengan alasan per kotak</td></tr>
+    <tr><td>Estimasi dihitung lalu dilupakan</td><td>Rujuk angka langkah 2 setiap kali menambah komponen</td></tr>
+    <tr><td>Deep dive di topik favorit, bukan bottleneck</td><td>Pilih bottleneck terbesar menurut angka, atau tanya interviewer</td></tr>
+    <tr><td>Satu pilihan tanpa trade-off</td><td>Selalu sebut biaya: latency, konsistensi, biaya operasional, risiko</td></tr>
+  </tbody>
+</table>
+
+<h2>Lima studi kasus dalam satu baris</h2>
+<table>
+  <thead><tr><th>Soal</th><th>Angka kunci</th><th>Keputusan deep dive</th></tr></thead>
+  <tbody>
+    <tr><td><a href="../lessons/0028-kasus-url-shortener.html">URL shortener</a></td><td>±10 QPS tulis, ±1.000 baca (100:1), ±1 TB / 5 tahun</td><td>Base62 dari sequence; 302 vs 301; cache-aside setelah p99 diukur</td></tr>
+    <tr><td><a href="../lessons/0029-kasus-rate-limiter.html">Rate limiter</a></td><td>Limit konsisten di banyak instance</td><td>Counter di Redis (INCR atomik), 429 + Retry-After</td></tr>
+    <tr><td><a href="../lessons/0030-kasus-notification.html">Notification</a></td><td>Pengiriman lambat dan pihak ketiga tidak stabil</td><td>Queue per channel, retry + backoff, idempotency, DLQ</td></tr>
+    <tr><td><a href="../lessons/0031-kasus-news-feed-a.html">News feed</a> (<a href="../lessons/0032-kasus-news-feed-b.html">B</a>)</td><td>Read-heavy; akun besar</td><td>Fan-out on read di v1 → hybrid fan-out on write</td></tr>
+    <tr><td><a href="../lessons/0033-kasus-chat-a.html">Chat</a> (<a href="../lessons/0034-kasus-chat-b.html">B</a>)</td><td>Jutaan koneksi bersamaan</td><td>WebSocket stateful, presence dengan TTL, seq per percakapan</td></tr>
+  </tbody>
+</table>
+
+<p class="note sources">
+  <a href="https://sre.google/sre-book/service-level-objectives/">[1] Google SRE Book, bab 4: Service Level Objectives</a> ·
+  <a href="https://sre.google/sre-book/availability-table/">[2] Google SRE Book, Appendix A: Availability Table</a> ·
+  <a href="https://sre.google/sre-book/simplicity/">[3] Google SRE Book, bab 9: Simplicity</a>
+</p>
+<p class="note">Cheat sheet lain: <a href="angka-dan-estimasi.html">angka dan estimasi</a> · <a href="trade-off-komponen.html">trade-off komponen</a> · <a href="../index.html">Indeks</a></p>
+</main>
+</body>
+</html>
