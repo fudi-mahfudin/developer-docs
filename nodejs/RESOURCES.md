@@ -118,7 +118,7 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 - [V8 blog: Trash talk](https://v8.dev/blog/trash-talk)
   Use for: lesson 0011. Generational GC, Scavenger vs Mark-Compact.
 
-### Modul & tooling
+### Paket & tooling
 
 - [Node.js v24: Modules: CommonJS modules](https://nodejs.org/docs/latest-v24.x/api/modules.html)
   Use for: `require(esm)` beserta riwayat versinya (tanpa flag 22.12, stabil 24.15) dan `ERR_REQUIRE_ASYNC_MODULE` (lesson 0013).

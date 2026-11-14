@@ -1,4 +1,4 @@
-# 06: Modul Modul & tooling (0013–0015)
+# 06: Modul Paket & tooling (0013–0015)
 
 Status: resolved
 

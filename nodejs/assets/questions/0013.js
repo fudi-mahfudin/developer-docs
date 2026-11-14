@@ -1,8 +1,8 @@
-// Soal lesson 0013 (track Node.js, modul Modul & tooling) · CommonJS vs ESM. Format: assets/README.md.
+// Soal lesson 0013 (track Node.js, modul Paket & tooling) · CommonJS vs ESM. Format: assets/README.md.
 // Sumber: Node.js v24 docs (Modules: CommonJS modules, ECMAScript modules, Packages "Determining module system").
 QuestionBank.labelTopics({
-  "tooling-format-modul": "Modul & tooling: CommonJS vs ESM, field type, .mjs/.cjs",
-  "tooling-interop-esm": "Modul & tooling: interop CJS/ESM, require(esm), top-level await",
+  "tooling-format-modul": "Paket & tooling: CommonJS vs ESM, field type, .mjs/.cjs",
+  "tooling-interop-esm": "Paket & tooling: interop CJS/ESM, require(esm), top-level await",
 });
 
 // Urutan registrasi diselang-seling antar topik; posisi jawaban b d a c b.

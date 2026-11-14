@@ -3,9 +3,7 @@
 // Aturan teach umum (kata opsi, posisi jawaban, format lisan, kicker, nav ke tetangga) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
+const { forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
 const LESSONS = {
@@ -67,11 +65,10 @@ test("modul NestJS inti nav: 0015 → 0016 → 0017 → 0018 → 0019 → 0020",
 });
 
 test("modul NestJS inti lessons are listed as tersedia in the index", () => {
-  const index = fs.readFileSync(path.join(ROOT, "nodejs", "index.html"), "utf8");
-  NUMS.forEach(n => assert.match(index, new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`)));
+  nj.assertListedAsTersedia(LESSONS);
 });
 
 test("modul NestJS inti topic slugs are recorded in GLOSSARY.md", () => {
-  const glossary = fs.readFileSync(path.join(ROOT, "nodejs", "GLOSSARY.md"), "utf8");
+  const glossary = nj.section("GLOSSARY.md", "## NestJS inti");
   Object.values(LESSONS).flatMap(l => l.topics).forEach(t => assert.ok(glossary.includes(t), `GLOSSARY belum mencatat ${t}`));
 });

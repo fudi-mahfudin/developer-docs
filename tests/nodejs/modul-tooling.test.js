@@ -1,5 +1,5 @@
 // Run from repo root: node --test
-// Track Node.js, modul Modul & tooling (0013–0015): cakupan topik, sitasi, diagram/kode, label versi, nav.
+// Track Node.js, modul Paket & tooling (0013–0015): cakupan topik, sitasi, diagram/kode, label versi, nav.
 // Aturan teach umum (kata opsi, posisi jawaban, format lisan, kicker, sumber primer) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -14,11 +14,11 @@ const LESSONS = {
 const NUMS = Object.keys(LESSONS);
 const NODE_DOCS = /href="https:\/\/nodejs\.org\/docs\/latest-v24\.x\/api\//;
 
-test("modul Modul & tooling: topics, prefix, >=2 mc per topic, orals", () => {
+test("modul Paket & tooling: topics, prefix, >=2 mc per topic, orals", () => {
   nj.assertModuleTopics(LESSONS, "tooling-");
 });
 
-test("modul Modul & tooling covers the spec keywords per lesson", () => {
+test("modul Paket & tooling covers the spec keywords per lesson", () => {
   const keywords = {
     "0013": ["require(", "import ", '"type"', ".mjs", ".cjs", "require(esm)", "top-level await", "ERR_REQUIRE_ASYNC_MODULE",
       "module.exports", "import()"],
@@ -32,11 +32,11 @@ test("modul Modul & tooling covers the spec keywords per lesson", () => {
   });
 });
 
-test("modul Modul & tooling: one win, module kicker, cite numbering, Node v24 docs, diagram or code, quizzes, oral blocks, no lab", () => {
+test("modul Paket & tooling: one win, module kicker, cite numbering, Node v24 docs, diagram or code, quizzes, oral blocks, no lab", () => {
   NUMS.forEach(n => {
     const html = nj.readLesson(n);
     assert.equal((html.match(/<div class="win">/g) || []).length, 1, `${n}: harus tepat satu target`);
-    assert.match(html, new RegExp(`<div class="kicker">Lesson ${n} · Node\\.js · Modul Modul &amp; tooling · ±20 menit</div>`));
+    assert.match(html, new RegExp(`<div class="kicker">Lesson ${n} · Node\\.js · Modul Paket &amp; tooling · ±20 menit</div>`));
     assertCitesNumbered(html, n);
     assert.match(html, /<svg class="diagram"|<div class="flow">|<pre><code>/, `${n}: butuh diagram atau blok kode`);
     LESSONS[n].topics.forEach(t =>
@@ -62,7 +62,7 @@ test("0014 shows caret vs tilde ranges with concrete bounds", () => {
   ["&lt;2.0.0", "&lt;1.3.0", "&lt;0.3.0"].forEach(b => assert.ok(pkg.includes(b), `0014 belum menunjukkan batas ${b}`));
 });
 
-test("modul Modul & tooling nav: 0012 → 0013 → 0014 → 0015 → 0016", () => {
+test("modul Paket & tooling nav: 0012 → 0013 → 0014 → 0015 → 0016", () => {
   const files = ["0012-review-runtime-async.html", ...NUMS.map(n => LESSONS[n].file), "0016-nestjs-dan-module.html"];
   NUMS.forEach((n, i) => {
     const nav = (nj.readLesson(n).match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";

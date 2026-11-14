@@ -12,7 +12,7 @@ const { spawnSync } = require("node:child_process");
 const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
-const read = f => fs.readFileSync(path.join(ROOT, "nodejs", f), "utf8");
+const read = nj.read;
 const MOCK = "lessons/0036-mock-interview.html";
 const TOPICS = ["mock-konsep-node", "mock-konsep-nestjs", "mock-live-coding"];
 const REFS = ["urutan-event-loop.html", "pipeline-request-nestjs.html"];
@@ -146,12 +146,12 @@ test("pipeline reference: execution order flow and a 'kebutuhan → pakai yang m
 
 test("index and ROADMAP link 0036 and both references; glossary records the mock slugs", () => {
   const index = read("index.html");
-  assert.match(index, /<li class="tersedia"><span class="num">0036<\/span><a class="title" href="lessons\/0036-mock-interview\.html">/);
+  nj.assertListedAsTersedia({ "0036": { file: "0036-mock-interview.html" } });
   const roadmap = read("ROADMAP.md");
   REFS.forEach(f => {
     assert.ok(index.includes(`href="reference/${f}"`), `index belum menautkan ${f}`);
     assert.ok(roadmap.includes(`(reference/${f})`), `ROADMAP belum menautkan ${f}`);
   });
-  const section = (read("GLOSSARY.md").split("## Penutup")[1] || "").split(/\n## /)[0];
+  const section = nj.section("GLOSSARY.md", "## Penutup");
   TOPICS.forEach(t => assert.ok(section.includes(t), `slug ${t} belum di GLOSSARY Penutup`));
 });

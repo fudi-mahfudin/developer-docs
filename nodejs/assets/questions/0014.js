@@ -1,8 +1,8 @@
-// Soal lesson 0014 (track Node.js, modul Modul & tooling) · package.json, semver, lockfile, dan jenis dependency. Format: assets/README.md.
+// Soal lesson 0014 (track Node.js, modul Paket & tooling) · package.json, semver, lockfile, dan jenis dependency. Format: assets/README.md.
 // Sumber: npm Docs (package.json, package-lock.json, npm ci, config save-prefix, about semantic versioning), node-semver README, semver.org, Node.js v24 docs (Packages).
 QuestionBank.labelTopics({
-  "tooling-semver-lockfile": "Modul & tooling: range semver ^ vs ~, lockfile, npm ci",
-  "tooling-field-package": "Modul & tooling: field exports/main, jenis dependency",
+  "tooling-semver-lockfile": "Paket & tooling: range semver ^ vs ~, lockfile, npm ci",
+  "tooling-field-package": "Paket & tooling: field exports/main, jenis dependency",
 });
 
 // Urutan registrasi diselang-seling antar topik; posisi jawaban c a d b a.
