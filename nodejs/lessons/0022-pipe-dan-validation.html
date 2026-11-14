@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0022 · Pipe dan ValidationPipe; latihan tulis DTO</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0022 · Node.js · Modul Pipeline request · ±20 menit</div>
+  <h1>Pipe dan ValidationPipe; latihan tulis DTO</h1>
+  <p class="subtitle">Pipe bawaan untuk parameter, ValidationPipe untuk body, dan tiga opsi yang selalu ditanyakan: whitelist, forbidNonWhitelisted, transform</p>
+</header>
+
+<p>
+  Di <a href="0021-urutan-pipeline-request.html">lesson 0021</a>, pipe adalah langkah terakhir sebelum handler. Tugasnya sempit: memastikan argumen yang diterima handler sudah dalam bentuk yang benar,
+  atau menolak request kalau tidak. Lesson ini membahas pipe bawaan, <code>ValidationPipe</code> dengan DTO, lalu Anda menulis DTO sendiri di kertas.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis DTO dengan decorator class-validator dan memasang <code>ValidationPipe</code> global tanpa melihat dokumentasi,
+  lalu menjelaskan apa yang dilakukan <code>whitelist</code>, <code>forbidNonWhitelisted</code>, dan <code>transform</code>, dan kenapa DTO harus class, bukan interface.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Dua tugas pipe: transformasi dan validasi</h2>
+<p>
+  Pipe adalah class yang mengimplementasikan <code>PipeTransform</code>. Dokumentasi NestJS menyebut dua kegunaan: <strong>transformation</strong> (mengubah input ke bentuk yang diinginkan, mis. string ke integer)
+  dan <strong>validation</strong> (memeriksa input; kalau valid diteruskan apa adanya, kalau tidak dilempar exception). <sup class="cite"><a href="https://docs.nestjs.com/pipes">[1]</a></sup>
+  Pipe berjalan di dalam <em>exceptions zone</em>: exception dari pipe ditangani exception filter, dan handler tidak dipanggil sama sekali. <sup class="cite"><a href="https://docs.nestjs.com/pipes">[1]</a></sup>
+</p>
+<p>
+  Pipe bawaan diekspor dari <code>@nestjs/common</code>: <code>ValidationPipe</code>, <code>ParseIntPipe</code>, <code>ParseFloatPipe</code>, <code>ParseBoolPipe</code>, <code>ParseArrayPipe</code>, <code>ParseUUIDPipe</code>,
+  <code>ParseEnumPipe</code>, <code>DefaultValuePipe</code>, <code>ParseFilePipe</code>, <code>ParseDatePipe</code>, dan <code>StandardSchemaValidationPipe</code>. <sup class="cite"><a href="https://docs.nestjs.com/pipes#built-in-pipes">[1]</a></sup>
+</p>
+<pre><code>@Get(':id')
+findOne(@Param('id', ParseIntPipe) id: number) {
+  return this.ordersService.findOne(id);   // id dijamin number
+}
+
+@Get()
+findAll(@Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number) { /* ... */ }</code></pre>
+<p>
+  <code>GET /orders/abc</code> tidak pernah sampai ke service: <code>ParseIntPipe</code> melempar exception dan client menerima <strong>400</strong> dengan pesan
+  <em>"Validation failed (numeric string is expected)"</em>. Kalau Anda ingin status lain, berikan instance, bukan class: <code>new ParseIntPipe({ errorHttpStatusCode: HttpStatus.NOT_ACCEPTABLE })</code>.
+  <sup class="cite"><a href="https://docs.nestjs.com/pipes#binding-pipes">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Pipe bawaan</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="pipeline-pipe" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. ValidationPipe dan DTO</h2>
+<p>
+  <strong>DTO</strong> (data transfer object) adalah class yang menggambarkan bentuk body request. <code>ValidationPipe</code> memakai dua paket, <code>class-validator</code> (decorator aturan seperti <code>@IsEmail()</code>)
+  dan <code>class-transformer</code> (mengubah objek JSON biasa menjadi instance class DTO), yang dipasang dengan <code>npm i class-validator class-transformer</code>. <sup class="cite"><a href="https://docs.nestjs.com/techniques/validation">[2]</a></sup>
+</p>
+<pre><code>// create-user.dto.ts
+import { IsEmail, IsString, MinLength, IsOptional, IsInt, Min } from 'class-validator';
+
+export class CreateUserDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  password: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(18)
+  age?: number;
+}
+
+// main.ts
+app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));</code></pre>
+<p>
+  Body yang gagal menghasilkan <strong>400 Bad Request</strong> dengan daftar pesan, mis. <code>{ "statusCode": 400, "error": "Bad Request", "message": ["email must be an email"] }</code>.
+  <sup class="cite"><a href="https://docs.nestjs.com/techniques/validation#auto-validation">[2]</a></sup>
+</p>
+<p>
+  <strong>Kenapa class, bukan interface?</strong> Interface TypeScript hilang saat dikompilasi ke JavaScript. Nest membaca tipe parameter lewat <em>metadata</em> yang dipancarkan compiler untuk class
+  (opsi <code>emitDecoratorMetadata</code>), dan TypeScript <em>"does not emit metadata for generics or interfaces"</em>, jadi <code>ValidationPipe</code> tidak tahu aturan apa yang harus dicek. <sup class="cite"><a href="https://docs.nestjs.com/techniques/validation">[2]</a></sup>
+</p>
+
+<h3>Tiga opsi yang selalu ditanyakan</h3>
+<table>
+  <thead><tr><th>Opsi</th><th>Efek</th><th>Contoh: body <code>{ "email": "a@b.co", "password": "rahasia123", "isAdmin": true }</code></th></tr></thead>
+  <tbody>
+    <tr><td><code>whitelist: true</code></td><td>Properti tanpa decorator validasi dibuang dari objek</td><td><code>isAdmin</code> hilang diam-diam; handler tidak melihatnya</td></tr>
+    <tr><td><code>forbidNonWhitelisted: true</code></td><td>Bersama <code>whitelist</code>: properti asing ditolak, bukan dibuang</td><td>400: <code>property isAdmin should not exist</code></td></tr>
+    <tr><td><code>transform: true</code></td><td>Body diubah menjadi instance DTO; tipe primitif ikut dikonversi</td><td><code>@Param('id') id: number</code> benar-benar number</td></tr>
+  </tbody>
+</table>
+<p>
+  <code>whitelist</code> <em>"will strip validated (returned) object of any properties that do not use any validation decorators"</em>, sedangkan <code>forbidNonWhitelisted</code>
+  <em>"instead of stripping non-whitelisted properties validator will throw an exception."</em> <sup class="cite"><a href="https://docs.nestjs.com/techniques/validation#stripping-properties">[2]</a></sup>
+  Tanpa <code>transform</code>, handler menerima objek JSON biasa, bukan instance DTO; dengan <code>transform</code>, <em>"ValidationPipe also converts primitive types"</em>, karena path dan query parameter selalu datang sebagai string.
+  <sup class="cite"><a href="https://docs.nestjs.com/techniques/validation#transform-payload-objects">[2]</a></sup>
+  <code>whitelist</code> adalah pertahanan murah terhadap <em>mass assignment</em>: client mengirim field yang tidak seharusnya ia atur (seperti <code>isAdmin</code>) dan field itu ikut tersimpan.
+</p>
+<p class="note">
+  <strong>NestJS ≥ 12:</strong> <code>StandardSchemaValidationPipe</code> memvalidasi dengan skema dari library yang mendukung Standard Schema (Zod, Valibot, ArkType), lewat opsi baru <code>schema</code> di <code>@Body()</code>, <code>@Query()</code>, dan <code>@Param()</code>.
+  Ini pilihan tambahan; alur DTO + decorator class-validator tetap didukung di v12. <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[3]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — ValidationPipe</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0022" data-bank-topic="pipeline-validation" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan tulis kode — DTO + validation di kertas</h2>
+  <p>Tutup editor. Tulis di kertas, lalu bacakan alasannya dengan suara keras seolah sedang live coding. Batas waktu 5 menit.</p>
+  <blockquote>"Tulis DTO <code>CreateProductDto</code> untuk <code>POST /products</code>: <code>name</code> string wajib maksimal 100 karakter, <code>price</code> angka positif, <code>tags</code> array string opsional. Pasang validasi supaya field asing ditolak dan <code>id</code> di <code>GET /products/:id</code> diterima sebagai number."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>import { IsString, IsNotEmpty, MaxLength, IsNumber, IsPositive, IsOptional, IsArray } from 'class-validator';
+
+export class CreateProductDto {
+  @IsString() @IsNotEmpty() @MaxLength(100)
+  name: string;
+
+  @IsNumber() @IsPositive()
+  price: number;
+
+  @IsOptional() @IsArray() @IsString({ each: true })
+  tags?: string[];
+}
+
+// main.ts
+app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+
+// products.controller.ts
+@Post() create(@Body() dto: CreateProductDto) { return this.products.create(dto); }
+@Get(':id') findOne(@Param('id', ParseIntPipe) id: number) { return this.products.findOne(id); }</code></pre>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>Menulis DTO sebagai <code>class</code>, bukan interface</li>
+      <li>Memakai decorator class-validator yang sesuai per field (<code>@IsString</code>, <code>@MaxLength</code>, <code>@IsPositive</code>)</li>
+      <li>Menandai field opsional dengan <code>@IsOptional()</code> dan memvalidasi isi array dengan <code>{ each: true }</code></li>
+      <li>Memasang <code>ValidationPipe</code> (global atau di route)</li>
+      <li>Memakai <code>whitelist</code> + <code>forbidNonWhitelisted</code> agar field asing ditolak</li>
+      <li>Mengubah <code>id</code> ke number dengan <code>ParseIntPipe</code> atau <code>transform: true</code></li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/techniques/validation">NestJS docs: Validation</a>, ±15 menit. Tabel lengkap opsi <code>ValidationPipe</code>, validasi array, dan <code>ParseArrayPipe</code>.
+</div>
+
+<p>Berikutnya, <a href="0023-guard-dan-middleware.html">lesson 0023</a>: guard, <code>ExecutionContext</code>, <code>Reflector</code>, dan kenapa otorisasi tidak ditaruh di middleware.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Pipeline request") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan saya menulis custom pipe sendiri?", "Bagaimana memvalidasi nested object di DTO?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/pipes">[1] NestJS docs: Pipes</a> ·
+  <a href="https://docs.nestjs.com/techniques/validation">[2] NestJS docs: Validation</a> ·
+  <a href="https://docs.nestjs.com/migration-guide">[3] NestJS docs: Migration guide (v11 ke v12)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0021-urutan-pipeline-request.html">← 0021 · Urutan pipeline request NestJS</a>
+  <a href="0023-guard-dan-middleware.html">0023 · Guard vs middleware →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0022.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
