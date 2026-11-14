@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # Spec: Track Node.js + NestJS untuk interview backend (lesson ±20 menit, self-paced)
 
