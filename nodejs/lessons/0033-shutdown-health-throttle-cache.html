@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0033 · Graceful shutdown, health check, throttle, cache</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0033 · Node.js · Modul Testing &amp; produksi · ±20 menit</div>
+  <h1>Graceful shutdown, health check, throttle, cache</h1>
+  <p class="subtitle">SIGTERM dan <code>enableShutdownHooks</code>, <code>@nestjs/terminus</code>, <code>@nestjs/throttler</code>, dan <code>CacheModule</code> secara singkat</p>
+</header>
+
+<p>Empat fitur kecil yang membedakan aplikasi "jalan di laptop" dari aplikasi yang aman di-deploy berkali-kali sehari. Fokusnya pada API Node dan NestJS; konsep di baliknya cukup satu-dua kalimat.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan dalam 60 detik apa yang terjadi saat container NestJS menerima SIGTERM dan bagaimana orchestrator tahu aplikasi sehat, lalu menyebut cara memasang rate limit dan cache di NestJS beserta jebakannya.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Graceful shutdown: SIGTERM dan <code>enableShutdownHooks</code></h2>
+<p>
+  Saat deploy atau scale down, orchestrator (Docker, Kubernetes) mengirim <strong>SIGTERM</strong> ke proses, menunggu masa tenggang (<em>grace period</em>), lalu mengirim <strong>SIGKILL</strong>. Di Node, SIGTERM dan SIGINT punya handler default yang langsung keluar dengan kode <code>128 + nomor sinyal</code>; memasang listener menghapus perilaku default itu. SIGKILL tidak bisa ditangkap sama sekali. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#signal-events">[1]</a></sup>
+</p>
+<p>
+  Di NestJS, listener sinyal <strong>mati secara default</strong> karena memakan resource. Panggil <code>app.enableShutdownHooks()</code>; tanpa itu, hook shutdown hanya jalan kalau Anda memanggil <code>app.close()</code> sendiri. Urutannya: <code>onModuleDestroy</code> → <code>beforeApplicationShutdown</code> → koneksi ditutup → <code>onApplicationShutdown(signal)</code>, dan Nest menunggu Promise dari setiap hook. Di Windows, SIGTERM tidak pernah bekerja. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[2]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">SIGTERM</span><span class="arrow">→</span>
+  <span class="box">onModuleDestroy</span><span class="arrow">→</span>
+  <span class="box">beforeApplicationShutdown</span><span class="arrow">→</span>
+  <span class="box">server HTTP ditutup</span><span class="arrow">→</span>
+  <span class="box">onApplicationShutdown(signal)</span><span class="arrow">→</span>
+  <span class="box">proses keluar (atau SIGKILL setelah grace period)</span>
+</div>
+<pre><code>// main.ts
+const app = await NestFactory.create(AppModule);
+app.enableShutdownHooks();
+await app.listen(3000);
+
+// prisma.service.ts
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  async onModuleInit() { await this.$connect(); }
+  async onModuleDestroy() { await this.$disconnect(); }
+}</code></pre>
+<p>
+  Label versi <strong>NestJS 12</strong>: adapter Express kini menguras (<em>drain</em>) request yang sedang berjalan saat shutdown, dan lifecycle hook dipanggil per level hierarki komponen, sehingga urutan antar provider yang saling bergantung bisa berbeda dari v11. <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[3]</a></sup>
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Health check dengan <code>@nestjs/terminus</code></h2>
+<p>
+  <em>Health check</em> adalah endpoint yang dipanggil orchestrator atau load balancer secara berkala untuk memutuskan apakah instance boleh menerima traffic. <code>@nestjs/terminus</code> menyediakan <code>HealthCheckService</code>, decorator <code>@HealthCheck()</code>, dan indicator siap pakai (HTTP, memori, disk, Prisma, TypeORM). Respons berisi <code>status</code> (<code>ok</code>, <code>error</code>, <code>degraded</code>, <code>shutting_down</code>) serta <code>info</code>, <code>error</code>, dan <code>details</code> per indicator; instance yang tidak sehat dijawab 503. <sup class="cite"><a href="https://docs.nestjs.com/recipes/terminus">[4]</a></sup>
+</p>
+<pre><code>@Controller('health')
+export class HealthController {
+  constructor(private health: HealthCheckService, private memory: MemoryHealthIndicator) {}
+
+  @Get()
+  @HealthCheck()
+  check() {
+    return this.health.check([
+      () =&gt; this.memory.checkHeap('memory_heap', 150 * 1024 * 1024),
+    ]);
+  }
+}</code></pre>
+<p>
+  <code>TerminusModule.forRoot({ gracefulShutdownTimeoutMs: 1000 })</code> memberi jeda sebelum shutdown setelah SIGTERM (default 0), sehingga load balancer sempat melihat instance ini sedang berhenti. Shutdown hooks harus aktif. <sup class="cite"><a href="https://docs.nestjs.com/recipes/terminus">[4]</a></sup>
+  Label versi <strong>NestJS 12</strong>: API indicator lama (extend <code>HealthIndicator</code>, lempar error) dihapus; custom indicator memakai <code>HealthIndicatorService</code> dengan <code>check(key)</code> lalu <code>up()</code>/<code>down()</code> atau <code>attempt()</code>. <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[3]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Shutdown dan health check</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0033" data-bank-topic="prod-shutdown-health" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Rate limiting dengan <code>@nestjs/throttler</code></h2>
+<p>
+  <em>Rate limiting</em> membatasi jumlah request satu client dalam rentang waktu, supaya satu client (bug, scraper, brute force login) tidak menghabiskan kapasitas yang dibagi. Status HTTP untuk itu adalah <strong>429 Too Many Requests</strong>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6585.html#section-4">[5]</a></sup>
+</p>
+<p>
+  <code>ThrottlerModule.forRoot</code> menerima satu atau beberapa set <code>{ ttl, limit }</code>; sejak v5, <code>ttl</code> dalam <strong>milidetik</strong>. Pasang <code>ThrottlerGuard</code> sebagai guard global lewat <code>APP_GUARD</code>, lalu atur per route dengan <code>@SkipThrottle()</code> dan <code>@Throttle({ default: { limit, ttl } })</code>. <sup class="cite"><a href="https://docs.nestjs.com/security/rate-limiting">[6]</a></sup> Saat limit terlewati, guard melempar <code>ThrottlerException</code> berstatus 429. <sup class="cite"><a href="https://github.com/nestjs/throttler/blob/master/src/throttler.exception.ts">[7]</a></sup>
+</p>
+<pre><code>@Module({
+  imports: [ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 10 }] })],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
+export class AppModule {}
+
+@Throttle({ default: { limit: 3, ttl: 60_000 } })   // login lebih ketat
+@Post('login')
+login(@Body() dto: LoginDto) { /* ... */ }</code></pre>
+<p>Dua jebakan yang sering ditanyakan: <sup class="cite"><a href="https://docs.nestjs.com/security/rate-limiting">[6]</a></sup></p>
+<ul>
+  <li><strong>Banyak instance:</strong> storage default ada di memori proses. Empat instance dengan limit 10/menit berarti client bisa lolos sampai 40/menit. Pakai storage bersama (Redis).</li>
+  <li><strong>Di belakang proxy:</strong> tanpa <code>app.set('trust proxy', ...)</code>, semua request terlihat datang dari IP proxy, sehingga semua user berbagi satu limit.</li>
+</ul>
+
+<!-- ============ 4 ============ -->
+<h2>4. <code>CacheModule</code> secara singkat</h2>
+<p>
+  <em>Cache</em> menyimpan hasil yang mahal dihitung (query berat, panggilan API luar) untuk sementara, supaya request berikutnya dijawab dari memori; harganya, data bisa basi sampai entri kedaluwarsa. Di NestJS: <code>npm install @nestjs/cache-manager cache-manager</code>, <code>CacheModule.register()</code>, lalu inject <code>CACHE_MANAGER</code> untuk <code>get</code>/<code>set</code>/<code>del</code>. <code>ttl</code> dalam milidetik, dan tanpa <code>ttl</code> entri tidak kedaluwarsa. <code>CacheInterceptor</code> meng-cache response otomatis, tapi secara default hanya endpoint GET. Store bisa dipindah ke Redis lewat Keyv. <sup class="cite"><a href="https://docs.nestjs.com/techniques/caching">[8]</a></sup>
+</p>
+<pre><code>constructor(@Inject(CACHE_MANAGER) private cache: Cache, private prisma: PrismaService) {}
+
+async getProduct(id: number) {
+  const key = `product:${id}`;
+  const hit = await this.cache.get&lt;Product&gt;(key);
+  if (hit) return hit;
+  const product = await this.prisma.product.findUniqueOrThrow({ where: { id } });
+  await this.cache.set(key, product, 30_000);           // 30 detik
+  return product;
+}</code></pre>
+<p>Saat produk di-update, panggil <code>this.cache.del(key)</code> supaya pembaca berikutnya tidak menerima data lama.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Throttle dan cache</h2>
+  <div class="quiz" data-bank-lesson="0033" data-bank-topic="prod-throttle-cache" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0035.</p>
+  <blockquote>"Saat deploy, orchestrator mengirim SIGTERM ke container NestJS Anda. Apa yang harus terjadi supaya tidak ada request atau koneksi yang terputus kasar, dan bagaimana orchestrator tahu aplikasi sehat?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Di main.ts saya panggil app.enableShutdownHooks(), karena secara default Nest tidak mendengarkan sinyal. Saat SIGTERM datang, Nest menjalankan onModuleDestroy, lalu beforeApplicationShutdown, menutup server HTTP, lalu onApplicationShutdown dengan nama sinyalnya. Di hook itu saya menutup koneksi: PrismaService memanggil $disconnect, worker queue berhenti mengambil job baru. Di NestJS 12 adapter Express juga menunggu request yang sedang jalan selesai. Kalau proses tidak berhenti dalam grace period, orchestrator mengirim SIGKILL yang tidak bisa ditangkap, jadi hook harus cepat. Untuk kesehatan, saya pasang endpoint /health dengan @nestjs/terminus: HealthCheckService.check berisi indicator database dan memori. Kalau ada yang down, responsnya 503 dan orchestrator berhenti mengirim traffic. Terminus juga punya gracefulShutdownTimeoutMs untuk memberi jeda sebelum shutdown."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>app.enableShutdownHooks() karena listener sinyal mati secara default?</li>
+      <li>urutan onModuleDestroy → beforeApplicationShutdown → onApplicationShutdown(signal)?</li>
+      <li>menutup koneksi di hook (Prisma $disconnect, worker berhenti ambil job)?</li>
+      <li>SIGKILL setelah grace period tidak bisa ditangkap, jadi shutdown harus cepat?</li>
+      <li>endpoint /health dengan @nestjs/terminus: HealthCheckService + indicator?</li>
+      <li>unhealthy → 503 sehingga orchestrator berhenti mengirim traffic?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0034-background-job-bullmq.html">lesson 0034</a>: pekerjaan yang terlalu lama untuk satu request, seperti mengirim email atau membuat laporan, dipindah ke queue dengan BullMQ.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Testing &amp; produksi") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Apa beda liveness dan readiness probe?", "Bagaimana throttler menghitung client di belakang Cloudflare?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html#signal-events">[1] Node.js v24 API: process, Signal events</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[2] NestJS docs: Lifecycle events (application shutdown)</a> ·
+  <a href="https://docs.nestjs.com/migration-guide">[3] NestJS docs: Migration guide (v11 → v12)</a> ·
+  <a href="https://docs.nestjs.com/recipes/terminus">[4] NestJS docs: Health checks (Terminus)</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc6585.html#section-4">[5] RFC 6585 Additional HTTP Status Codes, §4 (429)</a> ·
+  <a href="https://docs.nestjs.com/security/rate-limiting">[6] NestJS docs: Rate limiting</a> ·
+  <a href="https://github.com/nestjs/throttler/blob/master/src/throttler.exception.ts">[7] nestjs/throttler: throttler.exception.ts (repo resmi)</a> ·
+  <a href="https://docs.nestjs.com/techniques/caching">[8] NestJS docs: Caching</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0032-config-dan-logging.html">← 0032 · Config dan logging</a>
+  <a href="0034-background-job-bullmq.html">0034 · Background job dengan BullMQ →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0033.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

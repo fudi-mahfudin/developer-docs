@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0032 · Config dan logging</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0032 · Node.js · Modul Testing &amp; produksi · ±20 menit</div>
+  <h1>Config dan logging</h1>
+  <p class="subtitle"><code>@nestjs/config</code> dengan validasi env, <code>Logger</code> bawaan, structured logging, dan correlation id per request</p>
+</header>
+
+<p>Aplikasi yang sama berjalan di laptop, CI (<a href="0031-e2e-test.html">lesson 0031</a>), staging, dan production. Yang berbeda hanya konfigurasinya. Saat ada masalah di production, satu-satunya jendela ke dalam aplikasi adalah log-nya. Lesson ini membahas keduanya dari sisi NestJS.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan dalam 60 detik cara aplikasi NestJS membaca dan memvalidasi konfigurasi per environment, dan cara membuat log-nya terstruktur serta bisa ditelusuri per request dengan correlation id.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. <code>@nestjs/config</code>: env dibaca sekali, divalidasi saat start</h2>
+<p>
+  <code>ConfigModule.forRoot()</code> memuat file <code>.env</code> (lokasinya bisa diganti dengan <code>envFilePath</code>) dan variabel environment proses, lalu menyediakannya lewat <code>ConfigService</code>. <code>isGlobal: true</code> membuat module lain tidak perlu meng-import <code>ConfigModule</code> lagi. Secara default variabel environment runtime <strong>menang</strong> atas isi <code>.env</code>; <code>override: true</code> membalik urutan itu. <sup class="cite"><a href="https://docs.nestjs.com/techniques/configuration">[1]</a></sup>
+</p>
+<p>
+  Dengan <code>validationSchema</code>, variabel yang wajib tapi hilang membuat aplikasi <strong>gagal bootstrap</strong>. Itu disengaja: lebih baik deploy gagal di detik pertama daripada request pertama gagal karena <code>DATABASE_URL</code> kosong. <code>ConfigService</code> menyajikan nilai hasil skema, jadi <code>z.coerce.number()</code> mengubah string <code>"3000"</code> menjadi angka. <sup class="cite"><a href="https://docs.nestjs.com/techniques/configuration">[1]</a></sup>
+</p>
+<p>
+  Label versi <strong>NestJS 12</strong>: <code>@nestjs/config</code> pindah dari validasi khusus Joi ke <em>Standard Schema</em> (antarmuka bersama yang diimplementasikan Zod, Valibot, ArkType). Joi tetap jalan asalkan v18 ke atas. <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[2]</a></sup>
+</p>
+<pre><code>// app.module.ts
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.coerce.number().default(3000),
+  DATABASE_URL: z.string(),            // tanpa default = wajib
+});
+
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true, validationSchema: envSchema })],
+})
+export class AppModule {}
+
+// di service
+const url = this.config.getOrThrow&lt;string&gt;('DATABASE_URL');</code></pre>
+<p>
+  <code>get(key, default)</code> mengembalikan nilai atau default; <code>getOrThrow(key)</code> melempar error kalau nilainya <code>undefined</code>. <sup class="cite"><a href="https://docs.nestjs.com/techniques/configuration">[1]</a></sup> Aturan praktis: baca konfigurasi lewat <code>ConfigService</code>, jangan <code>process.env.X</code> yang tersebar di seluruh kode, dan jangan commit <code>.env</code> berisi secret.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Konfigurasi</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0032" data-bank-topic="prod-config" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. <code>Logger</code> bawaan dan structured logging</h2>
+<p>
+  Praktik yang dianjurkan dokumentasi NestJS: buat <code>Logger</code> dari <code>@nestjs/common</code> di setiap class dengan nama class sebagai <em>context</em>: <code>private readonly logger = new Logger(OrdersService.name)</code>. Level yang tersedia: <code>fatal</code>, <code>error</code>, <code>warn</code>, <code>log</code>, <code>debug</code>, <code>verbose</code>. <sup class="cite"><a href="https://docs.nestjs.com/techniques/logger">[3]</a></sup>
+</p>
+<p>
+  <strong>Structured logging</strong> berarti setiap entri log adalah objek dengan field tetap (level, waktu, context, pesan, data), biasanya JSON satu baris. Sistem log bisa memfilter <code>level=error AND requestId=abc</code> tanpa regex. <code>ConsoleLogger</code> bawaan punya mode JSON (<code>json: true</code>). Label versi <strong>NestJS 12</strong>: objek biasa yang dikirim setelah pesan dilampirkan ke entri yang sama sebagai <em>structured params</em>. <sup class="cite"><a href="https://docs.nestjs.com/techniques/logger">[3]</a></sup>
+</p>
+<pre><code>// main.ts
+const app = await NestFactory.create(AppModule, {
+  logger: new ConsoleLogger({ json: true }),
+});
+
+// orders.service.ts
+this.logger.log('Order dibuat', { orderId: order.id, total: order.total });
+// satu baris JSON: level, context, pesan, dan objek di bawah key "params"</code></pre>
+<p>
+  Untuk kebutuhan lebih (kirim ke file atau HTTP, redaksi field sensitif, performa tinggi), dokumentasi NestJS menyarankan library khusus seperti <strong>pino</strong> atau Winston dan memasangnya lewat <code>app.useLogger()</code>; panggilan <code>Logger</code> di seluruh aplikasi otomatis diteruskan ke sana. <code>bufferLogs: true</code> menahan log awal sampai logger itu terpasang. <sup class="cite"><a href="https://docs.nestjs.com/techniques/logger">[3]</a></sup> Pino menulis JSON per baris secara default.
+</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Correlation id dengan <code>AsyncLocalStorage</code></h2>
+<p>
+  <strong>Correlation id</strong> adalah satu id unik per request (biasanya dari header <code>X-Request-Id</code> yang dikirim gateway, atau UUID baru) yang ditempel di setiap baris log selama request itu diproses. Saat 500 request berjalan bersamaan, log mereka bercampur; id inilah yang memisahkannya.
+</p>
+<p>
+  Masalahnya: bagaimana logger di kedalaman service tahu id request yang sedang berjalan, tanpa meneruskan parameter ke setiap fungsi? Variabel global salah, karena satu proses Node melayani banyak request bersamaan. <code>AsyncLocalStorage</code> dari <code>node:async_hooks</code> menyimpan sebuah store yang ikut sepanjang rantai operasi async yang dimulai di dalam <code>als.run(store, fn)</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/async_context.html#class-asynclocalstorage">[4]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Request masuk</span><span class="arrow">→</span>
+  <span class="box">Middleware: ambil X-Request-Id atau buat UUID</span><span class="arrow">→</span>
+  <span class="box">als.run({ requestId }, next)</span><span class="arrow">→</span>
+  <span class="box">Controller → service → logger.log()</span><span class="arrow">→</span>
+  <span class="box">Logger membaca als.getStore().requestId</span>
+</div>
+<pre><code>export const als = new AsyncLocalStorage&lt;{ requestId: string }&gt;();
+
+@Injectable()
+export class RequestIdMiddleware implements NestMiddleware {
+  use(req: Request, res: Response, next: () =&gt; void) {
+    const requestId = req.header('x-request-id') ?? randomUUID();
+    res.setHeader('x-request-id', requestId);
+    als.run({ requestId }, next);
+  }
+}</code></pre>
+<p>
+  Alternatif membuat logger REQUEST-scoped memang bisa, tapi scope itu merambat ke setiap provider yang bergantung padanya dan membuat instance baru per request. <code>AsyncLocalStorage</code> tidak punya biaya itu.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Logging</h2>
+  <div class="quiz" data-bank-lesson="0032" data-bank-topic="prod-logging" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0035.</p>
+  <blockquote>"Aplikasi NestJS Anda akan jalan di staging dan production. Bagaimana Anda mengelola konfigurasinya, dan bagaimana log-nya supaya satu request bisa ditelusuri?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Konfigurasi dari environment variable, dibaca lewat @nestjs/config: ConfigModule.forRoot dengan isGlobal dan validationSchema, misalnya skema Zod. Kalau variabel wajib seperti DATABASE_URL tidak ada atau salah format, aplikasi gagal saat bootstrap, bukan saat request pertama. Env runtime menang atas .env, jadi .env hanya untuk lokal, dan secret tidak di-commit. Di kode saya pakai ConfigService.getOrThrow, bukan process.env tersebar. Untuk log, setiap class punya new Logger(NamaClass.name), di production keluarannya JSON, lewat ConsoleLogger json: true atau Pino. Setiap request diberi correlation id: middleware mengambil header X-Request-Id atau membuat UUID, menyimpannya di AsyncLocalStorage, dan logger menambahkannya ke setiap entri, lalu id itu juga dikirim balik di response header. Dengan begitu satu request bisa difilter dari ribuan baris log."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>ConfigModule.forRoot dengan validationSchema (mis. Zod), isGlobal?</li>
+      <li>gagal cepat saat bootstrap kalau env wajib hilang atau salah?</li>
+      <li>env runtime menang atas .env; secret tidak di-commit; ConfigService bukan process.env tersebar?</li>
+      <li>Logger per class dengan context (new Logger(X.name))?</li>
+      <li>structured logging JSON di production (ConsoleLogger json atau Pino)?</li>
+      <li>correlation id dari header/UUID, disimpan di AsyncLocalStorage, ikut di setiap log?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0033-shutdown-health-throttle-cache.html">lesson 0033</a>: apa yang terjadi saat container dimatikan di tengah request, bagaimana orchestrator tahu aplikasi sehat, dan bagaimana membatasi serta meng-cache request di NestJS.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Testing &amp; produksi") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Bagaimana menyambungkan AsyncLocalStorage ke ConsoleLogger?", "Kapan registerAs dan namespace config berguna?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/techniques/configuration">[1] NestJS docs: Configuration</a> ·
+  <a href="https://docs.nestjs.com/migration-guide">[2] NestJS docs: Migration guide (v11 → v12)</a> ·
+  <a href="https://docs.nestjs.com/techniques/logger">[3] NestJS docs: Logger</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/async_context.html#class-asynclocalstorage">[4] Node.js v24 API: AsyncLocalStorage</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0031-e2e-test.html">← 0031 · E2E test dengan supertest</a>
+  <a href="0033-shutdown-health-throttle-cache.html">0033 · Graceful shutdown, health check, throttle, cache →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0032.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
