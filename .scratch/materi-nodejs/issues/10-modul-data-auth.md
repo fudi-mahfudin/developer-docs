@@ -1,6 +1,6 @@
 # 10: Modul Data & auth (0025–0028)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0025 · Prisma dan PrismaService</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0025 · Node.js · Modul Data &amp; auth · ±20 menit</div>
+  <h1>Prisma dan PrismaService: satu client, di-inject seperti provider lain</h1>
+  <p class="subtitle"><code>schema.prisma</code>, Prisma Client yang di-generate, pola <code>PrismaService</code>, <code>select</code> vs <code>include</code>, dan masalah N+1</p>
+</header>
+
+<p>
+  Modul Pipeline request sudah membawa request sampai ke handler. Modul ini masuk ke langkah berikutnya: handler memanggil service, service membaca dan menulis database.
+  Contoh di seluruh modul memakai <strong>Prisma</strong>, ORM (object-relational mapper: lapisan yang memetakan tabel database ke objek di kode) untuk Node.js dan TypeScript.
+  Prisma tidak punya paket khusus Nest; integrasinya cukup satu provider bernama <code>PrismaService</code>. <sup class="cite"><a href="https://docs.nestjs.com/recipes/prisma">[1]</a></sup>
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa <em>menulis di kertas</em> <code>PrismaService</code> beserta satu method service yang memakainya,
+  lalu menjelaskan dalam 60 detik beda <code>select</code> dan <code>include</code> dan cara menghindari query N+1.
+</div>
+
+<p class="note">
+  <strong>Versi.</strong> Lesson ini memakai <strong>Prisma ORM 7</strong>, versi yang dipakai bab Prisma di dokumentasi NestJS. <sup class="cite"><a href="https://docs.nestjs.com/recipes/prisma">[1]</a></sup>
+  Dokumentasi Prisma terbaru sudah membahas Prisma ORM 8, yang mengganti API client (mis. tidak ada lagi <code>$transaction</code>). <sup class="cite"><a href="https://www.prisma.io/docs/orm/prisma-client/queries/transactions">[2]</a></sup>
+  Kalau codebase Anda sudah di ORM 8, nama method-nya berbeda, tetapi konsep lesson ini (schema, client ber-type, provider yang di-inject, N+1) tetap sama.
+</p>
+
+<!-- ============ 1 ============ -->
+<h2>1. <code>schema.prisma</code> dan Prisma Client</h2>
+<p>
+  Semua bentuk data ditulis sekali di <code>schema.prisma</code>. Dari file ini, <code>prisma generate</code> menghasilkan <strong>Prisma Client</strong>: kode TypeScript ber-type untuk setiap model,
+  jadi <code>prisma.user.findMany()</code> tahu kolom apa saja yang ada. Di Prisma ORM 7, generator-nya bernama <code>prisma-client</code> dan hasilnya ditulis ke folder di dalam proyek Anda. <sup class="cite"><a href="https://docs.nestjs.com/recipes/prisma">[1]</a></sup>
+</p>
+<pre><code>generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  name  String?
+  posts Post[]
+}
+
+model Post {
+  id       Int    @id @default(autoincrement())
+  title    String
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId Int
+}</code></pre>
+
+<div class="flow">
+  <span class="box">schema.prisma</span><span class="arrow">→</span>
+  <span class="box">prisma generate</span><span class="arrow">→</span>
+  <span class="box">Prisma Client ber-type</span><span class="arrow">→</span>
+  <span class="box">PrismaService (provider)</span>
+</div>
+
+<!-- ============ 2 ============ -->
+<h2>2. Pola <code>PrismaService</code></h2>
+<p>
+  Di Nest, client dibungkus sebagai provider: class yang <code>extends PrismaClient</code>, sehingga semua method client (<code>this.user</code>, <code>this.$connect</code>) langsung tersedia,
+  dan class itu bisa di-inject ke service mana pun lewat constructor. Lifecycle hook menutup siklusnya: <code>onModuleInit</code> memanggil <code>$connect()</code>, <code>onModuleDestroy</code> memanggil <code>$disconnect()</code>. <sup class="cite"><a href="https://docs.nestjs.com/recipes/prisma">[1]</a></sup>
+  Prisma ORM 7 juga mewajibkan <strong>driver adapter</strong> (paket yang menghubungkan client ke driver database, mis. <code>@prisma/adapter-pg</code> untuk PostgreSQL) saat membuat client. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/core-concepts/supported-databases/postgresql">[3]</a></sup>
+</p>
+<pre><code>import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../generated/prisma/client';
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  constructor() {
+    super({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+  }
+  async onModuleInit() { await this.$connect(); }
+  async onModuleDestroy() { await this.$disconnect(); }
+}</code></pre>
+<p>
+  Daftarkan di satu module dan <code>exports</code>-kan, lalu module lain cukup meng-<code>imports</code>-nya. Karena provider default bersifat singleton,
+  seluruh aplikasi berbagi satu <code>PrismaService</code> dan satu pool koneksi. Supaya <code>onModuleDestroy</code> juga jalan saat proses menerima <code>SIGTERM</code>, panggil <code>app.enableShutdownHooks()</code> di <code>main.ts</code>. <sup class="cite"><a href="https://docs.nestjs.com/recipes/prisma">[1]</a></sup>
+</p>
+<pre><code>@Module({ providers: [PrismaService], exports: [PrismaService] })
+export class PrismaModule {}
+
+@Injectable()
+export class UsersService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  findByEmail(email: string) {
+    return this.prisma.user.findUnique({ where: { email } });
+  }
+}</code></pre>
+<p>
+  Kenapa tidak <code>new PrismaClient()</code> langsung di setiap service? Setiap instance membuka pool koneksi sendiri, dan service jadi sulit diuji karena tidak bisa diganti mock lewat DI.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — PrismaService</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0025" data-bank-topic="data-prisma-service" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. <code>select</code>, <code>include</code>, dan N+1</h2>
+<p>
+  Tanpa opsi, query Prisma mengembalikan semua kolom skalar model dan <em>tidak</em> menyertakan relasi.
+  <code>select</code> dipakai kalau Anda hanya butuh beberapa field; <code>include</code> dipakai kalau Anda ingin record relasinya ikut terbawa. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/select-fields">[4]</a></sup>
+  Di API, <code>select</code> juga cara termudah agar kolom seperti <code>passwordHash</code> tidak pernah keluar di response.
+</p>
+<pre><code>// hanya id dan email
+await this.prisma.user.findMany({ select: { id: true, email: true } });
+
+// user beserta post-nya
+await this.prisma.user.findMany({ include: { posts: true } });</code></pre>
+<p>
+  <strong>N+1</strong> terjadi saat Anda melakukan loop atas hasil query lalu menjalankan satu query tambahan <em>per hasil</em>: 1 query untuk daftar user, N query untuk post tiap user. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/advanced/query-optimization-performance">[5]</a></sup>
+</p>
+<pre><code>// N+1: 1 query user + 1 query per user
+const users = await this.prisma.user.findMany();
+for (const u of users) {
+  u.posts = await this.prisma.post.findMany({ where: { authorId: u.id } });
+}
+
+// perbaikan: biarkan Prisma mengambil relasinya sekaligus
+const usersWithPosts = await this.prisma.user.findMany({ include: { posts: true } });</code></pre>
+<p>
+  Dengan <code>include</code>, dokumentasi Prisma menyebut hasilnya hanya <strong>dua</strong> query SQL: satu untuk user, satu untuk post. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/advanced/query-optimization-performance">[5]</a></sup>
+  Alternatif lain: kumpulkan ID lalu pakai filter <code>in</code> (<code>where: { authorId: { in: ids } }</code>).
+  Opsi <code>relationLoadStrategy: "join"</code> (fitur Preview di Prisma ORM 7) bahkan menggabungkannya menjadi satu query di database. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/relation-queries">[6]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — select, include, N+1</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0025" data-bank-topic="data-query-n1" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan tulis kode — di kertas, tanpa IDE</h2>
+  <p>Pasang timer 5 menit. Tulis kodenya di kertas, lalu jelaskan dengan suara keras seolah sedang live coding. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tulis <code>PrismaService</code> untuk NestJS, lalu <code>PostsService.listWithAuthor()</code> yang mengembalikan semua post beserta nama penulisnya tanpa query N+1 dan tanpa membocorkan kolom lain milik user."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  constructor() {
+    super({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+  }
+  async onModuleInit() { await this.$connect(); }
+  async onModuleDestroy() { await this.$disconnect(); }
+}
+
+@Injectable()
+export class PostsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  listWithAuthor() {
+    return this.prisma.post.findMany({
+      select: { id: true, title: true, author: { select: { name: true } } },
+    });
+  }
+}</code></pre>
+    <p>"PrismaService extends PrismaClient supaya bisa di-inject sebagai provider singleton, connect di onModuleInit. Relasi author diambil dalam query yang sama lewat nested select, jadi tidak ada loop query per post, dan hanya kolom name yang keluar."</p>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>menulis <code>PrismaService</code> yang <code>extends PrismaClient</code> dengan <code>@Injectable()</code>?</li>
+      <li>memanggil <code>$connect()</code> di <code>onModuleInit</code> (dan idealnya <code>$disconnect()</code> di <code>onModuleDestroy</code>)?</li>
+      <li>meng-inject <code>PrismaService</code> lewat constructor service, bukan <code>new PrismaClient()</code>?</li>
+      <li>mengambil relasi author dalam satu panggilan (<code>include</code> atau nested <code>select</code>), bukan loop per post?</li>
+      <li>membatasi field user dengan <code>select</code> sehingga kolom lain (mis. hash password) tidak ikut?</li>
+      <li>menyebut bahwa <code>PrismaService</code> perlu didaftarkan dan di-<code>exports</code> dari sebuah module?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0026-transaksi-migrasi-typeorm.html">lesson 0026</a>: beberapa write yang harus berhasil bersama (transaksi), cara schema berubah dengan aman (migrasi), dan perbandingan singkat dengan ORM lain.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Data &amp; auth") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan PrismaModule sebaiknya dibuat @Global?", "bagaimana mendeteksi N+1 dari log query Prisma?", atau "apa beda nested select dan include dari sisi SQL yang dihasilkan?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/recipes/prisma">[1] NestJS docs: Prisma</a> ·
+  <a href="https://www.prisma.io/docs/orm/prisma-client/queries/transactions">[2] Prisma docs: Transactions (Prisma ORM 8, bagian "Coming from Prisma ORM 7")</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/core-concepts/supported-databases/postgresql">[3] Prisma ORM 7 docs: PostgreSQL</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/select-fields">[4] Prisma ORM 7 docs: Select fields</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/advanced/query-optimization-performance">[5] Prisma ORM 7 docs: Query optimization</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/relation-queries">[6] Prisma ORM 7 docs: Relation queries</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0024-interceptor-dan-exception-filter.html">← 0024 · Interceptor dan exception filter</a>
+  <a href="0026-transaksi-migrasi-typeorm.html">0026 · Transaksi dan migrasi →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0025.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

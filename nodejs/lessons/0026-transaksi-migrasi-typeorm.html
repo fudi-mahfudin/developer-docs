@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0026 · Transaksi, migrasi, dan perbandingan TypeORM</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0026 · Node.js · Modul Data &amp; auth · ±20 menit</div>
+  <h1>Transaksi, migrasi, dan perbandingan TypeORM</h1>
+  <p class="subtitle"><code>$transaction</code> bentuk array vs interactive, <code>prisma migrate dev</code> vs <code>prisma migrate deploy</code>, dan cara membaca codebase yang memakai TypeORM</p>
+</header>
+
+<p>
+  Di <a href="0025-prisma-dan-prismaservice.html">lesson 0025</a> setiap method service menjalankan satu query. Begitu satu aksi bisnis butuh beberapa write (kurangi saldo A, tambah saldo B),
+  muncul pertanyaan interview klasik: "bagaimana kalau server mati di tengah?" Jawabannya <strong>transaksi</strong>: sekumpulan query yang berhasil semua atau dibatalkan semua (rollback).
+  Lesson ini memakai <strong>Prisma ORM 7</strong>, sama seperti 0025.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis di kertas transfer saldo dengan interactive transaction Prisma,
+  menjelaskan kapan memakai <code>prisma migrate dev</code> dan kapan <code>prisma migrate deploy</code>,
+  dan mengenali <code>@Entity</code>, <code>Repository</code>, dan <code>@InjectRepository</code> kalau codebase memakai TypeORM.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. <code>$transaction</code>: array vs interactive</h2>
+<p>
+  <strong>Bentuk array</strong> (sequential operations): berikan array query; query dijalankan sesuai urutan di array, dan kalau satu gagal, seluruh transaksi di-rollback.
+  Keterbatasannya: hasil satu query <em>tidak bisa</em> dipakai sebagai input query berikutnya. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions">[1]</a></sup>
+</p>
+<pre><code>const [post, count] = await this.prisma.$transaction([
+  this.prisma.post.create({ data: { title: 'Halo', authorId: 1 } }),
+  this.prisma.post.count(),
+]);</code></pre>
+<p>
+  <strong>Interactive transaction</strong>: berikan fungsi async yang menerima <code>tx</code> (client yang terikat ke transaksi). Di dalamnya Anda boleh membaca, mengecek kondisi, lalu menulis.
+  Kalau fungsi melempar error, transaksi otomatis di-rollback. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions">[1]</a></sup>
+</p>
+<pre><code>async transfer(from: number, to: number, amount: number) {
+  return this.prisma.$transaction(async (tx) =&gt; {
+    const sender = await tx.account.update({
+      where: { id: from }, data: { balance: { decrement: amount } },
+    });
+    if (sender.balance &lt; 0) throw new BadRequestException('Saldo tidak cukup');
+    return tx.account.update({ where: { id: to }, data: { balance: { increment: amount } } });
+  });
+}</code></pre>
+<p>
+  Aturan pakainya: semua query di dalam fungsi harus lewat <code>tx</code>, bukan <code>this.prisma</code> (yang di luar transaksi).
+  Default-nya <code>maxWait</code> 2000 ms (menunggu mendapat transaksi) dan <code>timeout</code> 5000 ms (lama maksimal transaksi berjalan).
+  Dokumentasi Prisma meminta transaksi dijaga singkat dan menghindari request jaringan atau query lambat di dalamnya, karena transaksi panjang menurunkan performa dan bisa memicu deadlock. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions">[1]</a></sup>
+  Isolation level (seberapa ketat transaksi terlindung dari transaksi lain yang berjalan bersamaan) bisa diatur lewat opsi <code>isolationLevel</code> di argumen kedua; tanpa itu dipakai default database.
+</p>
+<p class="note">
+  <strong>Versi.</strong> Di Prisma ORM 8 tidak ada <code>$transaction</code>: kedua bentuk menjadi <code>db.transaction(async (tx) =&gt; ...)</code>, dan bentuk array ditulis ulang sebagai query berurutan di dalam callback. <sup class="cite"><a href="https://www.prisma.io/docs/orm/prisma-client/queries/transactions">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Transaksi</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0026" data-bank-topic="data-transaksi" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Migrasi: <code>migrate dev</code> vs <code>migrate deploy</code></h2>
+<p>
+  Migrasi adalah file SQL berurutan yang mengubah schema database dari satu versi ke versi berikutnya, disimpan di git bersama kode. Prisma punya dua perintah untuk dua lingkungan berbeda. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-migrate/workflows/development-and-production">[3]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th><code>prisma migrate dev</code></th><th><code>prisma migrate deploy</code></th></tr></thead>
+  <tbody>
+    <tr><td>Dipakai di</td><td>laptop developer</td><td>CI/CD, staging, produksi, database test</td></tr>
+    <tr><td>Membuat file migrasi baru</td><td>ya, dari perubahan <code>schema.prisma</code></td><td>tidak, hanya menerapkan yang pending</td></tr>
+    <tr><td>Shadow database</td><td>ya, untuk mendeteksi schema drift</td><td>tidak</td></tr>
+    <tr><td>Bisa menawarkan reset database</td><td>ya (drift atau konflik history)</td><td>tidak pernah</td></tr>
+    <tr><td>Generate Prisma Client</td><td>ya</td><td>tidak</td></tr>
+  </tbody>
+</table>
+<p>
+  <em>Shadow database</em> adalah database sementara tempat <code>migrate dev</code> memutar ulang seluruh history migrasi untuk mendeteksi <em>drift</em> (schema database yang berbeda dari yang dijelaskan history).
+  Karena <code>migrate dev</code> bisa meminta reset, perintah itu hanya untuk development. <code>migrate deploy</code> dijalankan di pipeline CI/CD, dan dokumentasi Prisma tidak menyarankan menjalankannya dari laptop ke database produksi. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-migrate/workflows/development-and-production">[3]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">ubah schema.prisma</span><span class="arrow">→</span>
+  <span class="box">prisma migrate dev (lokal)</span><span class="arrow">→</span>
+  <span class="box">commit folder migrations</span><span class="arrow">→</span>
+  <span class="box">prisma migrate deploy (CI/CD)</span>
+</div>
+
+<section class="exercise">
+  <h2>Latihan 2 — Migrasi</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0026" data-bank-topic="data-migrasi" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Perbandingan singkat: TypeORM</h2>
+<p>
+  TypeORM adalah ORM dengan entity berbasis decorator dan pola repository; tim Nest memelihara paket <code>@nestjs/typeorm</code> untuknya. <sup class="cite"><a href="https://docs.nestjs.com/data/typeorm">[4]</a></sup>
+  Bagian ini cukup supaya Anda tidak blank kalau codebase atau interviewer memakainya.
+</p>
+<pre><code>@Entity()
+export class User {
+  @PrimaryGeneratedColumn() id: number;
+  @Column() email: string;
+}
+
+@Module({ imports: [TypeOrmModule.forFeature([User])], providers: [UsersService] })
+export class UsersModule {}
+
+@Injectable()
+export class UsersService {
+  constructor(@InjectRepository(User) private usersRepository: Repository&lt;User&gt;) {}
+  findAll() { return this.usersRepository.find(); }
+}</code></pre>
+<table>
+  <thead><tr><th></th><th>Prisma</th><th>TypeORM</th></tr></thead>
+  <tbody>
+    <tr><td>Sumber kebenaran schema</td><td>file <code>schema.prisma</code>, client di-generate</td><td>class <code>@Entity</code> dengan decorator <code>@Column</code></td></tr>
+    <tr><td>Akses data di service</td><td>inject <code>PrismaService</code>, <code>prisma.user.findMany()</code></td><td><code>@InjectRepository(User)</code> → <code>Repository&lt;User&gt;</code></td></tr>
+    <tr><td>Registrasi di module</td><td><code>PrismaModule</code> buatan sendiri</td><td><code>TypeOrmModule.forRoot()</code> + <code>forFeature([User])</code></td></tr>
+    <tr><td>Transaksi</td><td><code>$transaction</code></td><td><code>dataSource.transaction()</code> atau <code>QueryRunner</code></td></tr>
+  </tbody>
+</table>
+<p>
+  Satu jebakan yang sering ditanyakan: opsi <code>synchronize: true</code> membuat TypeORM menyamakan schema database dengan entity setiap aplikasi start.
+  Dokumentasi Nest: jangan pakai di produksi, karena data produksi bisa hilang. <sup class="cite"><a href="https://docs.nestjs.com/data/typeorm">[4]</a></sup> Di produksi, pakai migrasi.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 3 — TypeORM</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0026" data-bank-topic="data-typeorm" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan tulis kode — di kertas, tanpa IDE</h2>
+  <p>Pasang timer 5 menit. Tulis kodenya di kertas, lalu jelaskan dengan suara keras. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tulis <code>OrdersService.checkout(userId, productId)</code> dengan Prisma: kurangi stok produk satu, tolak kalau stok habis, lalu buat order. Keduanya harus berhasil bersama atau batal bersama."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>checkout(userId: number, productId: number) {
+  return this.prisma.$transaction(async (tx) =&gt; {
+    const product = await tx.product.update({
+      where: { id: productId }, data: { stock: { decrement: 1 } },
+    });
+    if (product.stock &lt; 0) throw new ConflictException('Stok habis');
+    return tx.order.create({ data: { userId, productId } });
+  });
+}</code></pre>
+    <p>"Saya pakai interactive transaction karena query kedua bergantung pada hasil cek stok. Semua query lewat tx. Kalau stok negatif, saya lempar error dan Prisma me-rollback decrement-nya. Di dalam transaksi tidak ada panggilan jaringan supaya transaksinya singkat."</p>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>memakai <code>$transaction(async (tx) =&gt; ...)</code> (interactive), bukan dua query terpisah?</li>
+      <li>menjalankan semua query lewat <code>tx</code>, bukan <code>this.prisma</code>?</li>
+      <li>mengecek stok dan melempar error kalau habis?</li>
+      <li>menyebut bahwa error di dalam fungsi membuat transaksi di-rollback?</li>
+      <li>menjelaskan kenapa bukan bentuk array (hasil cek dipakai untuk memutuskan langkah berikutnya)?</li>
+      <li>menjaga transaksi singkat (tanpa panggilan jaringan, mis. ke payment gateway, di dalamnya)?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0027-autentikasi-jwt-passport.html">lesson 0027</a>: data sudah aman disimpan, sekarang siapa yang boleh memintanya. Hashing password, JWT, dan Passport.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Data &amp; auth") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan perlu isolationLevel Serializable untuk checkout?", "bagaimana memperbaiki migrasi yang sudah ter-deploy tapi salah?", atau "apa beda dataSource.transaction dan QueryRunner di TypeORM?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions">[1] Prisma ORM 7 docs: Transactions and batch queries</a> ·
+  <a href="https://www.prisma.io/docs/orm/prisma-client/queries/transactions">[2] Prisma docs: Transactions (Prisma ORM 8, bagian "Coming from Prisma ORM 7")</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-migrate/workflows/development-and-production">[3] Prisma ORM 7 docs: Development and production (Prisma Migrate)</a> ·
+  <a href="https://docs.nestjs.com/data/typeorm">[4] NestJS docs: TypeORM</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0025-prisma-dan-prismaservice.html">← 0025 · Prisma dan PrismaService</a>
+  <a href="0027-autentikasi-jwt-passport.html">0027 · Autentikasi: hashing, JWT, Passport →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0026.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
