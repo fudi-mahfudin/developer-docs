@@ -51,6 +51,27 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### Async & error
 
+- [Node.js Learn: Discover Promises in Node.js](https://nodejs.org/en/learn/asynchronous-work/discover-promises-in-nodejs#advanced-promise-methods)
+  Use for: `Promise.all`/`allSettled`/`race`/`any`, Promise lain tetap berjalan setelah `all` reject, `Promise.all` besar membebani memori (lesson 0005).
+- [ECMAScript Language Specification: Promise.all](https://tc39.es/ecma262/#sec-promise.all) dan [Promise.any](https://tc39.es/ecma262/#sec-promise.any)
+  Use for: semantik kombinator, `AggregateError` (lesson 0005).
+- [Node.js v24 docs: CLI `--unhandled-rejections`](https://nodejs.org/docs/latest-v24.x/api/cli.html#--unhandled-rejectionsmode)
+  Use for: mode `throw`/`strict`/`warn`/`warn-with-error-code`/`none`, default `throw` sejak v15.0.0 (lesson 0006).
+- [Node.js v24 docs: Process, `unhandledRejection` dan `uncaughtException`](https://nodejs.org/docs/latest-v24.x/api/process.html#warning-using-uncaughtexception-correctly)
+  Use for: kapan event dipancarkan, exit code 1, "not safe to resume normal operation" (lesson 0006).
+- [Node.js v24 docs: Errors](https://nodejs.org/docs/latest-v24.x/api/errors.html#error-propagation-and-interception)
+  Use for: try/catch tidak menangkap error callback/event, `error.cause` (v16.9.0), `AbortError` di API Node (lesson 0006, 0007).
+- [ECMAScript Language Specification: InstallErrorCause](https://tc39.es/ecma262/#sec-installerrorcause)
+  Use for: opsi `cause` di konstruktor `Error` (lesson 0006).
+- [Node.js v24 docs: Events](https://nodejs.org/docs/latest-v24.x/api/events.html#error-events)
+  Use for: event `'error'` tanpa listener, listener sinkron, `once`/`events.once`, `defaultMaxListeners` dan `MaxListenersExceededWarning` (lesson 0006, 0007).
+- [Node.js v24 docs: Globals, AbortController/AbortSignal/fetch](https://nodejs.org/docs/latest-v24.x/api/globals.html#class-abortcontroller)
+  Use for: `abort(reason)`, `AbortSignal.timeout` (v17.3.0), `AbortSignal.any` (v20.3.0), `fetch` tidak eksperimental sejak v21.0.0 (lesson 0007).
+- [WHATWG DOM Standard: AbortSignal](https://dom.spec.whatwg.org/#interface-abortsignal)
+  Use for: `AbortError` vs `TimeoutError` sebagai reason (lesson 0007).
+- [Node.js v24 docs: Timers, Cancelling timers](https://nodejs.org/docs/latest-v24.x/api/timers.html#cancelling-timers)
+  Use for: `timers/promises` dengan `{ signal }`, reject `AbortError` (lesson 0007).
+
 ### I/O & skala
 
 ### Modul & tooling

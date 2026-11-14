@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0006 · Error handling async: unhandled rejection, uncaughtException, Error.cause</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0006 · Node.js · Modul Async &amp; error · ±20 menit</div>
+  <h1>Error handling async: unhandled rejection, uncaughtException, Error.cause</h1>
+  <p class="subtitle">Ke mana error pergi kalau tidak ditangkap, kenapa proses Node mati karenanya, dan error mana yang boleh ditangani versus harus membuat proses restart</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0005-kombinator-promise.html">lesson 0005</a>: <code>forEach(async ...)</code> membuat reject "lepas" tanpa ada yang menangkap.
+  Lesson ini menjawab: apa yang terjadi pada error yang lepas itu, dan bagaimana merancang error handling yang tidak menelan bug.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Kenapa service Node kami tiba-tiba mati dengan exit code 1 padahal tidak ada error di log request? Bagaimana Anda mencegahnya?"</em>
+  tanpa catatan: kapan try/catch tidak menangkap error async, perilaku unhandled rejection sejak Node 15, peran <code>uncaughtException</code> sebagai jalan terakhir, event <code>'error'</code> di EventEmitter, <code>Error.cause</code>, dan beda operational error vs programmer error.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. try/catch di fungsi async, dan kapan ia tidak menangkap</h2>
+<p>Di dalam fungsi async, try/catch menangkap reject dari Promise yang <strong>di-<code>await</code></strong>. Tiga jebakan sering muncul:</p>
+<pre><code>async function getUser(id) {
+  try {
+    return fetchUser(id);          // 1. tanpa await: reject lolos dari catch ini
+  } catch (err) { return null; }
+}
+
+async function handler() {
+  try {
+    setTimeout(() =&gt; { throw new Error("boom"); }, 10);  // 2. callback jalan nanti,
+  } catch (err) { /* tidak pernah ke sini */ }           //    try sudah lama selesai
+  saveAudit();                     // 3. Promise tanpa await/catch: reject-nya "lepas"
+}</code></pre>
+<p>
+  Perbaikannya: <code>return await fetchUser(id)</code> kalau memang ingin ditangkap di situ; bungkus isi callback dengan try/catch-nya sendiri; dan setiap Promise harus di-<code>await</code> atau diberi <code>.catch()</code>.
+  Dokumentasi Node menjelaskan alasan yang sama untuk error yang dikirim lewat callback atau event: error itu <em>"cannot be intercepted using <code>try…catch</code> as they are thrown after the calling code has already exited."</em>
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/errors.html#error-propagation-and-interception">[1]</a></sup>
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Unhandled rejection: proses mati (Node ≥ 15)</h2>
+<p>
+  Promise yang reject tanpa handler disebut <strong>unhandled rejection</strong>. Node memancarkan event <code>process.on('unhandledRejection')</code> saat sebuah Promise reject <em>"and no error handler is attached to the promise within a turn of the event loop"</em>
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#event-unhandledrejection">[2]</a></sup>.
+  Apa yang terjadi selanjutnya diatur flag <code>--unhandled-rejections</code>, yang default-nya <code>throw</code> <strong>sejak Node 15</strong> (sebelumnya hanya warning):
+  kalau tidak ada listener <code>unhandledRejection</code>, rejection itu dilempar sebagai uncaught exception <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--unhandled-rejectionsmode">[3]</a></sup>.
+</p>
+<div class="flow">
+  <span class="box">Promise reject, tanpa catch</span><span class="arrow">→</span>
+  <span class="box">event 'unhandledRejection' (ada listener? selesai di situ)</span><span class="arrow">→</span>
+  <span class="box">tanpa listener: jadi uncaught exception</span><span class="arrow">→</span>
+  <span class="box">stack trace ke stderr, exit code 1</span>
+</div>
+<p>
+  Jadi di Node 24, satu <code>saveAudit()</code> tanpa <code>await</code> yang gagal bisa mematikan seluruh server, termasuk request lain yang sedang berjalan.
+  Itu jawaban untuk "mati dengan exit code 1": secara default Node mencetak stack trace ke stderr dan <em>"exiting with code 1"</em> <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#event-uncaughtexception">[2]</a></sup>.
+  Mode lain (<code>strict</code>, <code>warn</code>, <code>warn-with-error-code</code>, <code>none</code>) ada, tetapi mematikan peringatan hanya menyembunyikan bug.
+</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. uncaughtException: jalan terakhir, bukan "On Error Resume Next"</h2>
+<p>
+  <code>process.on('uncaughtException')</code> menangkap error yang lolos dari semua handler. Dokumentasi Node tegas: ini <em>"a crude mechanism for exception handling intended to be used only as a last resort"</em>, dan
+  <em>"It is not safe to resume normal operation after 'uncaughtException'."</em> Pemakaian yang benar adalah membersihkan resource secara sinkron, mencatat log, lalu keluar
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#warning-using-uncaughtexception-correctly">[2]</a></sup>.
+</p>
+<pre><code>process.on("unhandledRejection", (reason) =&gt; {
+  throw reason;                 // samakan jalurnya: biarkan jadi uncaught exception
+});
+process.on("uncaughtException", (err) =&gt; {
+  logger.fatal({ err }, "uncaught, proses akan berhenti");
+  process.exit(1);              // process manager / orchestrator menyalakan ulang
+});</code></pre>
+<p class="note">Kalimat aman di interview: "Saya tidak melanjutkan setelah uncaughtException. Saya log, lalu exit, dan mengandalkan process manager (systemd, PM2, atau orchestrator container) untuk restart. Yang saya perbaiki adalah Promise yang lupa di-await."</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Error yang lepas</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0012.</p>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="async-unhandled" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Event 'error' di EventEmitter</h2>
+<p>
+  API berbasis event (stream, socket, server) melaporkan kegagalan lewat event <code>'error'</code>, bukan lewat throw atau reject. Aturannya keras: kalau EventEmitter memancarkan <code>'error'</code> dan <strong>tidak ada listener</strong>,
+  <em>"the error is thrown, a stack trace is printed, and the Node.js process exits"</em> <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/events.html#error-events">[4]</a></sup>.
+  Karena itu setiap stream atau socket yang Anda buat sendiri butuh <code>.on('error', ...)</code>. EventEmitter dibahas lebih dalam di lesson 0007.
+</p>
+
+<!-- ============ 5 ============ -->
+<h2>5. Error.cause: membungkus tanpa kehilangan error asli</h2>
+<p>
+  Saat menangkap error tingkat rendah lalu melempar error yang lebih bermakna, jangan buang yang asli. Opsi <code>cause</code> di konstruktor <code>Error</code> (ECMAScript 2022, ada di Node ≥ 16.9) menyimpannya
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/errors.html#errorcause">[1]</a></sup> <sup class="cite"><a href="https://tc39.es/ecma262/#sec-installerrorcause">[5]</a></sup>:
+</p>
+<pre><code>try {
+  await db.query("UPDATE accounts SET ...", [id]);
+} catch (err) {
+  throw new Error(`gagal memperbarui akun ${id}`, { cause: err });
+}
+// logger mencetak err.message dan err.cause (error asli dari driver database)</code></pre>
+
+<!-- ============ 6 ============ -->
+<h2>6. Operational error vs programmer error</h2>
+<p>Pembedaan ini menentukan apa yang Anda lakukan dengan sebuah error:</p>
+<table>
+  <thead><tr><th></th><th>Operational error</th><th>Programmer error</th></tr></thead>
+  <tbody>
+    <tr><td>Apa</td><td>Kegagalan yang diharapkan terjadi di dunia nyata</td><td>Bug di kode</td></tr>
+    <tr><td>Contoh</td><td>timeout ke API lain, koneksi DB putus, input user tidak valid, file tidak ada</td><td><code>undefined is not a function</code>, lupa <code>await</code>, argumen salah tipe</td></tr>
+    <tr><td>Tindakan</td><td>Tangani: retry, kembalikan 4xx/503, fallback, log sebagai warning</td><td>Jangan "ditangani" di runtime: log, crash, restart, lalu perbaiki kodenya</td></tr>
+  </tbody>
+</table>
+<p>
+  Alasannya sama dengan peringatan di bagian 3: setelah bug yang tidak terduga, state aplikasi tidak bisa dipercaya lagi. Dokumentasi Node menyebut unhandled exception <em>"inherently mean that an application is in an undefined state"</em>
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#warning-using-uncaughtexception-correctly">[2]</a></sup>.
+  Di NestJS nanti, operational error biasanya dilempar sebagai <code>HttpException</code> dan dibentuk oleh exception filter.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Merancang error handling</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <div class="quiz" data-bank-lesson="0006" data-bank-topic="async-error-design" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Service Node kami di Node 24 sesekali mati dengan exit code 1, padahal log request tidak menunjukkan error. Apa dugaan Anda, dan bagaimana Anda mencegahnya?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Dugaan pertama saya unhandled rejection: ada Promise yang reject tanpa await atau catch, misalnya fire-and-forget atau forEach dengan callback async. Sejak Node 15 default <code>--unhandled-rejections</code> adalah throw, jadi rejection itu menjadi uncaught exception dan proses keluar dengan code 1. Dugaan kedua, EventEmitter seperti stream atau socket memancarkan 'error' tanpa listener, yang juga mematikan proses. Untuk mencegahnya: setiap Promise di-await atau diberi catch, setiap stream diberi handler error, dan saya pasang lint seperti no-floating-promises. Saya tetap memasang handler uncaughtException hanya untuk log dan exit, bukan untuk melanjutkan, karena state-nya tidak bisa dipercaya; process manager yang me-restart. Error yang diharapkan, seperti timeout ke service lain, saya tangani sebagai operational error dan saya bungkus dengan Error cause supaya penyebab aslinya tetap tercatat."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Unhandled rejection sebagai dugaan utama, dengan contoh penyebabnya (Promise tanpa await/catch)</li>
+      <li>Default <code>--unhandled-rejections=throw</code> sejak Node 15, sehingga proses keluar dengan code 1</li>
+      <li>Event <code>'error'</code> tanpa listener di EventEmitter/stream juga mematikan proses</li>
+      <li><code>uncaughtException</code> hanya untuk log + exit, tidak melanjutkan; restart oleh process manager</li>
+      <li>Pencegahan konkret: await/catch setiap Promise, handler error di stream, lint</li>
+      <li>Beda operational error (ditangani) dan programmer error (crash + perbaiki), atau <code>Error.cause</code> untuk menjaga error asli</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0007-eventemitter-dan-abort.html">lesson 0007</a>: EventEmitter lebih dalam, dan cara membatalkan pekerjaan async dengan <code>AbortController</code>.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Async &amp; error") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan return await memang perlu di luar try/catch?", "Bagaimana graceful shutdown dilakukan dari handler uncaughtException?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/errors.html">[1] Node.js v24 docs: Errors</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html">[2] Node.js v24 docs: Process (unhandledRejection, uncaughtException)</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--unhandled-rejectionsmode">[3] Node.js v24 docs: CLI --unhandled-rejections</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/events.html#error-events">[4] Node.js v24 docs: Events, Error events</a> ·
+  <a href="https://tc39.es/ecma262/#sec-installerrorcause">[5] ECMAScript Language Specification: InstallErrorCause</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0005-kombinator-promise.html">← 0005 · Kombinator Promise</a>
+  <a href="0007-eventemitter-dan-abort.html">0007 · EventEmitter dan AbortController →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
