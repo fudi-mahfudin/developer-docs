@@ -16,6 +16,7 @@ const lessonFile = num => fs.readdirSync(path.join(ROOT, TRACK, "lessons")).find
 // Satu entri per review. Ticket review lain: tambahkan baris review Anda di slotnya saja (baris kosong di antaranya
 // sengaja dipertahankan supaya branch paralel tidak bentrok saat merge).
 const REVIEWS = [
+  { num: "0012", sources: lessonRange(1, 7), prefixes: ["runtime-", "async-"] },
 
   { num: "0029", sources: [...lessonRange(16, 19), ...lessonRange(21, 24)], prefixes: ["nest-", "pipeline-"] },
 
