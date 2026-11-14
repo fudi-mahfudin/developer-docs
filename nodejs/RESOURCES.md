@@ -59,6 +59,23 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### Pipeline request
 
+- [NestJS docs: Request lifecycle](https://docs.nestjs.com/faq/request-lifecycle)
+  Use for: urutan middleware → guard → interceptor → pipe → handler → interceptor → filter, urutan per level binding (0021). Diverifikasi 2026-11-14.
+- [NestJS docs: Pipes](https://docs.nestjs.com/pipes)
+  Use for: daftar pipe bawaan, `ParseIntPipe` dan `errorHttpStatusCode`, exceptions zone, `APP_PIPE` (0021, 0022).
+- [NestJS docs: Validation](https://docs.nestjs.com/techniques/validation)
+  Use for: `ValidationPipe`, `whitelist`, `forbidNonWhitelisted`, `transform`, kenapa DTO harus class (0022).
+- [NestJS docs: Middleware](https://docs.nestjs.com/middleware)
+  Use for: `NestMiddleware`, `configure(consumer)`, `forRoutes`/`exclude`, functional dan global middleware (0021, 0023).
+- [NestJS docs: Guards](https://docs.nestjs.com/guards)
+  Use for: `CanActivate`, `ExecutionContext`, `Reflector.createDecorator`, `ForbiddenException` default, `APP_GUARD` (0021, 0023).
+- [NestJS docs: Interceptors](https://docs.nestjs.com/interceptors)
+  Use for: `NestInterceptor`, `CallHandler`, `tap`/`map`/`timeout` (0024).
+- [NestJS docs: Exception filters](https://docs.nestjs.com/exception-filters)
+  Use for: respons 500 default, built-in HTTP exception, `@Catch()`, `ArgumentsHost`, `APP_FILTER` (0024).
+- [NestJS docs: Migration guide v11 ke v12](https://docs.nestjs.com/migration-guide)
+  Use for: `StandardSchemaValidationPipe` dan opsi `schema`, `errorCode` di `HttpException` (label NestJS ≥ 12, 0022, 0024).
+
 ### Data & auth
 
 ### Testing & produksi
