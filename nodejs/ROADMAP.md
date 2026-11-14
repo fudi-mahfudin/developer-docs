@@ -22,4 +22,4 @@
 | **Review 4** | 0035 | Data & auth + Testing & produksi + topik lemah Review 1–3 |
 | Penutup | 0036 | Mock interview tiga babak ±45 menit (**opsional, pengecualian durasi**) |
 
-Menjelang interview: baca ulang dua reference di `reference/` (urutan event loop, pipeline request NestJS), lalu ulangi mock 0036.
+Menjelang interview: baca ulang dua reference, [urutan event loop](reference/urutan-event-loop.html) dan [pipeline request NestJS](reference/pipeline-request-nestjs.html), lalu ulangi mock 0036.

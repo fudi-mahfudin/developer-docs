@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Pipeline request NestJS</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Node.js · Pipeline request NestJS</div>
+<h1>Pipeline request NestJS</h1>
+<p class="subtitle">Ringkasan satu halaman untuk dibaca ulang menjelang interview. Dari Lesson <a href="../lessons/0021-urutan-pipeline-request.html">0021</a> (urutan dan binding), <a href="../lessons/0022-pipe-dan-validation.html">0022</a> (pipe), <a href="../lessons/0023-guard-dan-middleware.html">0023</a> (guard dan middleware), dan <a href="../lessons/0024-interceptor-dan-exception-filter.html">0024</a> (interceptor dan filter). Latihan penuhnya: mock <a href="../lessons/0036-mock-interview.html">0036</a>.</p>
+
+<h2>Urutan eksekusi satu request</h2>
+<div class="flow">
+  <span class="box">Middleware</span><span class="arrow">→</span>
+  <span class="box">Guard</span><span class="arrow">→</span>
+  <span class="box">Interceptor (sebelum)</span><span class="arrow">→</span>
+  <span class="box">Pipe</span><span class="arrow">→</span>
+  <span class="box">Handler</span><span class="arrow">→</span>
+  <span class="box">Interceptor (sesudah)</span><span class="arrow">→</span>
+  <span class="box">Exception filter</span>
+</div>
+<p>
+  Dokumentasi Nest: <em>"a request flows through middleware, then guards, then interceptors, then pipes, and finally back through interceptors on the return path."</em> <sup class="cite"><a href="https://docs.nestjs.com/faq/request-lifecycle">[1]</a></sup>
+  Exception filter hanya bekerja kalau ada exception yang tidak ditangkap di langkah mana pun. Guard jalan <em>"after all middleware, but before any interceptor or pipe."</em> <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup>
+</p>
+
+<h2>Kebutuhan → pakai yang mana</h2>
+<table>
+  <thead><tr><th>Kebutuhan</th><th>Pakai</th><th>Alasan singkat</th></tr></thead>
+  <tbody>
+    <tr><td>Logging akses, correlation id, CORS, body parser</td><td>Middleware</td><td>Berlaku untuk setiap request mentah; tidak perlu tahu handler</td></tr>
+    <tr><td>Autentikasi (token valid?)</td><td>Guard</td><td>Menolak sebelum ada kerja lain; lempar <code>UnauthorizedException</code> (401)</td></tr>
+    <tr><td>Otorisasi role (hanya admin, dsb.)</td><td>Guard</td><td><code>@Roles('admin')</code> dibaca guard: punya <code>ExecutionContext</code>, membaca metadata handler lewat <code>Reflector</code>; <code>false</code> → <code>ForbiddenException</code> (403)</td></tr>
+    <tr><td>Validasi body/DTO</td><td>Pipe</td><td><code>ValidationPipe</code> + class-validator; <code>whitelist</code> membuang properti asing, <code>forbidNonWhitelisted</code> menolaknya (400)</td></tr>
+    <tr><td>Ubah tipe parameter ("42" → 42)</td><td>Pipe</td><td><code>ParseIntPipe</code>, <code>ParseUUIDPipe</code> per parameter</td></tr>
+    <tr><td>Bentuk response seragam ({ data: … })</td><td>Interceptor</td><td>Membungkus handler; memetakan hasil dengan operator RxJS setelah <code>next.handle()</code></td></tr>
+    <tr><td>Durasi request, timeout, cache response</td><td>Interceptor</td><td>Punya bagian sebelum dan sesudah handler</td></tr>
+    <tr><td>Format error yang konsisten</td><td>Exception filter</td><td>Mengubah exception yang lolos menjadi response error</td></tr>
+  </tbody>
+</table>
+<p class="note">Kenapa otorisasi di guard, bukan middleware: middleware tidak tahu handler mana yang akan dipanggil setelah <code>next()</code>, sedangkan guard tahu. <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup> Akibat urutan: user tanpa role yang mengirim body tidak valid mendapat 403, bukan 400.</p>
+
+<h2>Binding: global, controller, method</h2>
+<table>
+  <thead><tr><th>Cara</th><th>Contoh</th><th>Catatan</th></tr></thead>
+  <tbody>
+    <tr><td>Global tanpa DI</td><td><code>app.useGlobalGuards()</code>, <code>useGlobalPipes()</code> di <code>main.ts</code></td><td>Di luar module: tidak bisa meng-inject dependency</td></tr>
+    <tr><td>Global dengan DI</td><td><code>{ provide: APP_GUARD, useClass: RolesGuard }</code> (juga <code>APP_PIPE</code>, <code>APP_INTERCEPTOR</code>, <code>APP_FILTER</code>)</td><td>Terdaftar sebagai provider, DI berjalan</td></tr>
+    <tr><td>Controller / method</td><td><code>@UseGuards()</code>, <code>@UsePipes()</code>, <code>@UseInterceptors()</code>, <code>@UseFilters()</code></td><td>Pipe juga bisa per parameter: <code>@Param('id', ParseIntPipe)</code></td></tr>
+    <tr><td>Middleware</td><td><code>configure(consumer)</code> + <code>consumer.apply(...).forRoutes(...)</code>, atau <code>app.use()</code></td><td>Tidak lewat decorator <sup class="cite"><a href="https://docs.nestjs.com/middleware">[3]</a></sup></td></tr>
+  </tbody>
+</table>
+
+<h2>Urutan di dalam satu jenis komponen</h2>
+<ul>
+  <li><strong>Guard, interceptor (sebelum), pipe:</strong> global → controller → method; pipe parameter paling akhir.</li>
+  <li><strong>Interceptor (sesudah):</strong> terbalik, method → controller → global, <em>"in a first-in, last-out manner."</em> <sup class="cite"><a href="https://docs.nestjs.com/faq/request-lifecycle">[1]</a></sup></li>
+  <li><strong>Exception filter:</strong> dari level terendah: method → controller → global. Exception yang Anda tangkap sendiri dengan <code>try/catch</code> tidak sampai ke filter.</li>
+</ul>
+
+<p class="note sources">
+  <a href="https://docs.nestjs.com/faq/request-lifecycle">[1] NestJS docs: Request lifecycle</a> ·
+  <a href="https://docs.nestjs.com/guards">[2] NestJS docs: Guards</a> ·
+  <a href="https://docs.nestjs.com/middleware">[3] NestJS docs: Middleware</a>
+</p>
+<p class="note">Cheat sheet lain: <a href="urutan-event-loop.html">urutan event loop</a> · <a href="../index.html">Indeks</a></p>
+</main>
+</body>
+</html>
