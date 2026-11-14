@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0008 · Streams: Readable, Writable, Transform, pipeline</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0008 · Node.js · Modul I/O &amp; skala · ±20 menit</div>
+  <h1>Streams: Readable, Writable, Duplex, Transform, dan pipeline</h1>
+  <p class="subtitle">Memproses data per potongan, bukan sekaligus: kenapa ini penting untuk file besar dan banyak request, dan cara merangkai stream dengan aman</p>
+</header>
+
+<p>
+  Modul ini pindah dari "bagaimana event loop bekerja" ke "bagaimana memindahkan data besar tanpa menghabiskan memori".
+  Pertanyaan interview yang klasik: <em>"Bagaimana Anda mengirim file 2 GB ke client di Node?"</em> Jawaban yang dicari bukan <code>readFile</code>, melainkan stream.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Apa itu stream di Node, dan kapan Anda memakainya?"</em>
+  tanpa catatan, dalam 60 detik: empat jenis stream dengan contohnya, kenapa stream lebih hemat memori daripada <code>readFile</code> untuk file besar,
+  dan menulis di kertas satu <code>pipeline</code> yang aman terhadap error.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Empat jenis stream</h2>
+<p>Dokumentasi Node v24 membagi stream menjadi empat jenis dasar: <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#types-of-streams">[1]</a></sup></p>
+<table>
+  <thead><tr><th>Jenis</th><th>Arah data</th><th>Contoh</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Readable</strong></td><td>Sumber: data dibaca darinya</td><td><code>fs.createReadStream()</code>, request HTTP di sisi server, <code>process.stdin</code></td></tr>
+    <tr><td><strong>Writable</strong></td><td>Tujuan: data ditulis ke dalamnya</td><td><code>fs.createWriteStream()</code>, response HTTP di sisi server, <code>process.stdout</code></td></tr>
+    <tr><td><strong>Duplex</strong></td><td>Bisa dibaca dan ditulis; dua sisi independen</td><td><code>net.Socket</code> (koneksi TCP)</td></tr>
+    <tr><td><strong>Transform</strong></td><td>Duplex yang output-nya dihitung dari input</td><td><code>zlib.createGzip()</code>, enkripsi, parser CSV</td></tr>
+  </tbody>
+</table>
+<p>
+  Beda Duplex dan Transform sering ditanyakan. Di socket TCP, data yang Anda tulis dikirim ke peer, dan data yang Anda baca datang dari peer; keduanya tidak saling diturunkan.
+  Di gzip, setiap byte yang keluar adalah hasil kompresi byte yang masuk. Setiap Duplex dan Transform punya dua buffer internal terpisah, satu untuk sisi baca dan satu untuk sisi tulis. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[2]</a></sup>
+</p>
+<p class="note">Semua stream adalah instance <code>EventEmitter</code>: mereka memancarkan event seperti <code>'data'</code>, <code>'end'</code>, <code>'finish'</code>, dan <code>'error'</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#types-of-streams">[1]</a></sup></p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Stream vs <code>readFile</code> untuk file besar</h2>
+<p>
+  <code>fs.readFile()</code> <em>"reads the entire contents of a file"</em> ke memori sebagai satu Buffer. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/fs.html#fsreadfilepath-options-callback">[3]</a></sup>
+  Ia asinkron (tidak memblokir event loop), tapi memorinya sebanding dengan ukuran file. Satu request untuk file 2 GB berarti ±2 GB memori; sepuluh request bersamaan berarti ±20 GB.
+</p>
+<p>
+  <code>fs.createReadStream()</code> membaca file per potongan (chunk). Ukuran potongan diatur <code>highWaterMark</code>, default <code>64 * 1024</code> byte (64 KiB) untuk stream file. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/fs.html#fscreatereadstreampath-options">[4]</a></sup>
+  Memori yang dipakai kira-kira beberapa potongan, berapa pun ukuran filenya.
+</p>
+<div class="flow">
+  <span class="box">File di disk (2 GB)</span><span class="arrow">→</span>
+  <span class="box">Readable, potongan 64 KiB</span><span class="arrow">→</span>
+  <span class="box">Transform (gzip)</span><span class="arrow">→</span>
+  <span class="box">Writable (response HTTP)</span>
+</div>
+  <div class="arrow">→</div>
+  <div class="box">Readable<br><small>potongan 64 KiB</small></div>
+  <div class="arrow">→</div>
+  <div class="box">Transform<br><small>gzip</small></div>
+  <div class="arrow">→</div>
+  <div class="box">Writable<br><small>response HTTP</small></div>
+</div>
+<p>
+  Aturan praktis: <code>readFile</code> wajar untuk file kecil yang memang perlu utuh di memori (file config, template). Untuk upload, download, log, CSV, atau ekspor data yang ukurannya tidak dibatasi, pakai stream.
+  Stream juga mulai mengirim byte pertama ke client sebelum seluruh file selesai dibaca.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Jenis stream dan kapan memakainya</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0020.</p>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="io-stream-jenis" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Merangkai stream: <code>stream.pipeline</code>, bukan <code>.pipe()</code> polos</h2>
+<p>
+  Cara lama merangkai stream adalah <code>.pipe()</code>. Masalahnya, dokumentasi Node sendiri memberi peringatan:
+  kalau Readable error di tengah jalan, <em>"the Writable destination is not closed automatically"</em>, dan setiap stream harus ditutup manual untuk mencegah memory leak. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablepipedestination-options">[5]</a></sup>
+</p>
+<p>
+  <code>stream.pipeline()</code> menyelesaikan itu: ia meneruskan error dari stream mana pun ke satu callback, dan <em>"will call <code>stream.destroy(err)</code> on all streams"</em> yang belum selesai. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#streampipelinesource-transforms-destination-callback">[6]</a></sup>
+  Versi Promise ada di <code>node:stream/promises</code>, cocok dengan <code>async/await</code>: <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#streams-promises-api">[7]</a></sup>
+</p>
+<pre><code>const { pipeline } = require('node:stream/promises');
+const fs = require('node:fs');
+const zlib = require('node:zlib');
+
+async function gzipFile(src, dest) {
+  await pipeline(
+    fs.createReadStream(src),   // Readable
+    zlib.createGzip(),          // Transform
+    fs.createWriteStream(dest), // Writable
+  );
+}
+
+gzipFile('access.log', 'access.log.gz').catch(err => {
+  console.error('gagal', err); // error dari stream mana pun sampai di sini
+});</code></pre>
+<p>
+  Di handler HTTP, response juga Writable, jadi pola yang sama berlaku: <code>pipeline(fs.createReadStream(path), res)</code>.
+  Kalau client memutus koneksi di tengah download, <code>pipeline</code> menghancurkan stream file sehingga file descriptor tidak bocor.
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Async iterator: membaca stream dengan <code>for await</code></h2>
+<p>
+  Readable bisa dibaca dengan <code>for await...of</code>; setiap iterasi memberi satu potongan. Ini cara paling mudah dibaca untuk memproses stream baris demi baris atau potongan demi potongan.
+  Satu jebakan: kalau loop berhenti lewat <code>break</code>, <code>return</code>, atau <code>throw</code>, <em>"the stream will be destroyed"</em>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablesymbolasynciterator">[8]</a></sup>
+</p>
+<pre><code>async function countBytes(path) {
+  let total = 0;
+  for await (const chunk of fs.createReadStream(path)) {
+    total += chunk.length; // chunk adalah Buffer, maks. 64 KiB
+  }
+  return total;
+}</code></pre>
+<p>
+  <code>pipeline</code> juga menerima async generator sebagai langkah tengah, jadi Transform sederhana tidak perlu ditulis sebagai class:
+  <code>pipeline(src, async function* (source) { for await (const c of source) yield c.toString().toUpperCase(); }, dest)</code>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — pipeline dan async iterator</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <div class="quiz" data-bank-lesson="0008" data-bank-topic="io-stream-pipeline" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Tulis kode di kertas, lalu jelaskan</h2>
+  <p>Pasang timer 5 menit. Tulis kodenya di kertas tanpa IDE, lalu jelaskan dengan suara keras. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0020.</p>
+  <blockquote>"Tulis fungsi <code>gzipFile(src, dest)</code> yang mengompres file besar memakai stream, aman terhadap error, dan bisa di-<code>await</code>. Lalu jelaskan dalam 60 detik kenapa tidak memakai <code>readFile</code> dan <code>.pipe()</code>."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>const { pipeline } = require('node:stream/promises');
+const fs = require('node:fs');
+const zlib = require('node:zlib');
+
+async function gzipFile(src, dest) {
+  await pipeline(
+    fs.createReadStream(src),
+    zlib.createGzip(),
+    fs.createWriteStream(dest),
+  );
+}</code></pre>
+    <p>"<code>readFile</code> memuat seluruh file ke memori; untuk file besar dan banyak request, memori habis. Stream membaca per potongan, 64 KiB secara default. <code>pipeline</code> dari <code>stream/promises</code> mengembalikan Promise, meneruskan error dari stream mana pun, dan menghancurkan semua stream kalau gagal, sedangkan <code>.pipe()</code> tidak menutup tujuan saat sumber error."</p>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>memakai <code>fs.createReadStream</code> dan <code>fs.createWriteStream</code>, bukan <code>readFile</code>/<code>writeFile</code>?</li>
+      <li>menaruh <code>zlib.createGzip()</code> sebagai Transform di tengah?</li>
+      <li>memakai <code>pipeline</code> dari <code>node:stream/promises</code> (atau versi callback dengan penanganan error)?</li>
+      <li>meng-<code>await</code> pipeline sehingga error bisa ditangkap pemanggil?</li>
+      <li>menyebut <code>readFile</code> memuat seluruh file ke memori?</li>
+      <li>menyebut <code>.pipe()</code> tidak meneruskan error dan tidak menutup stream tujuan?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://nodejs.org/en/learn/modules/how-to-use-streams">Node.js Learn: How to use streams</a>, ±20 menit. Contoh lengkap Readable, Writable, Transform buatan sendiri dan mode object.
+</div>
+
+<p>Berikutnya, <a href="0009-backpressure-dan-buffer.html">lesson 0009</a>: apa yang terjadi kalau sumber lebih cepat daripada tujuan? Backpressure, <code>highWaterMark</code>, dan Buffer.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "I/O &amp; skala") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Apa beda Duplex dan Transform?", "Kapan readFile masih boleh dipakai?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#types-of-streams">[1] Node.js v24: Stream, Types of streams</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[2] Node.js v24: Stream, Buffering</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/fs.html#fsreadfilepath-options-callback">[3] Node.js v24: fs.readFile()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/fs.html#fscreatereadstreampath-options">[4] Node.js v24: fs.createReadStream()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablepipedestination-options">[5] Node.js v24: readable.pipe()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#streampipelinesource-transforms-destination-callback">[6] Node.js v24: stream.pipeline()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#streams-promises-api">[7] Node.js v24: Streams Promises API</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablesymbolasynciterator">[8] Node.js v24: readable[Symbol.asyncIterator]()</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0007-eventemitter-dan-abort.html">← 0007 · EventEmitter dan AbortController</a>
+  <a href="0009-backpressure-dan-buffer.html">0009 · Backpressure, highWaterMark, dan Buffer →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # 04: Modul I/O & skala (0008–0011)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 
