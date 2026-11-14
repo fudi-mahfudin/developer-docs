@@ -1,6 +1,6 @@
 # 02: Modul Runtime (0001–0004)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 
