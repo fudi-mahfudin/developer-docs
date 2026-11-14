@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0014 · package.json, semver, lockfile, dan jenis dependency</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0014 · Node.js · Modul Modul &amp; tooling · ±20 menit</div>
+  <h1>package.json, semver, lockfile, dan jenis dependency</h1>
+  <p class="subtitle">Apa yang dijanjikan <code>^</code> dan <code>~</code>, kenapa lockfile di-commit, kenapa CI memakai <code>npm ci</code>, dan di mana sebuah dependency harus dicantumkan</p>
+</header>
+
+<p>
+  "Di laptop saya jalan, di CI rusak" sering berasal dari <code>package.json</code>: range versi yang longgar, lockfile yang tidak di-commit, atau paket yang salah tempat.
+  Lesson <a href="0013-commonjs-vs-esm.html">0013</a> sudah membahas field <code>"type"</code>. Lesson ini membahas field lain yang ditanyakan interviewer.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Di package.json ada ^ dan ~. Apa artinya, kenapa build di CI bisa berbeda dengan laptop, dan bagaimana mencegahnya?"</em>
+  tanpa catatan, dalam 60 detik, dengan batas versi yang tepat, peran lockfile, dan <code>npm ci</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Semver dan range <code>^</code> vs <code>~</code></h2>
+<p>
+  Semantic Versioning memakai format <code>MAJOR.MINOR.PATCH</code>: naikkan MAJOR untuk perubahan API yang tidak kompatibel, MINOR untuk fitur baru yang kompatibel, PATCH untuk perbaikan bug yang kompatibel.
+  Versi <code>0.y.z</code> adalah tahap pengembangan awal; apa pun boleh berubah kapan saja. <sup class="cite"><a href="https://semver.org/#summary">[1]</a></sup>
+</p>
+<p>Di <code>package.json</code>, versi dependency biasanya ditulis sebagai <em>range</em>. Batas persisnya dari node-semver, library yang dipakai npm: <sup class="cite"><a href="https://github.com/npm/node-semver#advanced-range-syntax">[2]</a></sup></p>
+<table>
+  <thead><tr><th>Range</th><th>Artinya</th><th>Yang boleh berubah</th></tr></thead>
+  <tbody>
+    <tr><td><code>^1.2.3</code></td><td><code>&gt;=1.2.3 &lt;2.0.0</code></td><td>minor dan patch</td></tr>
+    <tr><td><code>~1.2.3</code></td><td><code>&gt;=1.2.3 &lt;1.3.0</code></td><td>patch saja</td></tr>
+    <tr><td><code>^0.2.3</code></td><td><code>&gt;=0.2.3 &lt;0.3.0</code></td><td>patch saja (elemen bukan-nol paling kiri adalah minor)</td></tr>
+    <tr><td><code>^0.0.3</code></td><td><code>&gt;=0.0.3 &lt;0.0.4</code></td><td>tidak ada</td></tr>
+    <tr><td><code>1.2.3</code></td><td>persis 1.2.3</td><td>tidak ada</td></tr>
+  </tbody>
+</table>
+<p>
+  Aturan caret: boleh berubah selama <em>elemen bukan-nol paling kiri</em> tidak berubah. <sup class="cite"><a href="https://github.com/npm/node-semver#caret-ranges-123-025-004">[2]</a></sup>
+  <code>npm install &lt;paket&gt;</code> menyimpan versi dengan prefix <code>^</code> secara default (config <code>save-prefix</code>). <sup class="cite"><a href="https://docs.npmjs.com/cli/v11/using-npm/config#save-prefix">[3]</a></sup>
+  Artinya, tanpa lockfile, <code>"express": "^4.18.2"</code> bisa memasang 4.18.2 hari ini dan 4.21.0 bulan depan.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Lockfile dan <code>npm ci</code></h2>
+<div class="flow">
+  <span class="box">package.json<br>(range)</span><span class="arrow">→ npm install →</span>
+  <span class="box">package-lock.json<br>(versi persis, di-commit)</span><span class="arrow">→ npm ci →</span>
+  <span class="box">node_modules identik<br>di CI dan server</span>
+</div>
+<p>
+  <code>package-lock.json</code> dibuat otomatis dan <em>"describes the exact tree that was generated"</em>, sehingga install berikutnya menghasilkan pohon yang identik walaupun ada update dependency di antaranya.
+  Tujuannya: rekan tim, deployment, dan CI memasang dependency yang persis sama, jadi file ini di-commit ke repository. <sup class="cite"><a href="https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json">[4]</a></sup>
+</p>
+<p><code>npm ci</code> dibuat untuk lingkungan otomatis seperti CI. Bedanya dengan <code>npm install</code>: <sup class="cite"><a href="https://docs.npmjs.com/cli/v11/commands/npm-ci">[5]</a></sup></p>
+<ul>
+  <li>Proyek <strong>wajib</strong> punya <code>package-lock.json</code> (atau <code>npm-shrinkwrap.json</code>).</li>
+  <li>Kalau lockfile tidak cocok dengan <code>package.json</code>, <code>npm ci</code> keluar dengan error, bukan memperbarui lockfile.</li>
+  <li><code>node_modules</code> yang sudah ada dihapus dulu.</li>
+  <li>Tidak pernah menulis <code>package.json</code> atau lockfile: install-nya "frozen".</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Range, lockfile, CI</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0020.</p>
+  <div class="quiz" data-bank-lesson="0014" data-bank-topic="tooling-semver-lockfile" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. dependencies, devDependencies, peerDependencies</h2>
+<table>
+  <thead><tr><th>Field</th><th>Isinya</th><th>Contoh di proyek NestJS</th></tr></thead>
+  <tbody>
+    <tr><td><code>dependencies</code></td><td>Dibutuhkan saat aplikasi berjalan</td><td><code>@nestjs/core</code>, <code>@prisma/client</code></td></tr>
+    <tr><td><code>devDependencies</code></td><td>Hanya untuk test, build, dan dokumentasi; pemakai akhir tidak butuh <sup class="cite"><a href="https://docs.npmjs.com/cli/v11/configuring-npm/package-json#devdependencies">[6]</a></sup></td><td><code>typescript</code>, <code>jest</code>, <code>@nestjs/cli</code></td></tr>
+    <tr><td><code>peerDependencies</code></td><td>Paket "host" yang harus disediakan pemakai, biasanya untuk plugin; dipasang default sejak npm v7 <sup class="cite"><a href="https://docs.npmjs.com/cli/v11/configuring-npm/package-json#peerdependencies">[6]</a></sup></td><td>library plugin yang mencantumkan <code>@nestjs/common</code></td></tr>
+  </tbody>
+</table>
+<p>
+  Kenapa peer, bukan dependencies biasa? Kalau plugin mencantumkan framework di <code>dependencies</code>, aplikasi bisa berakhir dengan dua salinan framework: satu milik aplikasi, satu milik plugin. Dengan peer, plugin memakai salinan milik aplikasi.
+  Untuk image produksi, devDependencies tidak dipasang dengan <code>npm ci --omit=dev</code>. <sup class="cite"><a href="https://docs.npmjs.com/cli/v11/commands/npm-ci#omit">[5]</a></sup>
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Field <code>"main"</code> dan <code>"exports"</code></h2>
+<p>
+  Dua field ini menentukan apa yang dimuat saat orang menulis <code>require('pkg')</code> atau <code>import 'pkg'</code>. <code>"main"</code> hanya mendefinisikan satu entry point.
+  <code>"exports"</code> bisa mendefinisikan banyak entry point, entry berbeda untuk <code>import</code> dan <code>require</code> (conditional exports), dan <strong>menutup</strong> semua path lain. Kalau keduanya ada, <code>"exports"</code> yang menang. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/packages.html#package-entry-points">[7]</a></sup>
+</p>
+<pre><code>{
+  "name": "pkg",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./testing": "./dist/testing.js"
+  }
+}</code></pre>
+<p>
+  Dengan konfigurasi ini, <code>import 'pkg/testing'</code> jalan, tetapi <code>require('pkg/dist/internal.js')</code> melempar <code>ERR_PACKAGE_PATH_NOT_EXPORTED</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/packages.html#subpath-exports">[7]</a></sup>
+  Akibatnya, menambahkan <code>"exports"</code> ke paket yang sudah dipakai orang bisa menjadi <strong>breaking change</strong>, karena path yang dulu bisa diakses sekarang tertutup. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/packages.html#package-entry-points">[7]</a></sup>
+  Key <code>"main"</code> di contoh di atas hanya untuk tool lama yang belum membaca <code>"exports"</code>.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Field package.json</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <div class="quiz" data-bank-lesson="0014" data-bank-topic="tooling-field-package" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0020.</p>
+  <blockquote>"Di package.json ada ^ dan ~. Apa artinya, kenapa build di CI bisa berbeda dengan laptop, dan bagaimana mencegahnya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Versi mengikuti semver MAJOR.MINOR.PATCH: major untuk breaking change, minor untuk fitur yang kompatibel, patch untuk bug fix. Caret ^1.2.3 artinya &gt;=1.2.3 &lt;2.0.0, jadi minor dan patch baru boleh; tilde ~1.2.3 artinya &gt;=1.2.3 &lt;1.3.0, hanya patch. Untuk versi 0.x caret lebih ketat: ^0.2.3 berarti &lt;0.3.0. npm install menyimpan dengan prefix ^ secara default. Karena range, dua kali install di waktu berbeda bisa memasang versi berbeda. Itulah gunanya package-lock.json: mencatat pohon persis yang terpasang, jadi harus di-commit. Di CI saya pakai npm ci: wajib ada lockfile, gagal kalau lockfile tidak cocok dengan package.json, menghapus node_modules lama, dan tidak menulis lockfile. Dependency yang hanya untuk test dan build saya taruh di devDependencies."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>semver MAJOR.MINOR.PATCH dan arti masing-masing?</li>
+      <li>^ mengizinkan minor dan patch (batas major berikutnya); ~ hanya patch?</li>
+      <li>range membuat dua install bisa memasang versi berbeda?</li>
+      <li>package-lock.json mencatat pohon persis dan di-commit?</li>
+      <li>npm ci di CI: wajib lockfile, gagal kalau tidak cocok, tidak menulis lockfile?</li>
+      <li>kasus 0.x atau prefix default ^ dari npm install?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.npmjs.com/cli/v11/configuring-npm/package-json">npm Docs: package.json</a>, ±15 menit (skim). Semua field resmi, termasuk dependencies, peerDependencies, dan engines.
+</div>
+
+<p>Berikutnya, <a href="0015-typescript-dan-config.html">lesson 0015</a>: menjalankan TypeScript di Node (<code>tsc</code> vs type stripping), <code>module: nodenext</code>, dan config lewat env var.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Modul &amp; tooling") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa ^0.2.3 tidak boleh naik ke 0.3.0?", "Kapan library sebaiknya memakai peerDependencies?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://semver.org/">[1] Semantic Versioning 2.0.0</a> ·
+  <a href="https://github.com/npm/node-semver">[2] node-semver (repo resmi npm): range syntax</a> ·
+  <a href="https://docs.npmjs.com/cli/v11/using-npm/config">[3] npm Docs: config (save-prefix)</a> ·
+  <a href="https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json">[4] npm Docs: package-lock.json</a> ·
+  <a href="https://docs.npmjs.com/cli/v11/commands/npm-ci">[5] npm Docs: npm ci</a> ·
+  <a href="https://docs.npmjs.com/cli/v11/configuring-npm/package-json">[6] npm Docs: package.json</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/packages.html">[7] Node.js v24: Modules: Packages</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0013-commonjs-vs-esm.html">← 0013 · CommonJS vs ESM</a>
+  <a href="0015-typescript-dan-config.html">0015 · TypeScript di Node, env var, dan config per environment →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
