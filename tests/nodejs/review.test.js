@@ -9,20 +9,17 @@ const { draw, seededRandom } = require("../../assets/bank.js");
 const { ROOT, forTrack } = require("../helpers.js");
 
 const TRACK = "nodejs";
-const nd = forTrack(TRACK);
+const nj = forTrack(TRACK);
 const lessonRange = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => String(a + i).padStart(4, "0"));
 const lessonFile = num => fs.readdirSync(path.join(ROOT, TRACK, "lessons")).find(f => f.startsWith(`${num}-`));
 
-// Satu entri per review. Ticket 08, 11, 13: isi baris komentar review Anda saja (baris kosong di antaranya
+// Satu entri per review. Ticket review lain: tambahkan baris review Anda di slotnya saja (baris kosong di antaranya
 // sengaja dipertahankan supaya branch paralel tidak bentrok saat merge).
 const REVIEWS = [
   { num: "0012", sources: lessonRange(1, 7), prefixes: ["runtime-", "async-"] },
 
-  // 0020
+  { num: "0029", sources: [...lessonRange(16, 19), ...lessonRange(21, 24)], prefixes: ["nest-", "pipeline-"] },
 
-  // 0029
-
-  // 0035
 ];
 
 REVIEWS.forEach(({ num, sources, prefixes, allBanks }) => {
@@ -55,7 +52,7 @@ REVIEWS.forEach(({ num, sources, prefixes, allBanks }) => {
 
   test(`nodejs review ${num} draws exactly one quiz per topic plus three oral questions`, () => {
     const { lessons, topics, mc, oral } = attrs();
-    const pool = nd.loadLesson(...loaded).select({ lessons, topics });
+    const pool = nj.loadLesson(...loaded).select({ lessons, topics });
     pool.forEach(q => assert.ok(topics.includes(q.topic) || prefixes.some(p => q.topic.startsWith(p)), `${q.id}: topik ${q.topic} di luar modul`));
     const mcTopics = new Set(pool.filter(q => q.type === "mc").map(q => q.topic));
     assert.equal(mc, mcTopics.size, "data-mc harus sama dengan jumlah topik kuis di pool");
