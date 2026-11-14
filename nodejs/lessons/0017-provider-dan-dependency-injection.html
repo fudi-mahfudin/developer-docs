@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0017 · Provider dan dependency injection</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0017 · Node.js · Modul NestJS inti · ±20 menit</div>
+  <h1>Provider dan dependency injection</h1>
+  <p class="subtitle">Bagaimana DI container Nest mencocokkan dependency lewat token, empat bentuk custom provider, dan apa yang terjadi kalau dua class saling bergantung</p>
+</header>
+
+<p>
+  Di <a href="0016-nestjs-dan-module.html">lesson 0016</a> module mendaftarkan provider dan meng-export-nya. Lesson ini masuk ke dalam: apa yang dilakukan container saat melihat constructor,
+  dan bagaimana mendaftarkan sesuatu yang bukan class biasa (konstanta config, client hasil factory, mock untuk test). Pertanyaan "jelaskan <code>useFactory</code>" dan "bagaimana Nest menangani circular dependency" sering muncul di interview mid-level.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Bagaimana DI di Nest bekerja?"</em> tanpa catatan, dalam 60 detik: provider + token + container,
+  kapan memakai <code>useClass</code>, <code>useValue</code>, <code>useFactory</code>, atau <code>useExisting</code>, kenapa interface tidak bisa jadi token, dan bagaimana <code>forwardRef</code> memecah circular dependency.
+  Anda juga bisa <strong>menulis di kertas</strong> provider <code>useFactory</code> yang bergantung pada provider lain.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Provider, token, dan container</h2>
+<p>
+  Menurut dokumentasi Nest, <em>"the main idea behind a provider is that it can be injected as a dependency"</em>. Decorator <code>@Injectable()</code> menempelkan metadata yang menyatakan class itu dikelola Nest.
+  Cara injeksi yang disarankan adalah lewat constructor, karena constructor <em>"states explicitly which dependencies the class requires"</em>. Dengan scope default, Nest membuat instance sekali dan membagikannya ke setiap class yang membutuhkannya. <sup class="cite"><a href="https://docs.nestjs.com/providers">[1]</a></sup>
+</p>
+<pre><code>@Injectable()
+export class UsersService {
+  constructor(private readonly prisma: PrismaService) {} // token = class PrismaService
+}
+
+// di @Module: providers: [UsersService]
+// sama dengan bentuk panjang:  { provide: UsersService, useClass: UsersService }</code></pre>
+<p>Saat container membuat <code>UsersService</code>, ia membaca tipe parameter constructor, mencari provider dengan <strong>token</strong> yang sama, membuatnya dulu kalau belum ada (rekursif), lalu menyuntikkannya. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/custom-providers">[2]</a></sup></p>
+<div class="flow">
+  <span class="box">Baca constructor</span><span class="arrow">→</span>
+  <span class="box">Cari provider per token</span><span class="arrow">→</span>
+  <span class="box">Buat dependency dulu</span><span class="arrow">→</span>
+  <span class="box">Simpan dan bagikan instance</span>
+</div>
+<p>
+  Setiap <strong>injection token</strong> adalah kunci pencarian di container. Biasanya class itu sendiri, tapi boleh juga string, <code>Symbol</code>, atau enum TypeScript.
+  Interface <strong>tidak bisa</strong> jadi token: <em>"TypeScript types and interfaces are erased during compilation, so Nest can't reference them at runtime."</em>
+  Untuk token non-class, pakai <code>@Inject(TOKEN)</code> di parameter constructor. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/custom-providers">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Provider dan token</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0017" data-bank-topic="nest-di" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Empat bentuk custom provider</h2>
+<table>
+  <thead><tr><th>Bentuk</th><th>Artinya</th><th>Contoh pemakaian</th></tr></thead>
+  <tbody>
+    <tr><td><code>useClass</code></td><td>Token diselesaikan ke class tertentu, bisa dipilih saat runtime</td><td>Implementasi berbeda per environment</td></tr>
+    <tr><td><code>useValue</code></td><td>Token diselesaikan ke nilai yang sudah jadi</td><td>Konstanta config, mock object saat test</td></tr>
+    <tr><td><code>useFactory</code></td><td>Token diselesaikan ke hasil fungsi; argumen fungsi di-inject dari daftar <code>inject</code></td><td>Client yang butuh config dulu, inisialisasi async</td></tr>
+    <tr><td><code>useExisting</code></td><td>Alias: token kedua menunjuk ke provider yang sudah ada</td><td>Nama lama tetap jalan setelah refactor</td></tr>
+  </tbody>
+</table>
+<p>
+  Detail dari dokumentasi: <code>useValue</code> berguna untuk <em>"replacing a real implementation with a mock object"</em>; <code>useFactory</code> menerima array <code>inject</code> berisi provider yang <em>"Nest resolves and passes as arguments to the factory function"</em>, dan provider di daftar itu boleh ditandai opsional;
+  dengan <code>useExisting</code>, kalau keduanya singleton, kedua token <em>"resolve to the same instance"</em>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/custom-providers">[2]</a></sup>
+</p>
+<pre><code>export const REDIS = Symbol('REDIS');
+
+@Module({
+  imports: [ConfigModule],
+  providers: [
+    {
+      provide: REDIS,
+      useFactory: async (config: ConfigService) =&gt; {
+        const client = createClient({ url: config.get('REDIS_URL') });
+        await client.connect();             // factory boleh async
+        return client;
+      },
+      inject: [ConfigService],              // urutan = urutan argumen factory
+    },
+  ],
+  exports: [REDIS],                         // export pakai token
+})
+export class RedisModule {}
+
+// pemakai:  constructor(@Inject(REDIS) private readonly redis: RedisClientType) {}</code></pre>
+<p class="note">Custom provider tetap privat untuk module yang mendeklarasikannya. Untuk dipakai module lain, export dengan token-nya atau dengan object provider lengkapnya. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/custom-providers">[2]</a></sup></p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Circular dependency dan forwardRef</h2>
+<p>
+  <em>"A circular dependency occurs when two classes depend on each other"</em>: <code>UsersService</code> butuh <code>AuthService</code> dan sebaliknya. Container tidak bisa membuat salah satunya lebih dulu, jadi start gagal.
+  Nest menyediakan <code>forwardRef()</code>, yang dipasang di <strong>kedua sisi</strong> bersama <code>@Inject()</code>; untuk dua module yang saling meng-import, <code>forwardRef()</code> juga dipasang di kedua sisi <code>imports</code>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/circular-dependency">[3]</a></sup>
+</p>
+<pre><code>@Injectable()
+export class UsersService {
+  constructor(
+    @Inject(forwardRef(() =&gt; AuthService))
+    private readonly auth: AuthService,
+  ) {}
+}
+// AuthService melakukan hal yang sama untuk UsersService.
+// Module: imports: [forwardRef(() =&gt; AuthModule)]</code></pre>
+<p>
+  Dua peringatan dari dokumentasi: hindari circular dependency kalau bisa, dan <em>"the order of instantiation is indeterminate"</em>, jadi jangan menulis kode yang bergantung pada constructor mana yang dipanggil lebih dulu. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/circular-dependency">[3]</a></sup>
+  Jawaban yang lebih baik di interview: <code>forwardRef</code> adalah jalan keluar darurat; perbaikan sebenarnya adalah memindahkan logika bersama ke service ketiga yang dipakai keduanya.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Custom provider dan forwardRef</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0017" data-bank-topic="nest-custom-provider" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0029.</p>
+  <blockquote>"Jelaskan bagaimana dependency injection di NestJS bekerja, dan kapan Anda memakai custom provider." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Setiap provider didaftarkan di module dengan sebuah token, biasanya class-nya sendiri. Saat container membuat class, ia membaca parameter constructor, mencari provider dengan token yang sama, membuatnya dulu kalau perlu, lalu menyuntikkannya. Default-nya singleton: satu instance dibagi ke semua pemakai. Interface tidak bisa jadi token karena hilang saat kompilasi, jadi untuk hal non-class saya pakai string atau Symbol dengan @Inject. Custom provider: useValue untuk konstanta atau mock di test, useClass untuk memilih implementasi, useFactory kalau nilainya perlu dihitung dari provider lain lewat inject, misalnya client Redis dari ConfigService, dan useExisting untuk alias. Circular dependency bisa diakali forwardRef di kedua sisi, tapi saya lebih suka memecahnya dengan service ketiga."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>token sebagai kunci pencarian dan container yang membaca constructor?</li>
+      <li>singleton sebagai default (satu instance dibagi)?</li>
+      <li>interface tidak bisa jadi token; pakai string/Symbol + @Inject?</li>
+      <li>useValue dan useClass beserta contoh pemakaiannya?</li>
+      <li>useFactory dengan inject, dan useExisting sebagai alias?</li>
+      <li>forwardRef untuk circular dependency, dan lebih baik dipecah dengan service ketiga?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Latihan tulis kode — di kertas, tanpa IDE</h2>
+  <p>Tulis jawabannya di kertas dulu, baru buka contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0029.</p>
+  <blockquote>"Tulis provider dengan token <code>MAILER</code> memakai <code>useFactory</code>: ia membaca <code>SMTP_URL</code> dari <code>ConfigService</code> dan mengembalikan <code>new Mailer(url)</code>. Export provider itu, lalu tulis constructor service yang meng-inject-nya." (5 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>export const MAILER = 'MAILER';
+
+@Module({
+  imports: [ConfigModule],
+  providers: [{
+    provide: MAILER,
+    useFactory: (config: ConfigService) =&gt; new Mailer(config.getOrThrow('SMTP_URL')),
+    inject: [ConfigService],
+  }],
+  exports: [MAILER],
+})
+export class MailModule {}
+
+@Injectable()
+export class NotifyService {
+  constructor(@Inject(MAILER) private readonly mailer: Mailer) {}
+}</code></pre>
+    <p><strong>Checklist:</strong> apakah kode Anda…</p>
+    <ul>
+      <li>memakai token non-class (string atau Symbol) yang diekspor sebagai konstanta?</li>
+      <li>menulis <code>provide</code> + <code>useFactory</code> yang mengembalikan instance?</li>
+      <li>mencantumkan <code>inject: [ConfigService]</code> sesuai urutan argumen factory?</li>
+      <li>meng-import module yang menyediakan <code>ConfigService</code>?</li>
+      <li>meng-export provider lewat token-nya?</li>
+      <li>meng-inject dengan <code>@Inject(MAILER)</code>, bukan mengandalkan tipe saja?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/fundamentals/custom-providers">NestJS docs: Custom providers</a>, ±15 menit. Contoh lengkap setiap bentuk custom provider, termasuk factory dengan provider opsional.
+</div>
+
+<p>Berikutnya, <a href="0018-scope-dan-dynamic-module.html">lesson 0018</a>: provider tidak selalu singleton. Apa arti scope REQUEST dan TRANSIENT, dan bagaimana module menerima konfigurasi lewat <code>forRoot</code>?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "NestJS inti") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa interface tidak bisa jadi token?", "Kapan useExisting berguna?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/providers">[1] NestJS docs: Providers</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/custom-providers">[2] NestJS docs: Custom providers</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/circular-dependency">[3] NestJS docs: Circular dependency</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0016-nestjs-dan-module.html">← 0016 · Kenapa NestJS; @Module dan feature module</a>
+  <a href="0018-scope-dan-dynamic-module.html">0018 · Scope provider dan dynamic module →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

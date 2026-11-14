@@ -105,6 +105,27 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### NestJS inti
 
+- [NestJS docs: First steps](https://docs.nestjs.com/first-steps)
+  Use for: platform-agnostic, Express default, Fastify, `@nestjs/platform-node` (NestJS 12) (0016).
+- [NestJS docs: Modules](https://docs.nestjs.com/modules)
+  Use for: empat properti `@Module`, shared module, re-export, `@Global` (0016, 0018).
+- [NestJS docs: Providers](https://docs.nestjs.com/providers)
+  Use for: definisi provider, `@Injectable`, constructor injection, singleton default (0017).
+- [NestJS docs: Custom providers](https://docs.nestjs.com/fundamentals/custom-providers)
+  Use for: IoC container, injection token, `useClass`/`useValue`/`useFactory`/`useExisting`, export custom provider (0016, 0017).
+- [NestJS docs: Circular dependency](https://docs.nestjs.com/fundamentals/circular-dependency)
+  Use for: `forwardRef` di provider dan module, urutan instansiasi tidak tentu (0017).
+- [NestJS docs: Injection scopes](https://docs.nestjs.com/fundamentals/injection-scopes)
+  Use for: DEFAULT/REQUEST/TRANSIENT, scope hierarchy (bubbling), ~5% latency, durable providers (0018).
+- [NestJS docs: Dynamic modules](https://docs.nestjs.com/fundamentals/dynamic-modules)
+  Use for: konvensi `forRoot`/`forFeature`/`register`, `forRootAsync`, `ConfigurableModuleBuilder` (0018).
+- [NestJS docs: Controllers](https://docs.nestjs.com/controllers)
+  Use for: decorator routing, `@Param`/`@Query`/`@Body`, status default 200/201, `@HttpCode`, `@Res` + passthrough, DTO sebagai class (0019).
+- [NestJS docs: Lifecycle events](https://docs.nestjs.com/fundamentals/lifecycle-events)
+  Use for: lima lifecycle hook, `enableShutdownHooks()`, urutan antar module, hook tidak jalan di request scope (0018, 0019).
+- [NestJS docs: Migration guide](https://docs.nestjs.com/migration-guide)
+  Use for: perubahan NestJS 12 (urutan lifecycle hook per level hierarki, route didaftarkan sesuai urutan deklarasi) (0019).
+
 ### Pipeline request
 
 - [NestJS docs: Request lifecycle](https://docs.nestjs.com/faq/request-lifecycle)
