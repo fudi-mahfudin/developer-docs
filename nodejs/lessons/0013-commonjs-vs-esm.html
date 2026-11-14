@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0013 · CommonJS vs ESM</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0013 · Node.js · Modul Modul &amp; tooling · ±20 menit</div>
+  <h1>CommonJS vs ESM</h1>
+  <p class="subtitle"><code>require</code> vs <code>import</code>, cara Node memilih format sebuah file, dan apa yang terjadi saat kedua format saling memuat</p>
+</header>
+
+<p>
+  Hampir setiap proyek Node yang Anda buka memakai salah satu dari dua sistem modul, kadang keduanya sekaligus. Error seperti <em>"Cannot use import statement outside a module"</em> atau <em>"__dirname is not defined"</em> muncul karena Node memperlakukan sebuah file dengan format yang tidak Anda kira.
+  Interviewer biasanya bertanya: apa bedanya, bagaimana Node menentukan format, dan apakah CommonJS bisa memuat ESM.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Apa beda CommonJS dan ES module di Node, dan bagaimana keduanya bisa saling memuat?"</em>
+  tanpa catatan, dalam 60 detik: sintaks dan sifat masing-masing, aturan <code>.mjs</code>/<code>.cjs</code>/field <code>"type"</code>, dan batas <code>require(esm)</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Dua sistem modul</h2>
+<p>
+  <strong>CommonJS</strong> adalah sistem modul asli Node: setiap file adalah modul, dimuat dengan <code>require()</code>, dan mengekspor lewat <code>module.exports</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/modules.html">[1]</a></sup>
+  <strong>ES module (ESM)</strong> adalah standar JavaScript yang juga dipakai browser: <code>import</code> dan <code>export</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/esm.html">[2]</a></sup>
+</p>
+<pre><code>// CommonJS: math.cjs
+const { PI } = Math;
+module.exports = { area: r =&gt; PI * r ** 2 };
+// pemakai
+const { area } = require('./math.cjs');
+
+// ESM: math.mjs
+export const area = r =&gt; Math.PI * r ** 2;
+// pemakai
+import { area } from './math.mjs';</code></pre>
+<table>
+  <thead><tr><th></th><th>CommonJS</th><th>ESM</th></tr></thead>
+  <tbody>
+    <tr><td>Sintaks</td><td><code>require</code>, <code>module.exports</code></td><td><code>import</code>, <code>export</code></td></tr>
+    <tr><td>Pemuatan</td><td>Sinkron, saat baris <code>require</code> dieksekusi</td><td>Graph modul di-resolve dulu, mendukung top-level await</td></tr>
+    <tr><td>Ekstensi di path relatif</td><td>Boleh tanpa ekstensi (<code>require('./util')</code>)</td><td>Wajib (<code>import './util.js'</code>) <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/esm.html#mandatory-file-extensions">[2]</a></sup></td></tr>
+    <tr><td><code>__dirname</code>, <code>__filename</code></td><td>Ada</td><td>Tidak ada; pakai <code>import.meta.dirname</code> / <code>import.meta.filename</code> <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/esm.html#no-__filename-or-__dirname">[2]</a></sup></td></tr>
+  </tbody>
+</table>
+<p>
+  <strong>Top-level await</strong> berarti <code>await</code> boleh ditulis langsung di badan modul ESM, di luar fungsi <code>async</code>; modul yang mengimpornya menunggu sampai selesai.
+  Kalau Promise-nya tidak pernah selesai, proses keluar dengan kode 13. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/esm.html#top-level-await">[2]</a></sup>
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Cara Node memilih format sebuah file</h2>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 220" role="img" aria-label="Ekstensi .mjs menjadi ESM, .cjs menjadi CommonJS, .js mengikuti field type di package.json terdekat; tanpa type, Node mencoba CommonJS lalu ESM kalau ada sintaks ESM">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="92" width="90" height="36" rx="4"/><text x="55" y="110">File</text></g>
+  <g class="node service"><rect x="170" y="12" width="110" height="36" rx="4"/><text x="225" y="30">.mjs</text></g>
+  <g class="node service"><rect x="170" y="92" width="110" height="36" rx="4"/><text x="225" y="110">.js</text></g>
+  <g class="node service"><rect x="170" y="172" width="110" height="36" rx="4"/><text x="225" y="190">.cjs</text></g>
+  <g class="node store"><rect x="470" y="12" width="160" height="36" rx="4"/><text x="550" y="30">ES module</text></g>
+  <g class="node store"><rect x="470" y="172" width="160" height="36" rx="4"/><text x="550" y="190">CommonJS</text></g>
+  <g class="node cache"><rect x="320" y="92" width="130" height="36" rx="4"/><text x="385" y="110">"type" terdekat?</text></g>
+  <path class="edge" d="M100,104 L168,34"/>
+  <path class="edge" d="M100,110 H168"/>
+  <path class="edge" d="M100,116 L168,186"/>
+  <path class="edge" d="M280,30 H468"/>
+  <path class="edge" d="M280,190 H468"/>
+  <path class="edge" d="M280,110 H318"/>
+  <path class="edge" d="M420,92 L490,50"/>
+  <path class="edge" d="M420,128 L490,170"/>
+  <path class="edge async" d="M450,110 C560,110 560,90 550,50"/>
+  <text class="label" x="470" y="72">"module"</text>
+  <text class="label" x="475" y="152">"commonjs"</text>
+  <text class="label" x="590" y="100">tanpa type: deteksi sintaks</text>
+</svg>
+<figcaption>Garis putus-putus: tanpa field <code>"type"</code>, Node mencoba CommonJS dulu dan beralih ke ESM kalau parser menemukan sintaks ESM (syntax detection).</figcaption>
+</figure>
+<p>Aturannya dari dokumentasi Node: <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/packages.html#determining-module-system">[3]</a></sup></p>
+<ul>
+  <li><code>.mjs</code> selalu ESM, <code>.cjs</code> selalu CommonJS.</li>
+  <li><code>.js</code> mengikuti field <code>"type"</code> di <code>package.json</code> terdekat: <code>"module"</code> berarti ESM, <code>"commonjs"</code> berarti CommonJS.</li>
+  <li>Tanpa field <code>"type"</code>, file <code>.js</code> "ambigu": Node menjalankannya sebagai CommonJS, lalu mencoba ulang sebagai ESM kalau ada sintaks <code>import</code>/<code>export</code> (syntax detection, aktif default sejak Node ≥ 22.7). Cara ini ada biaya performanya, jadi dokumentasi menyarankan paket <em>selalu</em> menulis <code>"type"</code>, bahkan kalau semua isinya CommonJS. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/packages.html#syntax-detection">[3]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Format apa file ini?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0020.</p>
+  <div class="quiz" data-bank-lesson="0013" data-bank-topic="tooling-format-modul" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Interop: ESM memuat CommonJS</h2>
+<p>
+  Dari ESM, <code>import</code> bisa memuat file CommonJS. Objek <code>module.exports</code> menjadi <strong>default export</strong>.
+  Named export kadang juga tersedia, tapi hanya dari analisis statis yang bersifat <em>best-effort</em>, jadi default import yang paling andal. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/esm.html#interoperability-with-commonjs">[2]</a></sup>
+</p>
+<pre><code>// legacy.cjs
+module.exports = { a: 1 };
+
+// app.mjs
+import lib from './legacy.cjs';   // lib = { a: 1 }
+import { a } from './legacy.cjs'; // hanya jalan kalau analisis statis menemukan 'a'</code></pre>
+
+<!-- ============ 4 ============ -->
+<h2>4. Interop: CommonJS memuat ESM, dan <code>require(esm)</code></h2>
+<p>
+  Dari CommonJS, cara yang selalu jalan adalah <code>import()</code> dinamis: ia mengembalikan Promise, jadi pemanggilnya harus asinkron. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/esm.html#import-statements">[2]</a></sup>
+  Dulu <code>require()</code> pada file ESM selalu error. Sekarang tidak lagi:
+</p>
+<ul>
+  <li><strong><code>require(esm)</code></strong> tidak lagi butuh flag sejak <strong>Node ≥ 22.12</strong> (juga 23.0 dan 20.19), dan tidak lagi berstatus experimental sejak <strong>Node 24.15</strong>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require">[1]</a></sup></li>
+  <li>Syaratnya: modul (dan seluruh graph yang ia impor) <strong>sepenuhnya sinkron</strong>, tanpa top-level await. Kalau ada, Node melempar <code>ERR_REQUIRE_ASYNC_MODULE</code> dan menyarankan <code>import()</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/modules.html#loading-ecmascript-modules-using-require">[1]</a></sup></li>
+  <li>Hasilnya adalah <em>namespace object</em> modul itu. Default export ada di properti <code>default</code>, bukan nilai yang langsung dikembalikan.</li>
+</ul>
+<pre><code>// point.mjs
+export default class Point { constructor(x, y) { this.x = x; this.y = y; } }
+
+// app.cjs (Node ≥ 22.12)
+const { default: Point } = require('./point.mjs');
+
+// app.cjs, cara yang jalan di semua versi dan untuk modul dengan top-level await
+const { default: Point2 } = await import('./point.mjs'); // di dalam fungsi async</code></pre>
+<p class="note">Di interview, sebut versi: "require(esm) aktif tanpa flag sejak Node 22.12, asal tanpa top-level await." Jawaban "CommonJS tidak bisa me-require ESM" sudah usang untuk Node 24.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Saling memuat</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <div class="quiz" data-bank-lesson="0013" data-bank-topic="tooling-interop-esm" data-stack></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<h2>5. Memilih untuk proyek baru</h2>
+<p>
+  Untuk aplikasi baru yang dijalankan langsung oleh Node, ESM dengan <code>"type": "module"</code> adalah pilihan standar. CommonJS masih wajar untuk codebase lama, atau ketika toolchain proyek mengompilasi ke CommonJS
+  (Anda akan melihat <code>require</code> di folder <code>dist/</code> hasil build banyak proyek TypeScript; konfigurasinya dibahas di lesson 0015).
+  Yang penting adalah konsisten dan eksplisit: tulis <code>"type"</code>, dan pakai <code>.cjs</code>/<code>.mjs</code> hanya untuk pengecualian.
+</p>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0020.</p>
+  <blockquote>"Apa beda CommonJS dan ES module di Node, dan bagaimana keduanya bisa saling memuat?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"CommonJS memakai require dan module.exports, dimuat sinkron; ES module memakai import/export, standar JavaScript, dan mendukung top-level await. Node menentukan formatnya dari ekstensi dan field type: .mjs selalu ESM, .cjs selalu CommonJS, .js mengikuti "type" di package.json terdekat. Di ESM, ekstensi file wajib ditulis di import relatif, dan __dirname diganti import.meta.dirname. Dari ESM, import file CommonJS memberi module.exports sebagai default export. Dari CommonJS, dulu hanya bisa pakai import() yang asinkron; sejak Node 22.12 require(esm) aktif tanpa flag dan di Node 24 sudah stabil, asal modulnya tidak memakai top-level await. Kalau memakai, Node melempar ERR_REQUIRE_ASYNC_MODULE dan saya pakai import(). Untuk paket baru saya tulis "type" secara eksplisit."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>require/module.exports vs import/export, CommonJS dimuat sinkron?</li>
+      <li>format ditentukan .mjs/.cjs dan field "type" di package.json terdekat?</li>
+      <li>ESM wajib ekstensi di import relatif, tanpa __dirname (pakai import.meta.dirname)?</li>
+      <li>import CommonJS dari ESM: module.exports menjadi default export?</li>
+      <li>require(esm) jalan tanpa flag sejak Node 22.12, kecuali modul dengan top-level await?</li>
+      <li>import() sebagai jalan dari CommonJS ke ESM asinkron?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://nodejs.org/docs/latest-v24.x/api/packages.html#determining-module-system">Node.js v24: Modules: Packages, "Determining module system"</a>, ±10 menit. Aturan resmi format modul, syntax detection, dan field <code>"type"</code>.
+</div>
+
+<p>Berikutnya, <a href="0014-package-json-dan-dependency.html">lesson 0014</a>: field <code>"exports"</code> dan <code>"main"</code> di <code>package.json</code>, range semver, lockfile, dan jenis dependency.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Modul &amp; tooling") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa require(esm) gagal kalau ada top-level await?", "Kapan named import dari CommonJS tidak jalan?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/modules.html">[1] Node.js v24: Modules: CommonJS modules (termasuk "Loading ECMAScript modules using require()")</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/esm.html">[2] Node.js v24: Modules: ECMAScript modules</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/packages.html">[3] Node.js v24: Modules: Packages</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0012-review-runtime-async.html">← 0012 · Review 1: Runtime + Async &amp; error</a>
+  <a href="0014-package-json-dan-dependency.html">0014 · package.json, semver, lockfile, dan jenis dependency →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
