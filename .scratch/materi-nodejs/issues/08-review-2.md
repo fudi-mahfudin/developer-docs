@@ -1,6 +1,6 @@
 # 08: Review 2 (0020)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 04, 06
 
