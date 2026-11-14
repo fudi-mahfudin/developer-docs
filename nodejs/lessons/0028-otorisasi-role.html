@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0028 · Otorisasi role: RolesGuard, @Public, 401 vs 403</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0028 · Node.js · Modul Data &amp; auth · ±20 menit</div>
+  <h1>Otorisasi role: <code>@Roles</code>, <code>RolesGuard</code>, dan 401 vs 403</h1>
+  <p class="subtitle">RBAC dengan decorator + <code>Reflector</code>, guard global + <code>@Public</code>, cek kepemilikan resource, dan status code yang tepat</p>
+</header>
+
+<p>
+  Di <a href="0027-autentikasi-jwt-passport.html">lesson 0027</a> guard autentikasi mengisi <code>req.user</code>. Lesson ini memakai informasi itu untuk memutuskan <em>boleh atau tidak</em>.
+  Ini salah satu soal live coding NestJS yang paling sering diminta: "tulis guard yang mengecek role".
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa <em>menulis di kertas</em> decorator <code>@Roles</code> dan <code>RolesGuard</code> dalam 5 menit,
+  menjelaskan kenapa cek kepemilikan resource tidak bisa diselesaikan oleh role saja, dan menjawab "kapan 401, kapan 403?" dengan merujuk RFC 9110.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. RBAC dengan <code>@Roles</code> + <code>RolesGuard</code></h2>
+<p>
+  <strong>RBAC</strong> (role-based access control): izin ditempel ke role (<code>admin</code>, <code>staff</code>), dan user mendapat izin lewat role yang dimilikinya.
+  Di Nest, polanya tiga bagian: decorator menempelkan metadata "role yang dibutuhkan" ke handler, guard membaca metadata itu lewat <code>Reflector</code>, lalu membandingkannya dengan <code>req.user.roles</code>.
+</p>
+<pre><code>export enum Role { User = 'user', Admin = 'admin' }
+
+export const Roles = Reflector.createDecorator&lt;Role[]&gt;();
+// cara lama yang setara: export const Roles = (...roles: Role[]) =&gt; SetMetadata('roles', roles);
+
+@Roles([Role.Admin])
+@Delete(':id')
+remove(@Param('id', ParseIntPipe) id: number) { return this.posts.remove(id); }</code></pre>
+<p>
+  <code>Reflector.createDecorator</code> membuat decorator ber-type sekaligus kunci metadatanya; <code>SetMetadata</code> adalah cara tingkat rendah yang setara. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/execution-context">[1]</a></sup>
+</p>
+<pre><code>@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride(Roles, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required) return true;                 // route tanpa @Roles
+    const { user } = context.switchToHttp().getRequest();
+    return required.some((role) =&gt; user?.roles?.includes(role));
+  }
+}</code></pre>
+<ul>
+  <li><code>getAllAndOverride</code> mengembalikan nilai pertama yang terdefinisi sesuai urutan target, jadi <code>@Roles</code> di method mengalahkan <code>@Roles</code> di controller. <code>getAllAndMerge</code> menggabungkan keduanya. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/execution-context">[1]</a></sup></li>
+  <li>Saat guard mengembalikan <code>false</code>, Nest melempar <code>ForbiddenException</code>: <code>{"statusCode": 403, "message": "Forbidden resource", "error": "Forbidden"}</code>. Butuh status lain? Lempar exception sendiri dari guard. <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup></li>
+  <li>Guard berjalan setelah semua middleware dan sebelum interceptor atau pipe, sehingga request yang ditolak tidak pernah sampai ke validasi body. <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — RBAC</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0028" data-bank-topic="data-rbac" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Guard global + <code>@Public</code></h2>
+<p>
+  Memasang <code>@UseGuards(JwtAuthGuard)</code> di setiap controller mudah terlupa. Pola yang lebih aman: daftarkan guard autentikasi secara global lewat token <code>APP_GUARD</code> (default tertutup),
+  lalu buka route tertentu dengan decorator <code>@Public()</code>. Guard global membaca metadata itu dan langsung mengizinkan. <sup class="cite"><a href="https://docs.nestjs.com/recipes/passport">[3]</a></sup>
+</p>
+<pre><code>export const IS_PUBLIC_KEY = 'isPublic';
+export const Public = () =&gt; SetMetadata(IS_PUBLIC_KEY, true);
+
+@Injectable()
+export class JwtAuthGuard extends AuthGuard('jwt') {
+  constructor(private reflector: Reflector) { super(); }
+  canActivate(context: ExecutionContext) {
+    const isPublic = this.reflector.getAllAndOverride&lt;boolean&gt;(IS_PUBLIC_KEY, [
+      context.getHandler(), context.getClass(),
+    ]);
+    return isPublic ? true : super.canActivate(context);
+  }
+}
+
+// AppModule: providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard },
+//                        { provide: APP_GUARD, useClass: RolesGuard }]</code></pre>
+<p>
+  <code>APP_GUARD</code> (bukan <code>app.useGlobalGuards()</code>) membuat guard global tetap bisa meng-inject dependency seperti <code>Reflector</code>; guard yang didaftarkan dengan <code>useGlobalGuards()</code> di luar module tidak bisa. <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup>
+  <code>RolesGuard</code> membutuhkan <code>req.user</code>, jadi guard autentikasi harus berjalan lebih dulu.
+</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Cek kepemilikan resource</h2>
+<p>
+  Role menjawab "user jenis apa", bukan "milik siapa data ini". Role <code>user</code> boleh mengedit post, tapi hanya post <em>miliknya</em>.
+  Informasi kepemilikan ada di database, jadi ceknya dilakukan di service setelah data dibaca, bukan di guard yang hanya melihat metadata route.
+</p>
+<pre><code>async update(id: number, dto: UpdatePostDto, user: { userId: number; roles: Role[] }) {
+  const post = await this.prisma.post.findUnique({ where: { id } });
+  if (!post) throw new NotFoundException();
+  const isOwner = post.authorId === user.userId;
+  if (!isOwner &amp;&amp; !user.roles.includes(Role.Admin)) throw new ForbiddenException();
+  return this.prisma.post.update({ where: { id }, data: dto });
+}</code></pre>
+<p>
+  Lupa cek ini adalah bug klasik IDOR (insecure direct object reference): user A cukup mengganti ID di URL untuk mengubah data user B.
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. 401 vs 403</h2>
+<p>
+  RFC 9110 membedakan keduanya dengan jelas: <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110#section-15.5.2">[4]</a></sup>
+</p>
+<ul>
+  <li><strong>401 Unauthorized</strong>: request "lacks valid authentication credentials". Server yang mengirim 401 wajib menyertakan header <code>WWW-Authenticate</code>. Artinya: <em>saya belum tahu Anda siapa</em> (token tidak ada, kedaluwarsa, tanda tangan salah).</li>
+  <li><strong>403 Forbidden</strong>: server "understood the request but refuses to fulfill it"; kalau kredensial dikirim, server "considers them insufficient to grant access". Artinya: <em>saya tahu Anda siapa, tapi Anda tidak boleh</em> (role kurang, bukan pemilik).</li>
+  <li>Server yang ingin menyembunyikan keberadaan resource terlarang boleh menjawab <strong>404</strong> sebagai gantinya. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110#section-15.5.4">[5]</a></sup></li>
+</ul>
+<div class="flow">
+  <span class="box">token valid?</span><span class="arrow">→ tidak →</span>
+  <span class="box">401</span>
+  <span class="arrow">· ya →</span>
+  <span class="box">role/kepemilikan cukup?</span><span class="arrow">→ tidak →</span>
+  <span class="box">403 (atau 404)</span>
+</div>
+
+<section class="exercise">
+  <h2>Latihan 2 — 401 vs 403 dan kepemilikan</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0028" data-bank-topic="data-401-403" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan tulis kode — di kertas, tanpa IDE</h2>
+  <p>Pasang timer 5 menit. Tulis kodenya di kertas, lalu jelaskan dengan suara keras seolah sedang live coding. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tulis decorator <code>@Roles</code> dan <code>RolesGuard</code> supaya <code>DELETE /posts/:id</code> hanya bisa dipanggil admin. Role boleh dipasang di controller atau di method; yang di method menang. Route tanpa <code>@Roles</code> tetap terbuka bagi user yang sudah login."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride(Roles, [
+      context.getHandler(), context.getClass(),
+    ]);
+    if (!required) return true;
+    const { user } = context.switchToHttp().getRequest();
+    return required.some((r) =&gt; user?.roles?.includes(r));
+  }
+}
+
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(['admin'])
+@Delete(':id')
+remove(@Param('id', ParseIntPipe) id: number) { return this.posts.remove(id); }</code></pre>
+    <p>"Decorator menempel metadata role; guard membacanya dengan Reflector, method dulu lalu class, jadi method menang. Tanpa metadata, guard mengizinkan. JwtAuthGuard jalan dulu supaya req.user terisi; kalau role tidak cocok, guard mengembalikan false dan Nest menjawab 403."</p>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>membuat decorator <code>@Roles</code> (<code>Reflector.createDecorator</code> atau <code>SetMetadata</code>)?</li>
+      <li>menulis <code>RolesGuard implements CanActivate</code> yang meng-inject <code>Reflector</code>?</li>
+      <li>membaca metadata dari handler <em>dan</em> class dengan <code>getAllAndOverride</code> (method menang)?</li>
+      <li>mengizinkan (<code>return true</code>) route tanpa <code>@Roles</code>?</li>
+      <li>membandingkan dengan <code>request.user.roles</code> dan menyebut bahwa guard autentikasi harus jalan lebih dulu?</li>
+      <li>menyebut bahwa <code>false</code> menghasilkan 403, bukan 401?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0029-review-nestjs-pipeline.html">lesson 0029</a>: Review 3, menguji ulang NestJS inti dan Pipeline request. Modul Data &amp; auth ini diuji di Review 4 (0035).</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Data &amp; auth") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "kapan RBAC tidak cukup dan perlu policy/ABAC?", "bagaimana menguji RolesGuard dengan mock ExecutionContext?", atau "kapan sebaiknya menjawab 404 alih-alih 403?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/fundamentals/execution-context">[1] NestJS docs: Execution context (Reflector dan metadata)</a> ·
+  <a href="https://docs.nestjs.com/guards">[2] NestJS docs: Guards</a> ·
+  <a href="https://docs.nestjs.com/recipes/passport">[3] NestJS docs: Passport (auth), bagian global guard dan @Public</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110#section-15.5.2">[4] RFC 9110: HTTP Semantics, §15.5.2 401 Unauthorized</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110#section-15.5.4">[5] RFC 9110: HTTP Semantics, §15.5.4 403 Forbidden</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0027-autentikasi-jwt-passport.html">← 0027 · Autentikasi: hashing, JWT, Passport</a>
+  <a href="0029-review-nestjs-pipeline.html">0029 · Review 3: NestJS inti + Pipeline request →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0028.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

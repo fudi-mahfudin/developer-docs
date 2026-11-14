@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0020 · Review 2: I/O &amp; skala + Modul &amp; tooling</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0020 · Node.js · Review · ±20 menit · seam penguasaan</div>
+  <h1>Review 2: I/O &amp; skala + Modul &amp; tooling</h1>
+  <p class="subtitle">Tanpa materi baru: soal kuis dan lisan dari modul sebelumnya, diacak bersama (interleaving).</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> keluar dengan daftar jujur topik yang <em>benar-benar menempel</em> dari modul I/O &amp; skala (0008–0011) dan Modul &amp; tooling (0013–0015), dan yang perlu diulang.
+</div>
+
+<p class="note">
+  Review ini <strong>sengaja tertunda satu modul</strong>: Modul I/O &amp; skala (0008–0011) dan Modul &amp; tooling (0013–0015) diuji setelah Anda menyelesaikan modul NestJS inti (0016–0019). Jeda itu membuat skornya mengukur ingatan (retensi), bukan hafalan beberapa menit sebelumnya (fluency). Tanpa materi baru.
+</p>
+
+<h2>Aturan main</h2>
+<ol>
+  <li><strong>Jangan buka catatan, lesson, reference, atau tab lain.</strong> Yang diuji adalah kemampuan menjawab pertanyaan interview Node.js tanpa catatan. Kalau Anda mengintip, hasilnya tidak berarti.</li>
+  <li><strong>Soal kuis:</strong> pilih satu jawaban. Ada tepat satu soal kuis untuk setiap topik modul yang diuji (14 topik = 14 kuis), jadi setiap topik diuji minimal sekali.</li>
+  <li><strong>Soal lisan:</strong> jawab dengan suara keras (±60–90 detik, boleh direkam di ponsel) <em>sebelum</em> membuka checklist, lalu centang hanya poin yang benar-benar Anda sebut, bukan yang "sebenarnya tahu". Untuk soal "tulis kode", tulis jawabannya di kertas dulu, tanpa IDE.</li>
+  <li><strong>Kriteria lulus per topik:</strong> soal kuis acak dijawab benar, dan soal lisan topik itu lulus (minimal 2/3 poin checklist dicentang, misalnya 4 dari 6). Satu kesalahan di topik itu = topik lemah.
+    Topik yang kuisnya benar tapi tidak mendapat soal lisan tampil sebagai <em>Kuis lulus, lisan belum diuji</em> dan belum dihitung lulus.</li>
+</ol>
+
+<p class="note">
+  Urutan soal mengikuti seed yang tampil di bawah. Tombol "Acak ulang" membuat set baru, tapi kerjakan <strong>set pertama</strong> sampai selesai sebelum mengacak ulang; hasil set pertama itulah yang dilaporkan.
+  Untuk mengulang set yang sama nanti, tambahkan <code>?seed=NNN</code> di URL. Hanya 3 soal lisan yang ditarik, jadi topik lain bisa diuji lewat <code>?seed=</code> berbeda di sesi berikutnya (pengulangan berjarak).
+</p>
+
+<!--
+  Pengaturan review (cara agent mengubahnya):
+  - data-lessons = lesson modul yang diuji (semua topiknya ikut).
+  - data-mc = jumlah topik kuis di pool (sekarang 14: io- 8, tooling- 6), supaya draw() menarik tepat satu kuis per topik.
+    Hitung ulang bila bank soal modul itu mendapat topik baru; tests/nodejs/review.test.js memeriksanya.
+  - data-oral = 3, supaya review muat ±20 menit.
+  - data-topics: kosong. Untuk sesi ulang (topik lemah), isi slug lemah dan pakai ?seed= baru.
+-->
+<div class="review" data-title="Review 2: I/O &amp; skala + Modul &amp; tooling" data-lessons="0008,0009,0010,0011,0013,0014,0015"
+     data-topics="" data-mc="14" data-oral="3"></div>
+
+<section class="exercise">
+  <h2>Setelah selesai: laporkan hasilnya ke agent</h2>
+  <ol>
+    <li>Setelah semua soal dijawab, ringkasan per topik muncul di bawah soal terakhir.</li>
+    <li>Tekan <strong>Salin</strong> (atau blok teks di kotak ringkasan), lalu <strong>tempel ke agent</strong> di terminal, misalnya:
+      <em>"Ini hasil review 0020 Node.js, tolong dicatat."</em></li>
+    <li>Agent menulis learning record "sudah dikuasai" di <code>nodejs/learning-records/</code> <strong>hanya untuk topik yang lulus</strong> (kuis benar dan lisan lulus), dengan seed dan skor sebagai bukti.
+      Topik <em>Kuis lulus, lisan belum diuji</em> dicatat di NOTES saja, tanpa learning record.</li>
+    <li>Topik yang lemah dicatat sebagai baris "Topik lemah Node.js 0020: …" di <code>nodejs/NOTES.md</code>, lalu dimasukkan ke <code>data-topics</code> Review 4 (0035) supaya diuji lagi.</li>
+  </ol>
+  <p class="note">Hanya hasil review 0012, 0020, 0029, dan 0035 yang dicatat sebagai bukti penguasaan Node.js. Skor kuis di lesson biasa tidak dihitung.</p>
+</section>
+
+<h2>Kalau ada topik lemah</h2>
+<p>
+  Jangan baca ulang seluruh modul. Buka hanya bagian yang sesuai: topik <code>io-</code> ada di lesson 0008–0011, topik <code>tooling-</code> di lesson 0013–0015 (label topik di ringkasan menyebut bagiannya).
+  Lalu tutup, dan jelaskan lagi dengan suara keras.
+</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas setelah review? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa write() yang mengembalikan false harus menunggu drain?", "Buatkan soal latihan tambahan untuk topik tooling-interop-esm."</p>
+
+<nav class="lesson-nav">
+  <a href="0019-controller-dan-lifecycle.html">← 0019 · Controller, routing, dan lifecycle hooks</a>
+  <a href="0021-urutan-pipeline-request.html">0021 · Urutan pipeline request NestJS →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../assets/questions/0009.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../assets/questions/0015.js"></script>
+<script src="../../assets/review.js"></script>
+</body>
+</html>

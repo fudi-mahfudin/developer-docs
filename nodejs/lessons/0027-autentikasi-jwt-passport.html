@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0027 · Autentikasi: hashing password, JWT, Passport</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0027 · Node.js · Modul Data &amp; auth · ±20 menit</div>
+  <h1>Autentikasi: hashing password, JWT, dan Passport</h1>
+  <p class="subtitle">Menyimpan password dengan argon2/bcrypt, JWT access vs refresh token, <code>@nestjs/jwt</code>, strategi Passport (local, jwt), dan <code>AuthGuard</code></p>
+</header>
+
+<p>
+  Data user sudah tersimpan lewat <code>PrismaService</code> (<a href="0025-prisma-dan-prismaservice.html">0025</a>). Sekarang dua pertanyaan interview yang hampir pasti muncul:
+  "bagaimana Anda menyimpan password?" dan "bagaimana request berikutnya tahu siapa user-nya?".
+  <strong>Autentikasi</strong> menjawab <em>siapa Anda</em>; <strong>otorisasi</strong> (lesson 0028) menjawab <em>Anda boleh apa</em>.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan dalam 60 detik kenapa password di-hash dengan argon2id atau bcrypt (bukan SHA-256),
+  apa isi JWT dan beda access token dengan refresh token, lalu menulis di kertas <code>AuthService.signIn</code> yang memverifikasi hash dan menerbitkan JWT.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Hashing password</h2>
+<p>
+  Password disimpan sebagai <strong>hash</strong>, bukan dienkripsi: hashing adalah fungsi satu arah, jadi server tidak pernah bisa (dan tidak perlu) mengembalikan password asli.
+  Saat login, password yang dikirim di-hash ulang lalu dibandingkan. Hash cepat seperti SHA-256 <strong>tidak cocok</strong>, karena penyerang yang mencuri database bisa mencoba miliaran tebakan per detik. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Algoritma</th><th>Rekomendasi OWASP (minimum)</th><th>Catatan</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Argon2id</strong></td><td>memori 19 MiB, iterasi 2, paralelisme 1</td><td>pilihan pertama, memory-hard</td></tr>
+    <tr><td>scrypt</td><td>cost 2<sup>17</sup>, block size 8</td><td>kalau Argon2id tidak tersedia</td></tr>
+    <tr><td>bcrypt</td><td>work factor 10 atau lebih</td><td>sistem lama; input maksimal 72 byte</td></tr>
+  </tbody>
+</table>
+<p>
+  Angka di tabel dari OWASP Password Storage Cheat Sheet. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">[1]</a></sup>
+  <em>Salt</em> (nilai acak unik per password, supaya dua password sama menghasilkan hash berbeda) wajib, tetapi library populer membuat dan menyimpannya otomatis di dalam string hash.
+  <em>Memory-hard</em> artinya setiap tebakan butuh banyak memori, sehingga GPU tidak bisa menebak secara massal dengan murah.
+</p>
+<pre><code>import * as argon2 from 'argon2';
+
+const hash = await argon2.hash(dto.password);        // saat register
+const ok = await argon2.verify(user.passwordHash, dto.password); // saat login
+
+// bcrypt (codebase lama): await bcrypt.hash(pw, 10) dan await bcrypt.compare(pw, hash)</code></pre>
+<p>
+  Hashing password sengaja lambat, jadi selalu pakai API async (<code>await</code>), bukan varian sync seperti <code>bcrypt.hashSync</code> yang memblokir event loop selama hashing berjalan.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Hashing password</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0027" data-bank-topic="data-hash-password" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. JWT: access token dan refresh token</h2>
+<p>
+  <strong>JWT</strong> (JSON Web Token) adalah "a compact, URL-safe means of representing claims to be transferred between two parties".
+  Claim-nya berupa objek JSON yang menjadi payload JWS (ditandatangani) atau JWE (dienkripsi). <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7519">[2]</a></sup>
+  Hampir semua API memakai JWS: isi token bisa dibaca siapa pun (hanya base64url), tetapi tidak bisa diubah tanpa merusak tanda tangan. Jadi jangan menaruh data rahasia di payload.
+</p>
+<pre><code>header.payload.signature
+payload: { "sub": "42", "username": "ani", "iat": 1763100000, "exp": 1763100900 }</code></pre>
+<ul>
+  <li><code>sub</code> (subject): siapa principal token ini, biasanya ID user. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7519">[2]</a></sup></li>
+  <li><code>iat</code> (issued at): kapan token diterbitkan. <code>exp</code> (expiration time): pada atau setelah waktu ini token "MUST NOT be accepted for processing". <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7519">[2]</a></sup></li>
+</ul>
+<p>
+  <strong>Access token</strong> dikirim di setiap request (<code>Authorization: Bearer &lt;token&gt;</code>) dan dibuat berumur pendek (menit), karena JWT tidak bisa ditarik kembali sebelum <code>exp</code>.
+  <strong>Refresh token</strong> adalah kredensial yang dipakai untuk mendapatkan access token baru saat access token kedaluwarsa. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6749#section-1.5">[3]</a></sup>
+  Istilah ini berasal dari OAuth 2.0 (standar delegasi akses), tetapi polanya dipakai juga di login biasa: refresh token berumur panjang, disimpan di server (atau hash-nya) supaya bisa dicabut saat logout, dan diganti baru setiap kali dipakai (rotasi).
+</p>
+<p>
+  Di Nest, token diterbitkan dengan <code>@nestjs/jwt</code>. Dokumentasi Nest memakai claim <code>sub</code> untuk ID user "to be consistent with JWT standards", dan meminta secret tidak pernah dibocorkan (simpan di env var atau secret vault). <sup class="cite"><a href="https://docs.nestjs.com/recipes/passport">[4]</a></sup>
+</p>
+<pre><code>JwtModule.register({ secret: process.env.JWT_SECRET, signOptions: { expiresIn: '15m' } })
+
+const payload = { sub: user.id, username: user.username };
+return { access_token: this.jwtService.sign(payload) };</code></pre>
+
+<!-- ============ 3 ============ -->
+<h2>3. Passport: strategi local dan jwt, <code>AuthGuard</code></h2>
+<p>
+  <strong>Passport</strong> adalah library autentikasi Node.js yang paling populer, dan <code>@nestjs/passport</code> membungkusnya. <sup class="cite"><a href="https://docs.nestjs.com/recipes/passport">[4]</a></sup>
+  Setiap cara login adalah satu <em>strategy</em>. Anda menulis <code>validate()</code>; nilai yang dikembalikan dipasang Passport ke <code>req.user</code>.
+</p>
+<ul>
+  <li><strong>Strategy <code>local</code></strong> (paket <code>passport-local</code>): membaca <code>username</code> dan <code>password</code> dari body (bisa diganti, mis. <code>usernameField: 'email'</code>), dipakai di endpoint login.</li>
+  <li><strong>Strategy <code>jwt</code></strong> (paket <code>passport-jwt</code>): membaca token dari header Bearer, memverifikasi tanda tangan dan <code>exp</code>. Token kedaluwarsa ditolak dengan <code>401 Unauthorized</code>. <sup class="cite"><a href="https://docs.nestjs.com/recipes/passport">[4]</a></sup></li>
+</ul>
+<pre><code>@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor() {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: process.env.JWT_SECRET,
+    });
+  }
+  validate(payload: { sub: number; username: string }) {
+    return { userId: payload.sub, username: payload.username }; // → req.user
+  }
+}
+
+@UseGuards(AuthGuard('local')) @Post('auth/login') login(@Req() req) { return this.auth.login(req.user); }
+@UseGuards(AuthGuard('jwt'))   @Get('profile')     profile(@Req() req) { return req.user; }</code></pre>
+<div class="flow">
+  <span class="box">POST /auth/login</span><span class="arrow">→</span>
+  <span class="box">AuthGuard('local'): verifikasi hash</span><span class="arrow">→</span>
+  <span class="box">terbitkan JWT</span><span class="arrow">→</span>
+  <span class="box">GET /profile + Bearer</span><span class="arrow">→</span>
+  <span class="box">AuthGuard('jwt'): req.user</span>
+</div>
+<p class="note">
+  <strong>Versi (NestJS 12).</strong> Bab Authentication di dokumentasi Nest kini memakai paket resmi baru <code>@nestjs/authentication</code> (guard global, <code>@Public()</code>, hashing scrypt bawaan dengan parameter OWASP),
+  sementara Passport tetap ada sebagai recipe. <sup class="cite"><a href="https://docs.nestjs.com/security/authentication">[5]</a></sup>
+  Banyak codebase dan soal interview masih memakai pola Passport + <code>@nestjs/jwt</code> di atas, dan konsepnya (hash, token, guard) sama.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — JWT dan Passport</h2>
+  <p>Jawab tanpa scroll ke atas.</p>
+  <div class="quiz" data-bank-lesson="0027" data-bank-topic="data-jwt-passport" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan tulis kode — di kertas, tanpa IDE</h2>
+  <p>Pasang timer 5 menit. Tulis kodenya di kertas, lalu jelaskan dengan suara keras. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tulis <code>AuthService.signIn(email, password)</code>: cari user lewat Prisma, verifikasi password dengan argon2, lalu kembalikan access token JWT. Kalau gagal, respons harus sama untuk email salah maupun password salah."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>@Injectable()
+export class AuthService {
+  constructor(private prisma: PrismaService, private jwt: JwtService) {}
+
+  async signIn(email: string, password: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !(await argon2.verify(user.passwordHash, password))) {
+      throw new UnauthorizedException('Email atau password salah');
+    }
+    return { access_token: await this.jwt.signAsync({ sub: user.id }) };
+  }
+}</code></pre>
+    <p>"Password dibandingkan lewat argon2.verify, bukan string compare. Email salah dan password salah memberi 401 dengan pesan yang sama supaya penyerang tidak bisa menebak email mana yang terdaftar. Payload hanya berisi sub, karena JWT bisa dibaca siapa pun; masa berlakunya pendek lewat expiresIn di JwtModule."</p>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>meng-inject <code>PrismaService</code> dan <code>JwtService</code> lewat constructor?</li>
+      <li>memverifikasi dengan <code>argon2.verify</code> (atau <code>bcrypt.compare</code>), bukan membandingkan string atau hash cepat?</li>
+      <li>melempar <code>UnauthorizedException</code> (401) dengan pesan yang sama untuk email dan password salah?</li>
+      <li>memakai claim <code>sub</code> untuk ID user di payload?</li>
+      <li>tidak menaruh data rahasia (password, hash) di payload JWT?</li>
+      <li>menyebut access token berumur pendek (<code>expiresIn</code>) dan secret dari env var?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0028-otorisasi-role.html">lesson 0028</a>: user sudah dikenal, sekarang apa yang boleh ia lakukan. <code>@Roles</code>, <code>RolesGuard</code>, dan 401 vs 403.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Data &amp; auth") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "di mana sebaiknya refresh token disimpan di browser?", "bagaimana mencabut JWT sebelum exp?", atau "kenapa bcrypt memotong password lebih dari 72 byte?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">[1] OWASP Password Storage Cheat Sheet</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc7519">[2] RFC 7519: JSON Web Token (JWT)</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc6749#section-1.5">[3] RFC 6749: The OAuth 2.0 Authorization Framework, §1.5 Refresh Token</a> ·
+  <a href="https://docs.nestjs.com/recipes/passport">[4] NestJS docs: Passport (auth)</a> ·
+  <a href="https://docs.nestjs.com/security/authentication">[5] NestJS docs: Authentication</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0026-transaksi-migrasi-typeorm.html">← 0026 · Transaksi dan migrasi</a>
+  <a href="0028-otorisasi-role.html">0028 · Otorisasi role →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0027.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

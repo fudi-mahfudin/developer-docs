@@ -183,6 +183,26 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### Data & auth
 
+- [NestJS: Prisma](https://docs.nestjs.com/recipes/prisma)
+  Use for: pola `PrismaService` (extends `PrismaClient`, `$connect` di `onModuleInit`), Prisma ORM 7 + driver adapter (lesson 0025).
+- [Prisma ORM 7: Select fields](https://www.prisma.io/docs/orm/v7/prisma-client/queries/select-fields) · [Relation queries](https://www.prisma.io/docs/orm/v7/prisma-client/queries/relation-queries) · [Query optimization](https://www.prisma.io/docs/orm/v7/prisma-client/queries/advanced/query-optimization-performance) · [PostgreSQL](https://www.prisma.io/docs/orm/v7/core-concepts/supported-databases/postgresql)
+  Use for: `select` vs `include`, N+1, `relationLoadStrategy`, `@prisma/adapter-pg` (lesson 0025).
+- [Prisma ORM 7: Transactions](https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions) · [Development and production](https://www.prisma.io/docs/orm/v7/prisma-migrate/workflows/development-and-production)
+  Use for: `$transaction` array vs interactive, default `maxWait` 2000 ms / `timeout` 5000 ms, `migrate dev` vs `migrate deploy` (lesson 0026).
+- [Prisma (terbaru, ORM 8): Transactions](https://www.prisma.io/docs/orm/prisma-client/queries/transactions)
+  Use for: catatan versi, `$transaction` diganti `db.transaction` di Prisma ORM 8 (lesson 0025, 0026).
+- [NestJS: TypeORM](https://docs.nestjs.com/data/typeorm)
+  Use for: `TypeOrmModule.forFeature`, `@InjectRepository`, peringatan `synchronize: true` (lesson 0026).
+- [NestJS: Passport (auth)](https://docs.nestjs.com/recipes/passport)
+  Use for: strategi local dan jwt, `AuthGuard`, `@nestjs/jwt`, guard global + `@Public` (lesson 0027, 0028).
+- [NestJS: Authentication](https://docs.nestjs.com/security/authentication)
+  Use for: catatan versi NestJS 12, paket `@nestjs/authentication` (lesson 0027).
+- [RFC 6749 §1.5: Refresh Token](https://www.rfc-editor.org/rfc/rfc6749#section-1.5)
+  Use for: definisi refresh token (lesson 0027).
+- [NestJS: Guards](https://docs.nestjs.com/guards) · [Execution context](https://docs.nestjs.com/fundamentals/execution-context)
+  Use for: `false` → 403 "Forbidden resource", `APP_GUARD`, `Reflector.createDecorator`, `getAllAndOverride` vs `getAllAndMerge` (lesson 0028).
+- RFC 7519, RFC 9110 (§15.5.2, §15.5.4), dan OWASP Password Storage Cheat Sheet: lihat "Standar dan keamanan" di atas (lesson 0027, 0028).
+
 ### Testing & produksi
 
 - [NestJS: Testing](https://docs.nestjs.com/fundamentals/testing)
