@@ -63,6 +63,37 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### Testing & produksi
 
+- [NestJS: Testing](https://docs.nestjs.com/fundamentals/testing)
+  Use for: `Test.createTestingModule`, `overrideProvider`, `get` vs `resolve`, e2e dengan `createNestApplication` + `app.init()` + supertest (0030, 0031).
+- [NestJS: Migration guide v11 → v12](https://docs.nestjs.com/migration-guide)
+  Use for: label versi NestJS 12: Vitest default untuk proyek ESM, Jest butuh Node ≥ 24.9; Standard Schema di `@nestjs/config`; structured params `ConsoleLogger`; API indicator Terminus lama dihapus; drain request saat shutdown (0030, 0032, 0033).
+- [Jest: Mock Functions API](https://jestjs.io/docs/mock-function-api)
+  Use for: `jest.fn`, `mockResolvedValue`, `mockRejectedValue`, `mockClear` vs `mockReset` (0030).
+- [Prisma: Unit testing](https://www.prisma.io/docs/orm/prisma-client/testing/unit-testing) dan [Integration testing](https://www.prisma.io/docs/orm/prisma-client/testing/integration-testing)
+  Use for: mock Prisma Client (`mockDeep`), database test di Docker, membersihkan data antar suite (0030, 0031).
+- [supertest (README)](https://github.com/ladjs/supertest)
+  Use for: `request(server)` mengikat port ephemeral, `.expect()`, Promise/async (0031).
+- [NestJS: Configuration](https://docs.nestjs.com/techniques/configuration)
+  Use for: `ConfigModule.forRoot`, `validationSchema`, env runtime vs `.env`, `getOrThrow` (0032).
+- [NestJS: Logger](https://docs.nestjs.com/techniques/logger)
+  Use for: `new Logger(X.name)`, level, `ConsoleLogger({ json: true })`, `useLogger`, `bufferLogs` (0032).
+- [Node.js v24: AsyncLocalStorage](https://nodejs.org/docs/latest-v24.x/api/async_context.html#class-asynclocalstorage)
+  Use for: correlation id per request tanpa meneruskan parameter (0032).
+- [Node.js v24: process, Signal events](https://nodejs.org/docs/latest-v24.x/api/process.html#signal-events)
+  Use for: handler default SIGTERM/SIGINT, SIGKILL tidak bisa ditangkap (0033).
+- [NestJS: Lifecycle events](https://docs.nestjs.com/fundamentals/lifecycle-events)
+  Use for: `enableShutdownHooks`, urutan hook shutdown (0033).
+- [NestJS: Health checks (Terminus)](https://docs.nestjs.com/recipes/terminus)
+  Use for: `HealthCheckService`, indicator, bentuk respons, `gracefulShutdownTimeoutMs` (0033).
+- [NestJS: Rate limiting](https://docs.nestjs.com/security/rate-limiting) dan [throttler.exception.ts](https://github.com/nestjs/throttler/blob/master/src/throttler.exception.ts)
+  Use for: `ThrottlerModule` (ttl ms), `ThrottlerGuard`, `@Throttle`/`@SkipThrottle`, proxy, storage; exception 429 (0033).
+- [NestJS: Caching](https://docs.nestjs.com/techniques/caching)
+  Use for: `CacheModule`, `CACHE_MANAGER`, ttl ms, `CacheInterceptor` hanya GET (0033).
+- [NestJS: Queues](https://docs.nestjs.com/techniques/queues)
+  Use for: `@nestjs/bullmq`, `BullModule.forRoot`/`registerQueue`, `@InjectQueue`, `@Processor` + `WorkerHost` (0034).
+- [BullMQ: Retrying failing jobs](https://docs.bullmq.io/guide/retrying-failing-jobs) dan [Job IDs](https://docs.bullmq.io/guide/jobs/job-ids)
+  Use for: `attempts`, backoff fixed/exponential, jitter; `jobId` untuk mencegah job ganda (0034).
+
 ## Bacaan lanjutan (di luar cakupan)
 
 Topik ini sengaja tidak diajarkan di track (MISSION, Out of scope). Baca kalau codebase atau interviewer memakainya.
