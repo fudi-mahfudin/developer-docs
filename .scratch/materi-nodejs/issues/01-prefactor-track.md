@@ -1,6 +1,6 @@
 # 01: Prefactor: kerangka track, index, dokumen, aturan test
 
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Kerangka folder `nodejs/` sesuai ADR 0001 dan ADR 0003: `index.html`, `MISSION.md`, `ROADMAP.md`, `NOTES.md`, `RESOURCES.md`, `GLOSSARY.md`, serta folder `lessons/`, `reference/`, `learning-records/`, dan `assets/questions/`.
 - MISSION diambil dari `../spec.md`. Verifikasi versi major NestJS terbaru di docs.nestjs.com dan catat di Constraints.
@@ -12,6 +12,6 @@ Status: ready-for-agent
 
 Catatan: root `index.html` punya perubahan yang belum di-commit (tautan draf STAR dihapus). Pertahankan perubahan itu dan jangan dikembalikan.
 
-- [ ] Folder dan dokumen track (MISSION, ROADMAP, NOTES, RESOURCES, kerangka GLOSSARY)
-- [ ] `nodejs/index.html`, root `index.html`, `GLOSSARY-MAP.md`, `CLAUDE.md`
-- [ ] `tests/nodejs/track.test.js` (lulus untuk lesson yang sudah ada; lesson yang belum ada tidak dicek sampai ditautkan di index)
+- [x] Folder dan dokumen track (MISSION, ROADMAP, NOTES, RESOURCES, kerangka GLOSSARY)
+- [x] `nodejs/index.html`, root `index.html`, `GLOSSARY-MAP.md`, `CLAUDE.md`
+- [x] `tests/nodejs/track.test.js` (lulus untuk lesson yang sudah ada; lesson yang belum ada tidak dicek sampai ditautkan di index)
