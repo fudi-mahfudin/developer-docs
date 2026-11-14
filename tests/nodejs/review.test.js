@@ -18,6 +18,8 @@ const lessonFile = num => fs.readdirSync(path.join(ROOT, TRACK, "lessons")).find
 const REVIEWS = [
   { num: "0012", sources: lessonRange(1, 7), prefixes: ["runtime-", "async-"] },
 
+  { num: "0020", sources: [...lessonRange(8, 11), ...lessonRange(13, 15)], prefixes: ["io-", "tooling-"] },
+
   { num: "0029", sources: [...lessonRange(16, 19), ...lessonRange(21, 24)], prefixes: ["nest-", "pipeline-"] },
 
 ];
