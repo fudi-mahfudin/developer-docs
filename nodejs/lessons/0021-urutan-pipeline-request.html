@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0021 · Urutan pipeline request NestJS</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0021 · Node.js · Modul Pipeline request · ±20 menit</div>
+  <h1>Urutan pipeline request NestJS</h1>
+  <p class="subtitle">Middleware, guard, interceptor, pipe, handler, exception filter: siapa jalan lebih dulu, dan di level mana masing-masing dipasang</p>
+</header>
+
+<p>
+  Modul NestJS inti membahas bagaimana controller dan provider dirakit oleh DI container. Modul ini membahas apa yang terjadi pada <em>satu request</em> sebelum dan sesudah method controller dipanggil.
+  Pertanyaan interview yang paling klasik di sini pendek: "Sebutkan urutan eksekusinya." Lesson ini memberi urutan itu, lalu tiga lesson berikutnya membedah tiap komponen.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyebut urutan pipeline request NestJS tanpa catatan, memilih komponen yang tepat untuk satu kebutuhan (otorisasi, validasi, bentuk response, format error),
+  dan menjelaskan beda memasang komponen secara global, per controller, dan per method, termasuk kenapa <code>APP_GUARD</code> berbeda dari <code>useGlobalGuards()</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Satu request, tujuh langkah</h2>
+<p>
+  Dokumentasi NestJS merangkumnya dalam satu kalimat: <em>"a request flows through middleware, then guards, then interceptors, then pipes, and finally back through interceptors on the return path."</em>
+  <sup class="cite"><a href="https://docs.nestjs.com/faq/request-lifecycle#request-lifecycle">[1]</a></sup>
+  Exception filter berada di luar jalur normal: ia hanya bekerja kalau ada exception yang tidak ditangkap di salah satu langkah.
+</p>
+<div class="flow">
+  <span class="box">Request</span><span class="arrow">→</span>
+  <span class="box">Middleware</span><span class="arrow">→</span>
+  <span class="box">Guard</span><span class="arrow">→</span>
+  <span class="box">Interceptor (sebelum)</span><span class="arrow">→</span>
+  <span class="box">Pipe</span><span class="arrow">→</span>
+  <span class="box">Handler</span><span class="arrow">→</span>
+  <span class="box">Interceptor (sesudah)</span><span class="arrow">→</span>
+  <span class="box">Response</span>
+</div>
+<p class="note">Exception yang lolos dari langkah mana pun (termasuk handler dan service) diteruskan ke <strong>exception filter</strong>, yang membentuk response error.</p>
+
+<p>Satu kalimat per komponen, dengan pertanyaan yang ia jawab:</p>
+<table>
+  <thead><tr><th>Komponen</th><th>Pertanyaan yang dijawab</th><th>Kebutuhan khas</th></tr></thead>
+  <tbody>
+    <tr><td>Middleware</td><td>"Apa yang harus terjadi pada setiap request mentah?"</td><td>Logging akses, correlation id, CORS, body parser</td></tr>
+    <tr><td>Guard</td><td>"Boleh request ini masuk ke handler ini?"</td><td>Autentikasi, otorisasi role</td></tr>
+    <tr><td>Interceptor</td><td>"Apa yang dibungkus di sekitar handler?"</td><td>Durasi request, bentuk response, timeout, cache</td></tr>
+    <tr><td>Pipe</td><td>"Apakah argumen handler valid, dan dalam tipe yang benar?"</td><td>Validasi DTO, ubah <code>"42"</code> menjadi <code>42</code></td></tr>
+    <tr><td>Exception filter</td><td>"Bagaimana exception diubah menjadi response?"</td><td>Format error yang konsisten</td></tr>
+  </tbody>
+</table>
+<p>
+  Urutan ini masuk akal kalau dibaca dari biaya: middleware murah dan tidak tahu handler mana yang akan jalan; guard menolak request yang tidak berhak sebelum ada kerja lain;
+  pipe baru memvalidasi body setelah jelas request boleh masuk. Guard dijalankan <em>"after all middleware, but before any interceptor or pipe."</em>
+  <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Susun urutan pipeline</h2>
+  <p>Susun langkah berikut dari yang pertama sampai yang terakhir menyentuh satu request. Pakai tombol ↑/↓, lalu "Periksa".</p>
+  <div class="order">
+    <ol>
+      <li>Middleware</li>
+      <li>Guard</li>
+      <li>Interceptor (sebelum handler)</li>
+      <li>Pipe</li>
+      <li>Route handler (method controller)</li>
+      <li>Interceptor (sesudah handler)</li>
+      <li>Exception filter (kalau ada exception yang tidak ditangkap)</li>
+    </ol>
+    <p class="explain">Middleware → guard → interceptor → pipe → handler → interceptor → filter. Interceptor muncul dua kali karena ia membungkus handler: bagian sebelum <code>next.handle()</code> jalan sebelum pipe, bagian di dalam operator RxJS jalan setelah handler selesai. Filter hanya dipanggil kalau ada exception yang lolos.</p>
+  </div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Urutan dan pilihan komponen</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="pipeline-urutan" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. Tiga level binding: global, controller, method</h2>
+<p>
+  Guard, interceptor, pipe, dan filter bisa dipasang di tiga level dengan decorator <code>@UseGuards()</code>, <code>@UseInterceptors()</code>, <code>@UsePipes()</code>, <code>@UseFilters()</code>
+  (di atas class controller atau di atas satu method), atau secara global. Pipe punya level keempat: per parameter, mis. <code>@Param('id', ParseIntPipe)</code>.
+</p>
+<pre><code>// main.ts: global, tanpa DI
+app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+
+// app.module.ts: global, dengan DI (guard boleh meng-inject Reflector, service, dll.)
+@Module({ providers: [{ provide: APP_GUARD, useClass: AuthGuard }] })
+export class AppModule {}
+
+// orders.controller.ts
+@Controller('orders')
+@UseInterceptors(LoggingInterceptor)     // level controller: semua method
+export class OrdersController {
+  @Post()
+  @UseGuards(RolesGuard)                 // level method: hanya route ini
+  create(@Body() dto: CreateOrderDto) { /* ... */ }
+}</code></pre>
+<p>
+  Beda dua cara global sering ditanyakan. <code>useGlobalGuards()</code>, <code>useGlobalPipes()</code>, dan kawan-kawannya dipanggil di <code>main.ts</code>, di luar module mana pun,
+  jadi komponen itu <strong>tidak bisa meng-inject dependency</strong>. Token <code>APP_GUARD</code>, <code>APP_PIPE</code>, <code>APP_INTERCEPTOR</code>, dan <code>APP_FILTER</code> mendaftarkan komponen sebagai provider di sebuah module,
+  sehingga DI berjalan, dan komponen itu tetap berlaku global dari module mana pun ia didaftarkan. <sup class="cite"><a href="https://docs.nestjs.com/guards#binding-guards">[2]</a></sup> <sup class="cite"><a href="https://docs.nestjs.com/pipes#global-scoped-pipes">[3]</a></sup>
+</p>
+<p>
+  Middleware tidak ikut pola ini. Ia tidak dipasang lewat decorator, melainkan di method <code>configure(consumer)</code> sebuah module (<code>consumer.apply(...).forRoutes(...)</code>) atau secara global dengan <code>app.use()</code>.
+  <sup class="cite"><a href="https://docs.nestjs.com/middleware">[4]</a></sup> Detailnya di lesson 0023.
+</p>
+
+<h3>Urutan di dalam satu jenis komponen</h3>
+<ul>
+  <li><strong>Guard, interceptor (sebelum), pipe:</strong> global → controller → method. Pipe parameter jalan paling akhir. <sup class="cite"><a href="https://docs.nestjs.com/faq/request-lifecycle#summary">[1]</a></sup></li>
+  <li><strong>Interceptor (sesudah):</strong> terbalik, method → controller → global. Observable-nya diselesaikan <em>"in a first-in, last-out manner."</em> <sup class="cite"><a href="https://docs.nestjs.com/faq/request-lifecycle#interceptors">[1]</a></sup></li>
+  <li><strong>Exception filter:</strong> satu-satunya yang tidak mulai dari global. Filter <em>"resolve from the lowest level possible"</em>: filter method dicoba dulu, lalu controller, lalu global. Exception yang Anda tangkap sendiri dengan <code>try/catch</code> tidak sampai ke filter. <sup class="cite"><a href="https://docs.nestjs.com/faq/request-lifecycle#filters">[1]</a></sup></li>
+  <li><strong>Middleware:</strong> global (<code>app.use()</code>) dulu, lalu middleware yang dipasang di module, masing-masing sesuai urutan dipasang.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 3 — Binding</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0021" data-bank-topic="pipeline-binding" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Jelaskan apa saja yang dilewati satu request di NestJS sebelum dan sesudah method controller. Kalau saya butuh otorisasi role, validasi body, dan format error yang seragam, saya pasang di mana?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Request masuk ke middleware dulu, lalu guard, lalu bagian 'sebelum' dari interceptor, lalu pipe, baru handler. Hasil handler kembali lewat interceptor dengan urutan terbalik. Kalau ada exception yang tidak ditangkap di mana pun, exception filter yang membentuk response error. Otorisasi role saya taruh di guard, karena guard tahu handler mana yang akan jalan dan jalan sebelum pipe, jadi request yang tidak berhak ditolak sebelum body divalidasi. Validasi body saya taruh di ValidationPipe global. Format error yang seragam saya taruh di exception filter global. Untuk global yang butuh DI, misalnya guard yang meng-inject Reflector, saya daftarkan lewat APP_GUARD di module, bukan useGlobalGuards di main.ts."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Urutan: middleware → guard → interceptor → pipe → handler</li>
+      <li>Interceptor juga jalan setelah handler (membungkus handler)</li>
+      <li>Exception filter hanya untuk exception yang tidak ditangkap</li>
+      <li>Otorisasi di guard, validasi di pipe, format error di filter</li>
+      <li>Alasan urutan: request ditolak sebelum kerja yang lebih mahal</li>
+      <li>Beda global lewat <code>useGlobal*()</code> (tanpa DI) dan <code>APP_*</code> (dengan DI)</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/faq/request-lifecycle">NestJS docs: Request lifecycle</a>, ±5 menit. Satu halaman pendek berisi urutan lengkap per level, termasuk urutan pipe per parameter.
+</div>
+
+<p>Berikutnya, <a href="0022-pipe-dan-validation.html">lesson 0022</a>: pipe bawaan, <code>ValidationPipe</code>, dan menulis DTO.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Pipeline request") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kalau guard global dan guard method sama-sama ada, mana yang jalan dulu?", "Kenapa middleware tidak tahu handler mana yang akan dipanggil?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/faq/request-lifecycle">[1] NestJS docs: Request lifecycle</a> ·
+  <a href="https://docs.nestjs.com/guards">[2] NestJS docs: Guards</a> ·
+  <a href="https://docs.nestjs.com/pipes">[3] NestJS docs: Pipes</a> ·
+  <a href="https://docs.nestjs.com/middleware">[4] NestJS docs: Middleware</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0020-review-io-tooling.html">← 0020 · Review 2: I/O &amp; skala + Modul &amp; tooling</a>
+  <a href="0022-pipe-dan-validation.html">0022 · Pipe dan ValidationPipe →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0021.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

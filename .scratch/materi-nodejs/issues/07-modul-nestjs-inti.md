@@ -1,6 +1,6 @@
 # 07: Modul NestJS inti (0016–0019)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 

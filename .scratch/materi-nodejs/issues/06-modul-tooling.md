@@ -1,6 +1,6 @@
 # 06: Modul Modul & tooling (0013–0015)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 
