@@ -1,6 +1,6 @@
 # 14: Penutup: mock interview (0036) dan dua reference
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 12
 
@@ -13,6 +13,6 @@ Setiap babak punya jawaban contoh di `<details>` dan checklist penilaian mandiri
 
 Buat dua cheat sheet di `nodejs/reference/` (`urutan-event-loop.html`, `pipeline-request-nestjs.html`) sesuai spec, lalu tautkan dari index dan ROADMAP.
 
-- [ ] 0036 + bank soal
-- [ ] Dua reference
-- [ ] Tautan di index dan ROADMAP; seluruh `tests/` lulus
+- [x] 0036 + bank soal
+- [x] Dua reference
+- [x] Tautan di index dan ROADMAP; seluruh `tests/` lulus
