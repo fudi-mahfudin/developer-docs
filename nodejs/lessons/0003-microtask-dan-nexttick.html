@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0003 · process.nextTick vs microtask; latihan tebak urutan output</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0003 · Node.js · Modul Runtime · ±20 menit</div>
+  <h1>process.nextTick vs microtask; latihan tebak urutan output</h1>
+  <p class="subtitle">Dua antrean yang tidak ada di diagram fase, tapi selalu dikosongkan lebih dulu, dan soal "tebak output" yang hampir pasti muncul di interview</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan kapan antrean <code>process.nextTick</code> dan antrean microtask (<code>Promise.then</code>, <code>queueMicrotask</code>) dikosongkan,
+  menebak urutan output potongan kode yang mencampur keduanya dengan timer,
+  dan menjelaskan kenapa <code>nextTick</code> rekursif bisa membuat I/O kelaparan (starvation).
+</div>
+
+<p>Sebelumnya, di <a href="0002-fase-event-loop.html">lesson 0002</a>: event loop berputar melewati fase timers, poll, check, dan seterusnya. Tapi <code>process.nextTick</code> dan <code>Promise.then</code> tidak punya fase sendiri.</p>
+
+<h2>1. Dua antrean "di sela-sela"</h2>
+<p>
+  <code>process.nextTick(fn)</code> memasukkan <code>fn</code> ke <strong>next tick queue</strong>. Antrean ini dikosongkan seluruhnya setelah operasi JavaScript yang sedang berjalan selesai, sebelum event loop boleh lanjut. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#processnexttickcallback-args">[1]</a></sup>
+  Jadi nextTick berjalan <em>di fase mana pun</em> loop sedang berada. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#understanding-processnexttick">[2]</a></sup>
+</p>
+<p>
+  <strong>Microtask queue</strong> adalah antrean lain, tempat handler <code>then</code>, <code>catch</code>, dan <code>finally</code> milik Promise yang sudah resolve, juga callback <code>queueMicrotask(fn)</code>.
+  Di Node, setiap kali next tick queue habis, microtask queue langsung dikosongkan sesudahnya. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[1]</a></sup>
+  Istilah resminya di spesifikasi ECMAScript adalah <em>job</em>: reaksi Promise dijalankan nanti, saat tidak ada kode JavaScript lain yang sedang berjalan. <sup class="cite"><a href="https://tc39.es/ecma262/#sec-jobs">[3]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Kode sinkron sampai habis</span><span class="arrow">→</span>
+  <span class="box">Kosongkan nextTick queue</span><span class="arrow">→</span>
+  <span class="box">Kosongkan microtask queue</span><span class="arrow">→</span>
+  <span class="box">Callback fase berikutnya (timer, I/O, immediate)</span><span class="arrow">↻</span>
+</div>
+<p>Aturan praktisnya: <strong>sinkron → nextTick → microtask (Promise) → fase event loop</strong>. Ulangi langkah nextTick → microtask setiap kali satu callback selesai.</p>
+
+<h3>Label versi: CommonJS vs ESM (Node 24)</h3>
+<p>
+  Urutan "nextTick sebelum Promise" berlaku di modul <strong>CommonJS</strong> (<code>require</code>, file <code>.cjs</code>, atau <code>.js</code> tanpa <code>"type": "module"</code>).
+  Dokumentasi Node 24 mencatat pengecualian: modul <strong>ESM</strong> sendiri sudah dijalankan sebagai bagian dari microtask queue, jadi di top-level ESM callback <code>queueMicrotask()</code> dan <code>Promise.then</code> jalan <em>sebelum</em> <code>process.nextTick()</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[1]</a></sup>
+  Semua latihan di bawah adalah CommonJS. Kalau interviewer memberi soal tanpa konteks, sebutkan asumsi ini.
+</p>
+
+<h2>2. Starvation: antrean yang tidak pernah habis</h2>
+<p>
+  Karena next tick queue dikosongkan <em>seluruhnya</em> sebelum loop lanjut, callback nextTick yang memanggil <code>process.nextTick</code> lagi secara rekursif bisa membuat I/O "kelaparan" (<strong>starvation</strong>): loop tidak pernah sampai ke fase poll. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#understanding-processnexttick">[2]</a></sup>
+  Hal yang sama terjadi pada microtask: rantai <code>queueMicrotask</code> atau <code>Promise.then</code> yang terus menjadwalkan dirinya sendiri juga tidak memberi kesempatan fase lain berjalan.
+</p>
+<pre><code>function loop() {
+  process.nextTick(loop); // antrean tidak pernah kosong
+}
+loop();
+setTimeout(() =&gt; console.log('tidak pernah tercetak'), 0);</code></pre>
+<p>
+  Kalau Anda memang ingin "jalankan nanti tapi beri giliran ke I/O", pakai <code>setImmediate</code>, karena callback-nya berjalan di fase check, setelah poll.
+  Untuk kode biasa, dokumentasi Node menyarankan <code>queueMicrotask()</code> daripada <code>process.nextTick()</code>, kecuali kemampuan khusus nextTick memang dibutuhkan. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Tebak urutan output: sinkron, nextTick, Promise, timer</h2>
+  <p>Baca kode (CommonJS), lalu susun baris output dari atas ke bawah. Ucapkan alasan setiap baris.</p>
+<pre><code>console.log('A: sync');
+setTimeout(() =&gt; console.log('B: timeout'), 0);
+Promise.resolve().then(() =&gt; console.log('C: promise'));
+process.nextTick(() =&gt; console.log('D: nextTick'));
+console.log('E: sync');</code></pre>
+  <div class="order">
+    <ol>
+      <li><code>A: sync</code></li>
+      <li><code>E: sync</code></li>
+      <li><code>D: nextTick</code></li>
+      <li><code>C: promise</code></li>
+      <li><code>B: timeout</code></li>
+    </ol>
+    <p class="explain">
+      Kode sinkron jalan sampai habis (A, E). Lalu next tick queue dikosongkan (D), baru microtask queue (C), walaupun Promise dijadwalkan lebih dulu di kode.
+      Timer baru jalan saat loop masuk fase timers (B). Urutan ini deterministik karena tidak ada <code>setImmediate</code> yang bersaing dengan timer.
+    </p>
+  </div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Tebak urutan output: di dalam callback I/O</h2>
+  <p>Kode yang sama gayanya, tapi semuanya dijadwalkan dari dalam callback <code>fs.readFile</code>.</p>
+<pre><code>const fs = require('node:fs');
+fs.readFile(__filename, () =&gt; {
+  setTimeout(() =&gt; console.log('timeout'), 0);
+  setImmediate(() =&gt; {
+    console.log('immediate');
+    process.nextTick(() =&gt; console.log('nextTick dari immediate'));
+  });
+  Promise.resolve().then(() =&gt; console.log('promise'));
+  process.nextTick(() =&gt; console.log('nextTick'));
+});</code></pre>
+  <div class="order">
+    <ol>
+      <li><code>nextTick</code></li>
+      <li><code>promise</code></li>
+      <li><code>immediate</code></li>
+      <li><code>nextTick dari immediate</code></li>
+      <li><code>timeout</code></li>
+    </ol>
+    <p class="explain">
+      Callback readFile berjalan di fase poll. Setelah callback itu selesai: nextTick, lalu promise.
+      Fase berikutnya check: immediate. Setelah callback immediate selesai, next tick queue dikosongkan lagi sebelum loop lanjut, jadi "nextTick dari immediate" jalan sebelum timer.
+      Timeout baru jalan di fase timers putaran berikutnya. Di dalam callback I/O, immediate selalu mendahului timeout (lesson 0002).
+    </p>
+  </div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 3 — Tebak urutan output: antrean yang saling menjadwalkan</h2>
+<pre><code>process.nextTick(() =&gt; {
+  console.log('tick 1');
+  Promise.resolve().then(() =&gt; console.log('promise dari tick 1'));
+});
+Promise.resolve().then(() =&gt; {
+  console.log('promise 1');
+  process.nextTick(() =&gt; console.log('tick dari promise 1'));
+});
+process.nextTick(() =&gt; console.log('tick 2'));</code></pre>
+  <div class="order">
+    <ol>
+      <li><code>tick 1</code></li>
+      <li><code>tick 2</code></li>
+      <li><code>promise 1</code></li>
+      <li><code>promise dari tick 1</code></li>
+      <li><code>tick dari promise 1</code></li>
+    </ol>
+    <p class="explain">
+      Next tick queue dikosongkan dulu: tick 1, tick 2. Selama itu "promise dari tick 1" masuk ke microtask queue di <em>belakang</em> "promise 1" yang sudah antre sejak kode sinkron.
+      Microtask queue lalu dikosongkan: promise 1, promise dari tick 1. Selama itu "tick dari promise 1" masuk next tick queue, dan baru jalan setelah microtask queue habis.
+    </p>
+  </div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 4 — nextTick vs microtask</h2>
+  <div class="quiz" data-bank-lesson="0003" data-bank-topic="runtime-nexttick-microtask" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 5 — Starvation</h2>
+  <div class="quiz" data-bank-lesson="0003" data-bank-topic="runtime-starvation" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+
+  <blockquote>"Apa beda <code>process.nextTick</code>, <code>Promise.then</code>, dan <code>setTimeout(fn, 0)</code>? Kapan masing-masing berjalan?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Ketiganya menunda fungsi, tapi ke antrean yang berbeda. process.nextTick masuk next tick queue, yang dikosongkan seluruhnya begitu operasi JavaScript yang sedang berjalan selesai, sebelum event loop lanjut.
+      Promise.then dan queueMicrotask masuk microtask queue, yang di Node dikosongkan tepat setelah next tick queue. setTimeout 0 adalah timer: baru jalan saat loop masuk fase timers, minimal 1 ms kemudian.
+      Jadi di CommonJS urutannya sinkron, nextTick, Promise, lalu timer. Pengecualiannya di top-level ESM, Promise jalan sebelum nextTick karena modul ESM sendiri sudah berjalan di dalam microtask queue.
+      Risikonya: karena antrean itu dikosongkan sampai habis, nextTick atau microtask rekursif bisa membuat I/O starvation. Untuk kode biasa queueMicrotask lebih disarankan, dan kalau mau memberi giliran ke I/O, pakai setImmediate."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>nextTick queue dikosongkan setelah operasi JS saat ini, sebelum loop lanjut?</li>
+      <li>Promise.then dan queueMicrotask masuk microtask queue, dikosongkan setelah nextTick queue?</li>
+      <li>setTimeout 0 berjalan di fase timers, minimal 1 ms, setelah kedua antrean?</li>
+      <li>urutan CommonJS: sinkron → nextTick → Promise → timer?</li>
+      <li>pengecualian ESM: di top-level, Promise/queueMicrotask jalan sebelum nextTick?</li>
+      <li>nextTick atau microtask rekursif menyebabkan starvation; setImmediate memberi giliran ke I/O?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama</span>
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">Node.js v24 API: When to use queueMicrotask() vs. process.nextTick()</a>, termasuk contoh output CommonJS dan ESM. ±5 menit. Opsional, tidak dihitung dalam durasi.
+</div>
+
+<p>Berikutnya, lesson 0004: semua latihan di atas mengandaikan callback selesai cepat. Apa yang terjadi kalau satu callback memakan 2 detik, dan bagaimana mendeteksinya di produksi?</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke agent. Agent adalah guru Anda di track ini.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Runtime") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html#processnexttickcallback-args">[1] Node.js v24 API: process.nextTick() dan "When to use queueMicrotask() vs. process.nextTick()"</a> ·
+  <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#processnexttick">[2] Node.js Learn: The Node.js Event Loop, process.nextTick</a> ·
+  <a href="https://tc39.es/ecma262/#sec-jobs">[3] ECMAScript Language Specification: Jobs and Host Operations to Enqueue Jobs</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0002-fase-event-loop.html">← 0002 · Fase event loop; setTimeout vs setImmediate</a>
+  <a href="0004-thread-pool-dan-blocking.html">0004 · libuv thread pool dan hal yang memblokir event loop →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/order.js"></script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0007 · EventEmitter dan AbortController</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0007 · Node.js · Modul Async &amp; error · ±20 menit</div>
+  <h1>EventEmitter dan AbortController</h1>
+  <p class="subtitle">Pola event yang dipakai hampir semua API inti Node, peringatan "possible memory leak", dan cara membatalkan <code>fetch</code> atau pekerjaan async yang sudah tidak dibutuhkan</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0006-error-handling-async.html">lesson 0006</a>: event <code>'error'</code> tanpa listener mematikan proses, dan Promise tidak bisa dibatalkan.
+  Lesson ini melengkapi keduanya: cara kerja EventEmitter, dan <code>AbortSignal</code> sebagai cara standar untuk membatalkan.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Log produksi kami penuh MaxListenersExceededWarning, dan request ke service lain kadang menggantung selamanya. Apa artinya, dan bagaimana memperbaikinya?"</em>
+  tanpa catatan: listener dipanggil sinkron, <code>on</code> vs <code>once</code>, kenapa warning itu tanda leak dan bukan sekadar batas yang perlu dinaikkan, serta memberi batas waktu dan membatalkan <code>fetch</code> dengan <code>AbortSignal.timeout</code> dan <code>AbortController</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. EventEmitter: listener dipanggil sinkron</h2>
+<p>
+  <code>EventEmitter</code> (modul <code>node:events</code>) adalah dasar stream, socket, HTTP server, dan <code>process</code>. Satu hal yang sering salah diasumsikan:
+  <code>emit()</code> <em>"calls all listeners synchronously in the order in which they were registered"</em> <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/events.html#asynchronous-vs-synchronous">[1]</a></sup>.
+  Listener yang lambat memblokir pemanggil <code>emit()</code>, dan error yang di-throw listener naik ke pemanggil itu.
+</p>
+<pre><code>import { EventEmitter, once } from "node:events";   // ESM: top-level await boleh
+const orders = new EventEmitter();
+
+orders.on("created", o =&gt; console.log("kirim email", o.id));    // setiap kali
+orders.once("created", o =&gt; console.log("pesanan pertama"));    // sekali, lalu dilepas
+orders.on("error", err =&gt; console.error("gagal", err));         // wajib (lesson 0006)
+
+orders.emit("created", { id: 1 });   // kedua listener jalan sekarang, sebelum baris berikut
+console.log("setelah emit");
+
+const [order] = await once(orders, "created");   // versi Promise, menunggu emit berikutnya</code></pre>
+<p>
+  <code>emitter.once()</code> menambah listener yang dilepas sebelum dipanggil. Fungsi <code>events.once(emitter, name)</code> mengembalikan Promise yang resolve saat event datang, dan
+  <em>"rejected if the EventEmitter emits 'error' while waiting"</em>; ia juga menerima opsi <code>signal</code> untuk berhenti menunggu
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/events.html#eventsonceemitter-name-options">[1]</a></sup>.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. MaxListenersExceededWarning: tanda leak</h2>
+<p>
+  Secara default, lebih dari <strong>10</strong> listener untuk satu event memicu warning. Ini <em>"not a hard limit"</em>: listener tetap ditambahkan, tetapi Node mencetak
+  <em>"possible EventEmitter memory leak"</em> dengan nama <code>MaxListenersExceededWarning</code> <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/events.html#eventsdefaultmaxlisteners">[1]</a></sup>.
+  Penyebab paling umum adalah menambah listener di dalam kode yang berjalan per request:
+</p>
+<pre><code>// BUG: setiap request menambah listener ke emitter yang hidup selamanya
+app.get("/stream", (req, res) =&gt; {
+  const onPrice = p =&gt; res.write(JSON.stringify(p));
+  prices.on("update", onPrice);
+  req.on("close", () =&gt; prices.off("update", onPrice));   // perbaikan: lepas saat selesai
+});</code></pre>
+<p>
+  Tanpa baris <code>off</code>, setiap request meninggalkan listener yang memegang <code>res</code>, sehingga memori tidak pernah dibebaskan. Menaikkan batas dengan <code>setMaxListeners()</code> hanya membungkam peringatannya.
+  Naikkan batas hanya kalau jumlah listener memang tetap dan disengaja (mis. 20 modul yang masing-masing mendengarkan satu event).
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — EventEmitter</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0012.</p>
+  <div class="quiz" data-bank-lesson="0007" data-bank-topic="async-eventemitter" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. AbortController dan AbortSignal</h2>
+<p>
+  <code>AbortController</code> adalah API standar web yang juga ada di Node sebagai global. Pemanggil memegang controller; pekerjaan menerima <code>controller.signal</code>.
+  Memanggil <code>abort(reason)</code> membuat signal memancarkan event <code>'abort'</code> dan menyimpan <code>signal.reason</code> <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/globals.html#abortcontrollerabortreason">[2]</a></sup>.
+</p>
+<div class="flow">
+  <span class="box">pemanggil: new AbortController()</span><span class="arrow">→</span>
+  <span class="box">kirim controller.signal ke fetch / pekerjaan</span><span class="arrow">→</span>
+  <span class="box">controller.abort() atau timeout</span><span class="arrow">→</span>
+  <span class="box">Promise reject: AbortError / TimeoutError</span>
+</div>
+<p>Yang perlu diingat, dengan label versinya <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/globals.html#static-method-abortsignaltimeoutdelay">[2]</a></sup>:</p>
+<ul>
+  <li><code>AbortSignal.timeout(ms)</code> (Node ≥ 17.3): signal yang abort otomatis setelah <code>ms</code> milidetik.</li>
+  <li><code>AbortSignal.any([s1, s2])</code> (Node ≥ 20.3): abort kalau salah satu signal abort; <code>reason</code>-nya dari signal yang memicu.</li>
+  <li><code>fetch</code> global tidak lagi eksperimental sejak Node 21 (Node ≥ 21), berbasis undici.</li>
+</ul>
+<p>
+  Nama error membedakan penyebabnya. Spesifikasi DOM: <code>abort()</code> tanpa alasan menyimpan <code>DOMException</code> bernama <code>"AbortError"</code>, sedangkan <code>AbortSignal.timeout()</code> memakai <code>"TimeoutError"</code>
+  <sup class="cite"><a href="https://dom.spec.whatwg.org/#dom-abortsignal-timeout">[3]</a></sup>. API khas Node yang menerima signal (mis. <code>events.once</code>) melempar error dengan <code>name === 'AbortError'</code>
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/errors.html#class-domexception">[4]</a></sup>.
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Membatalkan fetch dan pekerjaan async</h2>
+<p>
+  <code>fetch</code> tanpa batas waktu bisa menunggu sangat lama kalau service tujuan menggantung. Beri setiap panggilan keluar batas waktu, dan batalkan juga saat client yang memicunya sudah pergi:
+</p>
+<pre><code>async function getProfile(id, clientSignal) {
+  const signal = AbortSignal.any([clientSignal, AbortSignal.timeout(2000)]);
+  try {
+    const res = await fetch(`${PROFILE_URL}/users/${id}`, { signal });
+    return await res.json();
+  } catch (err) {
+    if (err.name === "TimeoutError") throw new Error("profile service timeout", { cause: err });
+    throw err;                       // AbortError: client pergi, tidak perlu dilanjutkan
+  }
+}</code></pre>
+<p>
+  Untuk pekerjaan Anda sendiri, teruskan <code>signal</code> ke setiap langkah dan periksa sebelum langkah mahal berikutnya: <code>signal.throwIfAborted()</code> melempar <code>signal.reason</code> kalau sudah abort.
+  Banyak API inti Node menerima opsi <code>{ signal }</code>, misalnya <code>setTimeout</code> dari <code>node:timers/promises</code>, yang reject dengan <code>'AbortError'</code> saat dibatalkan
+  <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/timers.html#cancelling-timers">[5]</a></sup>.
+  Ingat lesson 0005: <code>Promise.race</code> dengan timer hanya berhenti <em>menunggu</em>; <code>AbortSignal</code> yang benar-benar menghentikan request di bawahnya.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Membatalkan pekerjaan</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <div class="quiz" data-bank-lesson="0007" data-bank-topic="async-abort" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Tulis kode di kertas</h2>
+  <p>Pasang timer 5 menit. Tulis di kertas tanpa IDE, lalu jelaskan dengan suara keras. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tulis fungsi <code>fetchJson(url, ms)</code> yang memanggil <code>fetch</code> dengan batas waktu <code>ms</code>, melempar error yang jelas kalau timeout, dan tetap meneruskan error lain. Jelaskan apa yang terjadi pada request-nya saat timeout." (5 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <pre><code>async function fetchJson(url, ms) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(ms) });
+    if (!res.ok) throw new Error(`HTTP ${res.status} dari ${url}`);
+    return await res.json();
+  } catch (err) {
+    if (err.name === "TimeoutError") {
+      throw new Error(`timeout ${ms} ms ke ${url}`, { cause: err });
+    }
+    throw err;
+  }
+}</code></pre>
+    <p>"Saya memberi <code>fetch</code> signal dari <code>AbortSignal.timeout</code>. Saat waktunya habis, signal abort, <code>fetch</code> reject dengan <code>TimeoutError</code>, dan request HTTP di bawahnya benar-benar dibatalkan, bukan hanya diabaikan seperti kalau saya memakai <code>Promise.race</code>. Error timeout saya bungkus dengan <code>cause</code>; error lain, termasuk status non-2xx, saya teruskan. Kalau fungsi ini dipanggil dari handler request, saya gabungkan dengan signal client memakai <code>AbortSignal.any</code>."</p>
+    <p><strong>Checklist:</strong> apakah Anda menulis atau menyebut…</p>
+    <ul>
+      <li>Meneruskan <code>signal</code> ke <code>fetch</code> (lewat <code>AbortSignal.timeout</code> atau <code>AbortController</code> + timer)</li>
+      <li>Membedakan timeout lewat <code>err.name</code> (<code>TimeoutError</code>, atau <code>AbortError</code> untuk controller manual)</li>
+      <li>Error lain tetap diteruskan, tidak ditelan</li>
+      <li>Memeriksa <code>res.ok</code>, karena <code>fetch</code> tidak reject untuk status 4xx/5xx</li>
+      <li>Menjelaskan bahwa abort benar-benar membatalkan request, beda dengan <code>Promise.race</code></li>
+      <li>Menyebut <code>Error.cause</code>, <code>AbortSignal.any</code>, atau versi Node (fetch stabil ≥ 21)</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0008-streams.html">lesson 0008</a>: streams, EventEmitter yang paling sering Anda pakai, dan cara memproses file besar tanpa memuat semuanya ke memori.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Async &amp; error") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Bagaimana mendapatkan signal 'client pergi' di Express atau NestJS?", "Kenapa listener EventEmitter yang async tidak menangkap reject-nya sendiri?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/events.html">[1] Node.js v24 docs: Events</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/globals.html#class-abortcontroller">[2] Node.js v24 docs: Globals (AbortController, AbortSignal, fetch)</a> ·
+  <a href="https://dom.spec.whatwg.org/#interface-abortsignal">[3] WHATWG DOM Standard: AbortSignal</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/errors.html#class-domexception">[4] Node.js v24 docs: Errors (AbortError)</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/timers.html#cancelling-timers">[5] Node.js v24 docs: Timers, Cancelling timers</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0006-error-handling-async.html">← 0006 · Error handling async</a>
+  <a href="0008-streams.html">0008 · Streams →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0007.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

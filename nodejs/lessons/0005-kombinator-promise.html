@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0005 · Kombinator Promise; await berurutan vs paralel</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0005 · Node.js · Modul Async &amp; error · ±20 menit</div>
+  <h1>Kombinator Promise; await berurutan vs paralel</h1>
+  <p class="subtitle"><code>Promise.all</code>, <code>allSettled</code>, <code>race</code>, <code>any</code>, dan cara menjalankan banyak pekerjaan async tanpa menunggu satu per satu, juga tanpa membanjiri database</p>
+</header>
+
+<p>
+  Sebelumnya, <a href="0004-thread-pool-dan-blocking.html">lesson 0004</a>: event loop hanya satu, dan I/O dikerjakan di luar thread JavaScript.
+  Artinya, beberapa query atau HTTP call bisa <em>menunggu bersamaan</em>. Lesson ini membahas cara menulis kode yang memanfaatkannya, dan batasnya.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Endpoint ini memanggil tiga service dengan tiga <code>await</code> berurutan dan butuh 900 ms. Bagaimana mempercepatnya, dan bagaimana kalau salah satunya gagal?"</em>
+  tanpa catatan: kapan <code>await</code> berurutan memang perlu, kapan diganti <code>Promise.all</code>, beda empat kombinator, jebakan <code>await</code> di dalam loop, dan cara membatasi concurrency. Anda juga bisa menulis fungsi pembatas concurrency di kertas.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. await berurutan vs paralel</h2>
+<p>
+  <code>await</code> menghentikan fungsi async sampai Promise selesai. Kalau tiga panggilan tidak saling bergantung tetapi ditulis berurutan, waktu totalnya adalah <strong>jumlah</strong> ketiganya.
+  Kalau ketiganya dimulai dulu lalu ditunggu bersama, waktu totalnya kira-kira sama dengan yang <strong>paling lama</strong>.
+</p>
+<pre><code>// Berurutan: ±300 + 300 + 300 = ±900 ms
+const user   = await getUser(id);
+const orders = await getOrders(id);
+const promos = await getPromos(id);
+
+// Paralel: ketiga Promise dibuat dulu, lalu ditunggu bersama: ±300 ms
+const [user, orders, promos] = await Promise.all([
+  getUser(id), getOrders(id), getPromos(id),
+]);</code></pre>
+<div class="flow">
+  <span class="box">mulai getUser, getOrders, getPromos</span><span class="arrow">→</span>
+  <span class="box">ketiganya menunggu I/O bersamaan</span><span class="arrow">→</span>
+  <span class="box">Promise.all resolve saat yang terakhir selesai</span>
+</div>
+<p>
+  "Paralel" di sini artinya <em>menunggu bersamaan</em> (concurrent), bukan menjalankan JavaScript di beberapa thread. Kode JS Anda tetap di satu thread; yang tumpang-tindih adalah waktu tunggu I/O.
+  Berurutan tetap benar kalau langkah kedua <strong>butuh hasil</strong> langkah pertama, misalnya <code>getOrders(user.accountId)</code>.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Empat kombinator</h2>
+<p>Semuanya menerima iterable berisi Promise dan mengembalikan satu Promise. Bedanya ada di kapan Promise itu selesai dan apa isinya <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/discover-promises-in-nodejs#advanced-promise-methods">[1]</a></sup> <sup class="cite"><a href="https://tc39.es/ecma262/#sec-promise.all">[2]</a></sup>:</p>
+<table>
+  <thead><tr><th>Kombinator</th><th>Resolve kapan</th><th>Reject kapan</th><th>Pakai untuk</th></tr></thead>
+  <tbody>
+    <tr><td><code>Promise.all</code></td><td>semua fulfilled; hasil berupa array, urutannya sama dengan input</td><td>begitu <strong>satu</strong> reject (fail-fast)</td><td>semua hasil wajib ada</td></tr>
+    <tr><td><code>Promise.allSettled</code></td><td>semua selesai, apa pun hasilnya; array <code>{status, value}</code> / <code>{status, reason}</code></td><td>tidak pernah reject</td><td>batch yang boleh gagal sebagian, mis. kirim notifikasi</td></tr>
+    <tr><td><code>Promise.race</code></td><td>yang pertama <em>selesai</em> fulfilled</td><td>yang pertama <em>selesai</em> reject</td><td>timeout manual</td></tr>
+    <tr><td><code>Promise.any</code></td><td>yang pertama <em>fulfilled</em></td><td>semuanya reject, dengan <code>AggregateError</code> (berisi <code>errors</code>)</td><td>beberapa replika/mirror, ambil yang tercepat berhasil</td></tr>
+  </tbody>
+</table>
+<p>
+  Fakta yang sering dilupakan: saat <code>Promise.all</code> reject karena satu Promise gagal, <strong>Promise lain tetap berjalan</strong>. Panduan resmi Node menulisnya terang: <em>"even if rejection occurs, the Promises continue to execute."</em>
+  Hal yang sama berlaku untuk <code>race</code>: pemenang tidak membatalkan yang kalah <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/discover-promises-in-nodejs#promiseall">[1]</a></sup>.
+  Promise tidak punya mekanisme pembatalan; untuk benar-benar menghentikan pekerjaan dipakai <code>AbortSignal</code> (lesson 0007).
+</p>
+<pre><code>const results = await Promise.allSettled(userIds.map(sendEmail));
+const failed = results
+  .map((r, i) =&gt; ({ r, id: userIds[i] }))
+  .filter(x =&gt; x.r.status === "rejected");
+log.warn({ failed: failed.map(x =&gt; x.id) }, "sebagian email gagal");</code></pre>
+<p>
+  <code>Promise.any</code> reject dengan <code>AggregateError</code>, yaitu error yang membawa array <code>errors</code> berisi alasan setiap Promise yang gagal <sup class="cite"><a href="https://tc39.es/ecma262/#sec-promise.any">[3]</a></sup>.
+  Jangan tertukar dengan <code>race</code>: <code>race</code> ikut reject kalau yang <em>pertama selesai</em> adalah kegagalan.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Memilih kombinator</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0012.</p>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="async-kombinator" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. await di dalam loop</h2>
+<p>Tiga cara menulis loop async, dengan perilaku yang sangat berbeda:</p>
+<pre><code>// A. for...of + await: berurutan, satu per satu. Benar kalau urutan penting
+for (const id of ids) await process(id);
+
+// B. forEach(async): forEach TIDAK menunggu callback async.
+//    Baris berikutnya jalan sebelum pekerjaan selesai; reject tidak tertangkap di sini
+ids.forEach(async id =&gt; { await process(id); });
+
+// C. map + Promise.all: semua dimulai sekaligus, ditunggu bersama
+await Promise.all(ids.map(id =&gt; process(id)));</code></pre>
+<p>
+  <strong>B</strong> adalah bug klasik: <code>forEach</code> mengabaikan Promise yang dikembalikan callback-nya, jadi fungsi luar selesai lebih dulu, dan error di dalamnya menjadi <em>unhandled rejection</em> (lesson 0006).
+  Linter ESLint punya aturan <code>no-await-in-loop</code> yang menandai pola A, tetapi A tidak salah; A hanya lambat kalau iterasinya sebenarnya independen.
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Membatasi concurrency</h2>
+<p>
+  Pola C bermasalah kalau <code>ids</code> berisi 10.000 elemen: 10.000 query dimulai sekaligus. Connection pool database (kumpulan koneksi terbatas yang dipakai bergantian) penuh, API pihak ketiga membalas 429 (Too Many Requests), dan memori naik.
+  Panduan Node mengingatkan hal yang sama: memakai <code>Promise.all</code> untuk Promise dalam jumlah besar <em>"can strain the system's memory"</em> <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/discover-promises-in-nodejs#promiseall">[1]</a></sup>.
+  Solusinya: batasi berapa pekerjaan yang <strong>berjalan bersamaan</strong>, misalnya 5.
+</p>
+<pre><code>async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next &lt; items.length) {
+      const i = next++;                 // aman: JS satu thread, tidak ada race di sini
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const n = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: n }, worker));
+  return results;
+}
+// await mapLimit(ids, 5, id =&gt; process(id));</code></pre>
+<p>
+  Idenya: buat <code>limit</code> "worker" async yang masing-masing mengambil indeks berikutnya sampai habis. Paling banyak <code>limit</code> pekerjaan menunggu bersamaan, dan hasil tetap berurutan sesuai input.
+  Alternatif yang lebih kasar adalah <strong>batch</strong>: potong array per 5, lalu <code>await Promise.all(batch)</code> per potongan. Ini lebih mudah, tetapi setiap batch menunggu item paling lambatnya.
+  Di produksi, orang biasanya memakai paket kecil seperti <code>p-limit</code>; di interview, Anda diminta menulis versi di atas.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Loop dan concurrency</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0012.</p>
+  <div class="quiz" data-bank-lesson="0005" data-bank-topic="async-concurrency" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Tulis kode di kertas</h2>
+  <p>Pasang timer 5 menit. Tulis di kertas tanpa IDE, lalu jelaskan dengan suara keras. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tulis fungsi <code>mapLimit(items, limit, fn)</code> yang menjalankan <code>fn</code> untuk setiap item dengan paling banyak <code>limit</code> pekerjaan berjalan bersamaan, dan mengembalikan hasil sesuai urutan input." (5 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <pre><code>async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next &lt; items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}</code></pre>
+    <p>"Saya membuat <code>limit</code> worker. Masing-masing mengambil indeks berikutnya, menunggu <code>fn</code>, lalu mengambil lagi sampai habis. Mengambil indeks dengan <code>next++</code> aman karena JavaScript satu thread. Hasil disimpan per indeks supaya urutannya sama dengan input. Kalau satu <code>fn</code> reject, <code>Promise.all</code> reject, tapi worker lain tetap jalan; kalau perlu semua hasil, saya simpan error per item seperti <code>allSettled</code>."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut atau menulis…</p>
+    <ul>
+      <li>Paling banyak <code>limit</code> pekerjaan berjalan bersamaan (worker atau antrean), bukan semuanya sekaligus</li>
+      <li>Setiap worker mengambil item berikutnya sampai habis, bukan batch kaku yang menunggu item paling lambat</li>
+      <li>Hasil disimpan per indeks sehingga urutan sama dengan input</li>
+      <li>Menunggu semua worker selesai (mis. <code>Promise.all</code> atas worker) sebelum mengembalikan hasil</li>
+      <li>Menjelaskan kenapa <code>next++</code> aman: JavaScript berjalan di satu thread</li>
+      <li>Menyebut perilaku saat ada yang gagal (fail-fast seperti <code>all</code> atau dikumpulkan seperti <code>allSettled</code>)</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0006-error-handling-async.html">lesson 0006</a>: apa yang terjadi pada Promise yang reject tanpa ditangkap, dan cara merancang error handling di aplikasi Node.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Async &amp; error") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan Promise.race masih berguna kalau sudah ada AbortSignal.timeout?", "Berapa angka limit yang masuk akal untuk query ke Postgres?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/en/learn/asynchronous-work/discover-promises-in-nodejs">[1] Node.js Learn: Discover Promises in Node.js</a> ·
+  <a href="https://tc39.es/ecma262/#sec-promise.all">[2] ECMAScript Language Specification: Promise.all, allSettled, race</a> ·
+  <a href="https://tc39.es/ecma262/#sec-promise.any">[3] ECMAScript Language Specification: Promise.any dan AggregateError</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0004-thread-pool-dan-blocking.html">← 0004 · Thread pool dan blocking</a>
+  <a href="0006-error-handling-async.html">0006 · Error handling async →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0005.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

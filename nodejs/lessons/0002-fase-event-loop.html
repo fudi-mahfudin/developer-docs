@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0002 · Fase event loop; setTimeout vs setImmediate</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0002 · Node.js · Modul Runtime · ±20 menit</div>
+  <h1>Fase event loop; setTimeout vs setImmediate</h1>
+  <p class="subtitle">Event loop bukan satu antrean, melainkan putaran beberapa fase. Urutan fase itu menjelaskan kapan callback Anda dijalankan</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyebut fase event loop secara berurutan beserta isinya,
+  menjelaskan di fase mana callback <code>setTimeout</code>, I/O, dan <code>setImmediate</code> berjalan,
+  dan menjelaskan kapan urutan <code>setTimeout(fn, 0)</code> vs <code>setImmediate(fn)</code> tidak deterministik.
+</div>
+
+<p>Sebelumnya, di <a href="0001-anatomi-node.html">lesson 0001</a>: libuv menyediakan event loop, dan thread JavaScript menjalankan callback saat hasil I/O siap. Lesson ini membuka isi loop itu.</p>
+
+<h2>1. Enam fase dalam satu putaran</h2>
+<p>Setiap fase punya antrean callback sendiri. Saat loop masuk ke sebuah fase, ia menjalankan callback di antrean fase itu, lalu pindah ke fase berikutnya. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#phases-overview">[1]</a></sup></p>
+<div class="flow">
+  <span class="box">timers</span><span class="arrow">→</span>
+  <span class="box">pending callbacks</span><span class="arrow">→</span>
+  <span class="box">idle, prepare</span><span class="arrow">→</span>
+  <span class="box">poll</span><span class="arrow">→</span>
+  <span class="box">check</span><span class="arrow">→</span>
+  <span class="box">close callbacks</span><span class="arrow">↻</span>
+</div>
+<table>
+  <thead><tr><th>Fase</th><th>Isinya</th></tr></thead>
+  <tbody>
+    <tr><td><strong>timers</strong></td><td>Callback <code>setTimeout()</code> dan <code>setInterval()</code> yang waktunya sudah lewat.</td></tr>
+    <tr><td><strong>pending callbacks</strong></td><td>Callback I/O yang ditunda ke putaran berikutnya (mis. beberapa jenis error TCP).</td></tr>
+    <tr><td><strong>idle, prepare</strong></td><td>Hanya dipakai internal.</td></tr>
+    <tr><td><strong>poll</strong></td><td>Ambil event I/O baru dan jalankan callback I/O (hampir semua, selain close, timer, dan <code>setImmediate</code>). Node <em>menunggu</em> di sini kalau tidak ada pekerjaan lain.</td></tr>
+    <tr><td><strong>check</strong></td><td>Callback <code>setImmediate()</code>.</td></tr>
+    <tr><td><strong>close callbacks</strong></td><td>Callback penutupan, mis. <code>socket.on('close', …)</code>.</td></tr>
+  </tbody>
+</table>
+<p class="note">Isi tabel mengikuti panduan resmi Node. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#phases-overview">[1]</a></sup> Dokumentasi libuv menjabarkan langkah yang sama: jalankan timer, pending callback, idle dan prepare handle, blok untuk I/O (poll), check handle, lalu close callback. <sup class="cite"><a href="https://docs.libuv.org/en/v1.x/design.html#the-i-o-loop">[2]</a></sup></p>
+<p>
+  Fase <strong>poll</strong> adalah tempat proses "tidur" saat server sepi: tidak ada timer yang jatuh tempo dan tidak ada <code>setImmediate</code>, jadi loop menunggu koneksi atau data baru.
+  Karena <strong>check</strong> tepat setelah poll, <code>setImmediate</code> berarti "jalankan begitu poll selesai di putaran ini".
+</p>
+
+<h2>2. setTimeout(fn, 0) bukan "segera"</h2>
+<p>
+  Delay di bawah 1 diubah menjadi 1 ms, dan Node tidak menjamin waktu persis maupun urutan callback timer. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/timers.html#settimeoutcallback-delay-args">[3]</a></sup>
+  Delay timer adalah batas <em>minimum</em>: callback baru dicek di fase timers, dan bisa terlambat kalau loop sedang sibuk menjalankan callback lain.
+</p>
+
+<h2>3. setTimeout vs setImmediate: kapan urutannya pasti?</h2>
+<pre><code>// Kasus A: di main module (top-level file)
+setTimeout(() =&gt; console.log('timeout'), 0);
+setImmediate(() =&gt; console.log('immediate'));
+// output: bisa "timeout, immediate" ATAU "immediate, timeout"
+
+// Kasus B: di dalam callback I/O
+const fs = require('node:fs');
+fs.readFile(__filename, () =&gt; {
+  setTimeout(() =&gt; console.log('timeout'), 0);
+  setImmediate(() =&gt; console.log('immediate'));
+});
+// output: selalu "immediate, timeout"</code></pre>
+<ul>
+  <li>
+    <strong>Kasus A tidak deterministik.</strong> Menurut panduan resmi, kalau keduanya dipanggil dari main module, urutannya bergantung pada performa proses, yang bisa dipengaruhi aplikasi lain di mesin yang sama. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#setimmediate-vs-settimeout">[1]</a></sup>
+    Penjelasannya: saat loop pertama kali masuk fase timers, apakah 1 ms sudah lewat atau belum? Kalau sudah, timeout jalan duluan; kalau belum, loop lanjut ke poll lalu check, dan immediate jalan duluan.
+  </li>
+  <li>
+    <strong>Kasus B deterministik.</strong> Callback <code>readFile</code> berjalan di fase poll. Fase berikutnya adalah check, jadi immediate <em>selalu</em> jalan sebelum timer apa pun, berapa pun jumlah timer-nya. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#setimmediate-vs-settimeout">[1]</a></sup>
+    Timer baru jalan di fase timers pada putaran berikutnya.
+  </li>
+</ul>
+<p>
+  Di interview, jawaban "setTimeout 0 selalu duluan" atau "setImmediate selalu duluan" sama-sama salah. Jawaban yang benar: <em>bergantung konteks</em>, lalu sebutkan dua kasus di atas.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Fase event loop</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="runtime-fase-loop" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — setTimeout vs setImmediate</h2>
+  <div class="quiz" data-bank-lesson="0002" data-bank-topic="runtime-timeout-vs-immediate" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+
+  <blockquote>"Jelaskan fase event loop Node. Mana yang jalan duluan, <code>setTimeout(fn, 0)</code> atau <code>setImmediate(fn)</code>?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Satu putaran event loop punya fase berurutan: timers untuk setTimeout dan setInterval, pending callbacks untuk callback I/O yang ditunda, idle/prepare yang internal,
+      poll untuk mengambil event I/O baru dan menjalankan callback-nya, di sini juga Node menunggu kalau tidak ada kerjaan, lalu check untuk setImmediate, dan close callbacks untuk event close.
+      Soal mana yang duluan: bergantung konteks. Di main module urutannya tidak deterministik, karena delay 0 sebenarnya 1 ms dan bergantung apakah 1 ms itu sudah lewat saat loop masuk fase timers.
+      Tapi kalau keduanya dipanggil di dalam callback I/O, setImmediate selalu duluan, karena callback I/O berjalan di poll dan fase sesudahnya adalah check, sedangkan timers baru di putaran berikutnya."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>urutan fase: timers → pending callbacks → poll → check → close callbacks?</li>
+      <li>setTimeout/setInterval di timers, setImmediate di check?</li>
+      <li>callback I/O di poll, dan Node menunggu di poll kalau tidak ada pekerjaan?</li>
+      <li>di main module urutan setTimeout 0 vs setImmediate tidak deterministik?</li>
+      <li>alasannya: delay 0 menjadi 1 ms, bergantung apakah sudah lewat saat masuk timers?</li>
+      <li>di dalam callback I/O, setImmediate selalu duluan karena check tepat setelah poll?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama</span>
+  <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick">Node.js Learn: The Node.js Event Loop</a>, bagian "Phases in Detail" dan "setImmediate() vs setTimeout()". ±15 menit. Opsional, tidak dihitung dalam durasi.
+</div>
+
+<p>Berikutnya, lesson 0003: di diagram fase tidak ada <code>process.nextTick</code> maupun <code>Promise.then</code>. Lalu kapan keduanya berjalan?</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke agent. Agent adalah guru Anda di track ini.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Runtime") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick">[1] Node.js Learn: The Node.js Event Loop</a> ·
+  <a href="https://docs.libuv.org/en/v1.x/design.html#the-i-o-loop">[2] libuv: Design overview, The I/O loop</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/timers.html#settimeoutcallback-delay-args">[3] Node.js v24 API: Timers, setTimeout()</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0001-anatomi-node.html">← 0001 · Anatomi Node: V8, libuv, dan kenapa cocok untuk I/O-bound</a>
+  <a href="0003-microtask-dan-nexttick.html">0003 · process.nextTick vs microtask; latihan tebak urutan output →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

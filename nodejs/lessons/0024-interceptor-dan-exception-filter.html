@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0024 · Interceptor dan exception filter</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0024 · Node.js · Modul Pipeline request · ±20 menit</div>
+  <h1>Interceptor dan exception filter</h1>
+  <p class="subtitle">Membungkus handler untuk logging, bentuk response, dan timeout; lalu mengubah exception menjadi format error yang konsisten</p>
+</header>
+
+<p>
+  Dua komponen terakhir di <a href="0021-urutan-pipeline-request.html">pipeline</a> bekerja di sisi keluar. Interceptor membungkus handler: ia jalan sebelum dan sesudahnya.
+  Exception filter hanya bangun kalau ada exception yang lolos, lalu menentukan response error yang dikirim ke client.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis interceptor yang mencatat durasi request dan interceptor timeout, menjelaskan peran <code>next.handle()</code>,
+  memilih built-in <code>HttpException</code> yang tepat (404, 409, 403, dll.), dan menulis exception filter yang membuat semua error berbentuk sama.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Interceptor: kode di sekitar handler</h2>
+<p>
+  Interceptor bisa menambah logika sebelum atau sesudah method, mengubah hasil method, mengubah exception yang dilempar, atau mengganti method sepenuhnya (mis. untuk cache).
+  <sup class="cite"><a href="https://docs.nestjs.com/interceptors">[1]</a></sup>
+  Class-nya mengimplementasikan <code>NestInterceptor</code> dengan method <code>intercept(context, next)</code>. Argumen kedua adalah <code>CallHandler</code>; memanggil <code>next.handle()</code> berarti menjalankan handler.
+  Kalau <code>handle()</code> tidak dipanggil, handler tidak dijalankan sama sekali. <sup class="cite"><a href="https://docs.nestjs.com/interceptors#call-handler">[1]</a></sup>
+</p>
+<p>
+  <code>handle()</code> mengembalikan <strong>Observable</strong> dari <strong>RxJS</strong>, library aliran data asinkron yang dipakai Nest. Untuk kebutuhan interview cukup anggap Observable sebagai "Promise yang bisa diproses dengan operator":
+  <code>tap()</code> untuk efek samping tanpa mengubah nilai, <code>map()</code> untuk mengubah nilai, <code>timeout()</code> dan <code>catchError()</code> untuk batas waktu dan error.
+</p>
+<pre><code>@Injectable()
+export class LoggingInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const start = Date.now();                                   // sebelum handler
+    return next.handle().pipe(
+      tap(() =&gt; console.log(`selesai ${Date.now() - start}ms`)), // sesudah handler
+    );
+  }
+}
+
+@Injectable()
+export class TimeoutInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler) {
+    return next.handle().pipe(
+      timeout(5000),
+      catchError(err =&gt; throwError(() =&gt;
+        err instanceof TimeoutError ? new RequestTimeoutException() : err)),
+    );
+  }
+}</code></pre>
+<p>
+  Dua catatan dari dokumentasi: callback <code>tap()</code> di atas tidak dipanggil kalau handler melempar exception, dan timeout hanya berhenti menunggu; pekerjaan yang sudah dimulai handler tidak ikut dibatalkan.
+  <sup class="cite"><a href="https://docs.nestjs.com/interceptors#more-operators">[1]</a></sup>
+  Interceptor transform yang membungkus hasil menjadi <code>{ data: ... }</code> cukup memakai <code>map(data =&gt; ({ data }))</code>. <sup class="cite"><a href="https://docs.nestjs.com/interceptors#response-mapping">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Interceptor</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0024" data-bank-topic="pipeline-interceptor" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. HttpException dan built-in exception</h2>
+<p>
+  Nest punya exception layer bawaan. Exception yang bukan <code>HttpException</code> (mis. <code>TypeError</code> atau error dari driver database) menjadi
+  <code>{ "statusCode": 500, "message": "Internal server error" }</code>, sehingga detail internal tidak bocor. <sup class="cite"><a href="https://docs.nestjs.com/exception-filters">[2]</a></sup>
+  Untuk error yang disengaja, lempar <code>HttpException</code> atau turunannya dari service atau controller:
+</p>
+<pre><code>const order = await this.prisma.order.findUnique({ where: { id } });
+if (!order) throw new NotFoundException(`Order ${id} tidak ditemukan`);   // 404
+
+throw new ConflictException('Email sudah terdaftar');                     // 409
+throw new HttpException('Kuota habis', HttpStatus.TOO_MANY_REQUESTS, { cause: err });</code></pre>
+<p>
+  Konstruktor <code>HttpException</code> menerima body response, status, dan opsi; <code>cause</code> hanya untuk logging dan <em>"is not serialized into the response object."</em>
+  Built-in exception yang paling sering dipakai: <code>BadRequestException</code> (400), <code>UnauthorizedException</code> (401), <code>ForbiddenException</code> (403), <code>NotFoundException</code> (404),
+  <code>ConflictException</code> (409), <code>UnprocessableEntityException</code> (422), <code>RequestTimeoutException</code> (408), <code>ServiceUnavailableException</code> (503). <sup class="cite"><a href="https://docs.nestjs.com/exception-filters#built-in-http-exceptions">[2]</a></sup>
+</p>
+<p class="note"><strong>NestJS ≥ 12:</strong> opsi <code>HttpException</code> menerima properti <code>errorCode</code> yang ikut dikirim di body response, berguna untuk kode error yang stabil bagi client. <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[3]</a></sup></p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Exception filter: format error yang konsisten</h2>
+<p>
+  Exception filter mengambil alih exception layer bawaan. Dekorator <code>@Catch()</code> menentukan tipe exception yang ditangani; <code>@Catch()</code> tanpa argumen menangkap semuanya.
+  <code>ArgumentsHost</code> memberi akses ke request dan response, sama seperti di guard. <sup class="cite"><a href="https://docs.nestjs.com/exception-filters#exception-filters-1">[2]</a></sup>
+</p>
+<pre><code>@Catch()
+export class AllExceptionsFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const res = ctx.getResponse&lt;Response&gt;();
+    const req = ctx.getRequest&lt;Request&gt;();
+    const status = exception instanceof HttpException ? exception.getStatus() : 500;
+    const message = exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
+    res.status(status).json({ statusCode: status, message, path: req.url, timestamp: new Date().toISOString() });
+  }
+}
+
+// app.module.ts
+providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }]</code></pre>
+<p>
+  Daftarkan filter global lewat <code>APP_FILTER</code> kalau ia butuh DI (mis. logger). Satu jebakan: exception yang dilempar <strong>middleware</strong> hanya sampai ke filter global, tidak ke filter yang dipasang dengan <code>@UseFilters()</code>.
+  <sup class="cite"><a href="https://docs.nestjs.com/exception-filters#binding-filters">[2]</a></sup>
+  Kalau menggabungkan filter tangkap-semua dengan filter khusus tipe, deklarasikan filter tangkap-semua lebih dulu supaya filter khusus tetap menangani tipenya. <sup class="cite"><a href="https://docs.nestjs.com/exception-filters#catch-everything">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Exception dan filter</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0024" data-bank-topic="pipeline-filter" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai.</p>
+  <blockquote>"Tim frontend mengeluh bentuk error API kita berbeda-beda, dan sebagian endpoint lambat tanpa batas waktu. Apa yang Anda pasang di NestJS, dan bagaimana kerjanya?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Untuk bentuk error, saya pasang satu exception filter global lewat APP_FILTER dengan @Catch() tanpa argumen supaya semua exception tertangkap. Filter itu memakai ArgumentsHost untuk mengambil response, membaca status dari HttpException atau memakai 500 untuk error lain, lalu mengirim JSON dengan bentuk yang sama: statusCode, message, path, timestamp. Di service, error yang disengaja saya lempar sebagai built-in exception seperti NotFoundException atau ConflictException, bukan Error biasa. Untuk batas waktu, saya pasang interceptor timeout: next.handle() mengembalikan Observable, saya tambahkan operator timeout lalu catchError yang mengubah TimeoutError menjadi RequestTimeoutException. Interceptor juga tempat logging durasi request dengan tap. Catatannya, timeout hanya berhenti menunggu, pekerjaan handler tidak ikut dibatalkan."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>Exception filter global (<code>APP_FILTER</code> atau <code>useGlobalFilters</code>) untuk format error</li>
+      <li><code>@Catch()</code> tanpa argumen untuk menangkap semua exception, termasuk non-HTTP (500)</li>
+      <li>Built-in exception (<code>NotFoundException</code>, <code>ConflictException</code>) untuk error yang disengaja</li>
+      <li>Interceptor timeout dengan <code>next.handle()</code> + operator RxJS <code>timeout</code></li>
+      <li><code>TimeoutError</code> diubah menjadi <code>RequestTimeoutException</code></li>
+      <li>Timeout tidak membatalkan pekerjaan yang sudah berjalan</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/interceptors">NestJS docs: Interceptors</a>, ±10 menit. Contoh lengkap transform, exception mapping, dan stream overriding untuk cache.
+</div>
+
+<p>Berikutnya, <a href="0025-prisma-dan-prismaservice.html">lesson 0025</a>: modul Data &amp; auth dimulai dengan Prisma dan <code>PrismaService</code>.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Pipeline request") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan error saya ubah di interceptor dan kapan di filter?", "Bagaimana filter yang sama bekerja di Express dan Fastify?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/interceptors">[1] NestJS docs: Interceptors</a> ·
+  <a href="https://docs.nestjs.com/exception-filters">[2] NestJS docs: Exception filters</a> ·
+  <a href="https://docs.nestjs.com/migration-guide">[3] NestJS docs: Migration guide (v11 ke v12)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0023-guard-dan-middleware.html">← 0023 · Guard vs middleware</a>
+  <a href="0025-prisma-dan-prismaservice.html">0025 · Prisma dan PrismaService →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0024.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

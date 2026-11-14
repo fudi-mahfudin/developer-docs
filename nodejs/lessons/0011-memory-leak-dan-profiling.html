@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0011 · Memory leak dan profiling</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0011 · Node.js · Modul I/O &amp; skala · ±20 menit</div>
+  <h1>Memory leak dan profiling</h1>
+  <p class="subtitle">Bagaimana heap V8 dibagi, kenapa memori bisa naik terus walau ada garbage collector, dan alat bawaan Node untuk menemukan penyebabnya</p>
+</header>
+
+<p>
+  Node punya garbage collector (GC), tapi aplikasi Node tetap bisa bocor memori. GC hanya membebaskan objek yang <em>tidak lagi terjangkau</em> dari kode;
+  leak di JavaScript hampir selalu berarti objek yang tidak dipakai lagi tapi masih dirujuk dari suatu tempat. Pertanyaan interview: <em>"Memori service Anda naik terus sampai crash. Apa yang Anda lakukan?"</em>
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Bagaimana Anda mencari memory leak di Node?"</em>
+  tanpa catatan, dalam 90 detik: apa arti <code>--max-old-space-size</code>, tiga sumber leak yang umum (cache global, closure, listener),
+  langkah membandingkan dua heap snapshot, dan kapan memakai <code>--cpu-prof</code> sebagai gantinya.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Heap V8 dan batasnya</h2>
+<p>
+  V8 (mesin JavaScript di Node) membagi heap berdasarkan umur objek, karena <em>"most objects die young"</em>. <sup class="cite"><a href="https://v8.dev/blog/trash-talk">[1]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Objek baru: new space (young generation)</span><span class="arrow">→</span>
+  <span class="box">GC minor (Scavenger), sering dan cepat</span><span class="arrow">→</span>
+  <span class="box">Bertahan beberapa kali: dipindah ke old space</span><span class="arrow">→</span>
+  <span class="box">GC major (Mark-Compact), jarang dan mahal</span>
+</div>
+<p>
+  Objek yang bocor akhirnya menumpuk di <strong>old space</strong>, isinya objek berumur panjang seperti cache dan session. <sup class="cite"><a href="https://nodejs.org/en/learn/diagnostics/memory/understanding-and-tuning-memory">[2]</a></sup>
+  Batasnya diatur <code>--max-old-space-size</code> (dalam MiB): <em>"Sets the max memory size of V8's old memory section"</em>; mendekati batas, V8 makin banyak menghabiskan waktu untuk GC.
+  Dokumentasi memberi contoh: di mesin 2 GiB, pakai 1536 supaya ada sisa memori dan tidak swap. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--max-old-space-sizesize-in-mib">[3]</a></sup>
+</p>
+<p>
+  <code>process.memoryUsage()</code> memberi angka yang perlu dipantau: <code>heapUsed</code>/<code>heapTotal</code> untuk heap V8, <code>external</code> dan <code>arrayBuffers</code> untuk memori di luarnya (termasuk semua <code>Buffer</code>), dan <code>rss</code> untuk total memori proses. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#processmemoryusage">[4]</a></sup>
+  Jadi Buffer besar tidak dibatasi <code>--max-old-space-size</code>, tapi tetap dihitung oleh limit memori container.
+</p>
+<p class="note">Menaikkan <code>--max-old-space-size</code> bukan perbaikan leak; itu hanya menunda crash. Tanda leak adalah <code>heapUsed</code> yang naik terus setelah GC walau trafik datar, bukan heap yang besar.</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Sumber leak yang umum</h2>
+<pre><code>// 1. Cache global tanpa batas: Map hidup selama proses hidup
+const cache = new Map();
+app.get('/report', async (req, res) => {
+  if (!cache.has(req.url)) cache.set(req.url, await buildReport(req.query));
+  res.json(cache.get(req.url));            // key unik per query string → tumbuh terus
+});
+
+// 2. Listener per request di emitter jangka panjang
+app.get('/stream', (req, res) => {
+  db.on('change', row => res.write(JSON.stringify(row)));  // tidak pernah dilepas
+});
+
+// 3. Closure yang menahan objek besar
+function handler() {
+  const bigRows = loadAllRows();           // ratusan MB
+  setInterval(() => log(bigRows.length), 60_000); // timer menahan bigRows selamanya
+}</code></pre>
+<ul>
+  <li><strong>Cache global</strong>: beri batas ukuran (LRU, buang yang paling lama tidak dipakai) dan TTL (umur maksimum entri), atau pindahkan cache ke luar proses.</li>
+  <li><strong>Listener</strong>: lepas dengan <code>removeListener</code>/<code>off</code> saat request selesai (<code>res.on('close', …)</code>), atau pakai <code>once</code>.
+    Node membantu mendeteksinya: secara default maksimal <code>10</code> listener per event; lebih dari itu, Node tetap menambahkannya tetapi mencetak peringatan <em>"possible EventEmitter memory leak"</em> (<code>MaxListenersExceededWarning</code>). <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/events.html#eventsdefaultmaxlisteners">[5]</a></sup></li>
+  <li><strong>Closure dan timer</strong>: fungsi yang masih bisa dipanggil (callback timer, listener) menahan semua variabel yang ia rujuk. <code>clearInterval</code> saat tidak dipakai, dan jangan merujuk objek besar dari callback yang berumur panjang.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Heap dan sumber leak</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0020.</p>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="io-memory-leak" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Heap snapshot: menemukan apa yang menumpuk</h2>
+<p>
+  Heap snapshot adalah foto semua objek di heap beserta siapa yang merujuknya (retainer). Cara mengambilnya: <sup class="cite"><a href="https://nodejs.org/en/learn/diagnostics/memory/using-heap-snapshot">[6]</a></sup>
+</p>
+<ul>
+  <li><code>node --inspect app.js</code>, lalu buka Chrome DevTools, tab <em>Memory</em>, "Take heap snapshot". Inspector mendengarkan di <code>127.0.0.1:9229</code> secara default; membukanya ke IP publik (<code>--inspect=0.0.0.0</code>) tanpa firewall memungkinkan remote code execution. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--inspecthostport">[7]</a></sup></li>
+  <li><code>node --heapsnapshot-signal=SIGUSR2 app.js</code>, lalu <code>kill -USR2 &lt;pid&gt;</code> menulis file <code>.heapsnapshot</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--heapsnapshot-signalsignal">[8]</a></sup></li>
+  <li><code>require('node:v8').writeHeapSnapshot()</code> dari dalam kode, mis. dipicu endpoint admin yang tidak terbuka ke publik.</li>
+  <li><code>--heapsnapshot-near-heap-limit=1</code>: tulis snapshot otomatis saat heap mendekati batas, tepat sebelum crash (tidak lagi eksperimental sejak Node 24.13.1). <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--heapsnapshot-near-heap-limitmax_count">[9]</a></sup></li>
+</ul>
+<p>Langkah menemukan leak dengan dua snapshot: <sup class="cite"><a href="https://nodejs.org/en/learn/diagnostics/memory/using-heap-snapshot">[6]</a></sup></p>
+<ol>
+  <li>Biarkan aplikasi selesai startup, lalu pakai fitur yang dicurigai beberapa kali (alokasi awal bukan leak).</li>
+  <li>Ambil snapshot pertama.</li>
+  <li>Pakai fitur itu lagi beberapa saat, lalu ambil snapshot kedua.</li>
+  <li>Di DevTools, pilih snapshot kedua dan ganti tampilan dari <em>Summary</em> ke <em>Comparison</em>. Cari delta positif terbesar, lalu telusuri retainer-nya sampai ketemu variabel yang menahannya.</li>
+</ol>
+<p class="note">
+  Hati-hati di produksi: membuat snapshot <em>"requires memory about twice the size of the heap"</em> dan <em>"is a synchronous operation which blocks the event loop"</em>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/v8.html#v8writeheapsnapshotfilenameoptions">[10]</a></sup>
+  Ambil dari satu instance yang boleh mati tanpa mengganggu availability, atau reproduksi di staging.
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. CPU profiling: kalau masalahnya lambat, bukan bocor</h2>
+<p>
+  Kalau gejalanya latensi tinggi dan CPU 100%, heap snapshot tidak membantu. Pakai profil CPU:
+  <code>--cpu-prof</code> menjalankan V8 CPU profiler sejak start dan menulis file <code>.cpuprofile</code> saat proses keluar (<strong>Node ≥ 22.4</strong>: flag ini stabil; sebelumnya eksperimental). <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--cpu-prof">[11]</a></sup>
+  File itu dibuka di tab <em>Performance</em> Chrome DevTools untuk melihat fungsi mana yang paling lama.
+</p>
+<pre><code>node --cpu-prof --cpu-prof-dir=./prof app.js   # jalankan beban, lalu hentikan proses
+node --inspect app.js                          # atau rekam langsung dari DevTools
+node --prof app.js &amp;&amp; node --prof-process isolate-*.log  # profiler tick bawaan</code></pre>
+<p>
+  <code>--prof</code> dan <code>--prof-process</code> adalah alternatif yang lebih lama: hasilnya ringkasan teks fungsi yang paling sering muncul di sampel. <sup class="cite"><a href="https://nodejs.org/en/learn/getting-started/profiling">[12]</a></sup>
+  Temuan yang sering muncul: <code>JSON.parse</code>/<code>JSON.stringify</code> payload besar, regex yang lambat, fungsi sync (<code>*Sync</code>), dan hashing password di thread utama. Solusinya kembali ke lesson 0004 dan 0010: pindahkan ke thread pool atau worker.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Alat profiling</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <div class="quiz" data-bank-lesson="0011" data-bank-topic="io-profiling" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0020.</p>
+  <blockquote>"Memori API Node Anda naik terus sampai container di-OOM-kill setiap dua hari. Bagaimana Anda mencari penyebabnya?" (90 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Pertama saya pastikan memang leak: grafik <code>heapUsed</code> yang naik terus walau trafik datar, bukan sekadar heap yang besar. Lalu saya reproduksi di staging. Saya jalankan dengan <code>--inspect</code> yang hanya terbuka di localhost, biarkan aplikasi selesai startup, pakai fitur yang dicurigai, ambil heap snapshot pertama, pakai lagi beberapa saat, ambil snapshot kedua, lalu bandingkan di mode Comparison di Chrome DevTools dan cari delta positif terbesar beserta retainer-nya. Di produksi bisa pakai <code>--heapsnapshot-signal</code> atau <code>--heapsnapshot-near-heap-limit</code>, tapi snapshot memblokir event loop dan butuh memori sekitar dua kali heap, jadi hanya di instance yang boleh mati. Tersangka umum: cache global tanpa batas, listener yang ditambah per request, closure yang menahan objek besar, timer yang tidak di-clear. <code>--max-old-space-size</code> hanya menunda crash, bukan solusi."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>membuktikan leak dengan tren memori (<code>heapUsed</code> naik walau trafik datar)?</li>
+      <li><code>--inspect</code> (hanya localhost) + Chrome DevTools tab Memory?</li>
+      <li>dua heap snapshot lalu mode Comparison, cari delta dan retainer?</li>
+      <li>risiko snapshot di produksi: blok event loop, butuh ±2x memori heap?</li>
+      <li>tersangka umum: cache global, listener, closure, timer?</li>
+      <li><code>--max-old-space-size</code> hanya menunda, bukan memperbaiki leak?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://v8.dev/blog/trash-talk">V8 blog: Trash talk, the Orinoco garbage collector</a>, ±20 menit. Cara kerja Scavenger, Mark-Compact, dan GC paralel/konkuren di V8.
+</div>
+
+<p>Berikutnya, <a href="0012-review-runtime-async.html">lesson 0012</a>: Review 1 menguji modul Runtime dan Async &amp; error. Modul I/O &amp; skala ini diuji di review 0020.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "I/O &amp; skala") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Apa itu retainer di heap snapshot?", "Kenapa Buffer tidak dihitung di heapUsed?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://v8.dev/blog/trash-talk">[1] V8 blog: Trash talk, the Orinoco garbage collector</a> ·
+  <a href="https://nodejs.org/en/learn/diagnostics/memory/understanding-and-tuning-memory">[2] Node.js Learn: Understanding and Tuning Memory</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--max-old-space-sizesize-in-mib">[3] Node.js v24 CLI: --max-old-space-size</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html#processmemoryusage">[4] Node.js v24: process.memoryUsage()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/events.html#eventsdefaultmaxlisteners">[5] Node.js v24: events.defaultMaxListeners</a> ·
+  <a href="https://nodejs.org/en/learn/diagnostics/memory/using-heap-snapshot">[6] Node.js Learn: Using Heap Snapshot</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--inspecthostport">[7] Node.js v24 CLI: --inspect</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--heapsnapshot-signalsignal">[8] Node.js v24 CLI: --heapsnapshot-signal</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--heapsnapshot-near-heap-limitmax_count">[9] Node.js v24 CLI: --heapsnapshot-near-heap-limit</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/v8.html#v8writeheapsnapshotfilenameoptions">[10] Node.js v24: v8.writeHeapSnapshot()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--cpu-prof">[11] Node.js v24 CLI: --cpu-prof</a> ·
+  <a href="https://nodejs.org/en/learn/getting-started/profiling">[12] Node.js Learn: Profiling Node.js Applications</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0010-worker-cluster-child-process.html">← 0010 · worker_threads vs cluster vs child_process</a>
+  <a href="0012-review-runtime-async.html">0012 · Review 1: Runtime + Async &amp; error →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

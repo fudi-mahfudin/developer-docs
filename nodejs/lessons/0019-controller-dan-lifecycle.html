@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0019 · Controller, routing, dan lifecycle hooks</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0019 · Node.js · Modul NestJS inti · ±20 menit</div>
+  <h1>Controller, routing, dan lifecycle hooks</h1>
+  <p class="subtitle">Controller sebagai pintu masuk request, decorator parameter dan status code, lalu urutan hook saat aplikasi start dan berhenti</p>
+</header>
+
+<p>
+  Tiga lesson sebelumnya membahas bagaimana Nest menyusun object (module, provider, scope). Lesson ini menutup modul NestJS inti dari dua sisi: <strong>controller</strong>, tempat request HTTP masuk,
+  dan <strong>lifecycle hooks</strong>, tempat kode Anda dijalankan saat aplikasi start (mis. connect ke database) dan saat berhenti (menutup koneksi). Live coding interview Nest hampir selalu dimulai dari menulis satu controller CRUD.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa <strong>menulis di kertas</strong> controller CRUD kecil dengan <code>@Param</code>, <code>@Query</code>, <code>@Body</code>, dan status code yang benar,
+  lalu menjawab <em>"Di hook mana Anda connect dan disconnect database?"</em> dengan urutan lima lifecycle hook dan syarat <code>enableShutdownHooks()</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Controller dan decorator routing</h2>
+<p>
+  Controller adalah class dengan <code>@Controller('prefix')</code>; setiap method diberi decorator HTTP (<code>@Get</code>, <code>@Post</code>, <code>@Put</code>, <code>@Patch</code>, <code>@Delete</code>) dengan path tambahan.
+  <em>"Controllers must always belong to a module"</em>: daftarkan di <code>controllers</code> milik module-nya. <sup class="cite"><a href="https://docs.nestjs.com/controllers">[1]</a></sup>
+  Controller sebaiknya tipis: ambil input, panggil service, kembalikan hasil. Logika bisnis ada di provider.
+</p>
+<pre><code>@Controller('users')
+export class UsersController {
+  constructor(private readonly users: UsersService) {}
+
+  @Get()                                        // GET /users?role=admin
+  findAll(@Query('role') role?: string) { return this.users.findAll(role); }
+
+  @Get(':id')                                   // GET /users/42
+  findOne(@Param('id', ParseIntPipe) id: number) { return this.users.findOne(id); }
+
+  @Post()                                       // 201 secara default
+  create(@Body() dto: CreateUserDto) { return this.users.create(dto); }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@Param('id', ParseIntPipe) id: number) { return this.users.remove(id); }
+}</code></pre>
+<ul>
+  <li><strong><code>@Param</code>, <code>@Query</code>, <code>@Body</code></strong> mengambil route param, query string, dan body. Nilai query dan param selalu datang sebagai string; anotasi tipe <code>number</code> saja tidak mengubahnya, jadi pakai pipe seperti <code>ParseIntPipe</code> (dibahas di modul berikutnya). <sup class="cite"><a href="https://docs.nestjs.com/controllers">[1]</a></sup></li>
+  <li><strong>DTO</strong> (Data Transfer Object, class yang mendeskripsikan bentuk body) ditulis sebagai <strong>class</strong>, bukan interface, karena interface hilang saat transpilasi dan pipe validasi butuh metadata saat runtime. <sup class="cite"><a href="https://docs.nestjs.com/controllers">[1]</a></sup></li>
+  <li><strong>Return value</strong>: Nest men-serialisasi nilai yang dikembalikan menjadi JSON. Handler boleh <code>async</code> (mengembalikan Promise) atau mengembalikan Observable RxJS. <sup class="cite"><a href="https://docs.nestjs.com/controllers">[1]</a></sup></li>
+</ul>
+
+<!-- ============ 2 ============ -->
+<h2>2. Status code dan @Res</h2>
+<p>
+  <em>"The response's status code is 200 by default, except for POST requests, which use 201."</em> Ubah dengan <code>@HttpCode(...)</code> di level handler, mis. 204 untuk DELETE tanpa body. <sup class="cite"><a href="https://docs.nestjs.com/controllers">[1]</a></sup>
+  Untuk error, lempar exception (mis. <code>NotFoundException</code> menghasilkan 404); jangan mengatur status manual.
+</p>
+<p>
+  Jebakan klasik: meng-inject response object Express dengan <code>@Res()</code> membuat Nest masuk mode <em>library-specific</em> untuk handler itu, dan Anda <em>"become responsible for managing the response"</em>:
+  return value tidak lagi dikirim, dan interceptor yang mengubah response tidak bekerja. Kalau hanya butuh mengatur cookie atau header, pakai <code>@Res({ passthrough: true })</code>. <sup class="cite"><a href="https://docs.nestjs.com/controllers">[1]</a></sup>
+</p>
+<p class="note">
+  NestJS 12: route didaftarkan sesuai urutan deklarasi, jadi di Express route berparameter seperti <code>@Get(':id')</code> bisa "menutupi" route statis <code>@Get('me')</code> yang ditulis sesudahnya. Tulis route statis lebih dulu,
+  atau aktifkan opsi <code>routeResolutionStrategy: 'specificity'</code> (default-nya tetap perilaku v11). <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Controller</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0019" data-bank-topic="nest-controller" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Lifecycle hooks</h2>
+<p>Lifecycle aplikasi Nest terbagi tiga fase: initializing, running, dan terminating. Lima hook bisa diimplementasikan di module, provider, dan controller: <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[3]</a></sup></p>
+<div class="flow">
+  <span class="box">onModuleInit</span><span class="arrow">→</span>
+  <span class="box">onApplicationBootstrap</span><span class="arrow">→</span>
+  <span class="box">listen · running</span><span class="arrow">→</span>
+  <span class="box">onModuleDestroy</span><span class="arrow">→</span>
+  <span class="box">beforeApplicationShutdown</span><span class="arrow">→</span>
+  <span class="box">onApplicationShutdown</span>
+</div>
+<table>
+  <thead><tr><th>Hook</th><th>Dipanggil saat</th></tr></thead>
+  <tbody>
+    <tr><td><code>onModuleInit()</code></td><td>Dependency module host-nya sudah di-resolve</td></tr>
+    <tr><td><code>onApplicationBootstrap()</code></td><td>Semua module sudah diinisialisasi, sebelum mulai menerima koneksi</td></tr>
+    <tr><td><code>onModuleDestroy()</code></td><td>Setelah sinyal terminasi (mis. <code>SIGTERM</code>) diterima</td></tr>
+    <tr><td><code>beforeApplicationShutdown()</code></td><td>Setelah semua <code>onModuleDestroy()</code> selesai; koneksi belum ditutup</td></tr>
+    <tr><td><code>onApplicationShutdown()</code></td><td>Setelah koneksi ditutup, langkah terakhir <code>app.close()</code></td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>Async</strong>: <code>onModuleInit</code> dan <code>onApplicationBootstrap</code> boleh <code>async</code>; Nest menunggu Promise-nya selesai sebelum lanjut. Ini tempat yang tepat untuk <code>await this.$connect()</code> di <code>PrismaService</code>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[3]</a></sup></li>
+  <li><strong>Shutdown hooks mati secara default</strong>: listener sinyal memakai resource, jadi tiga hook terakhir hanya jalan karena sinyal kalau Anda memanggil <code>app.enableShutdownHooks()</code> saat bootstrap. Tanpa itu, hook hanya jalan kalau <code>app.close()</code> dipanggil eksplisit. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[3]</a></sup></li>
+  <li><strong>Urutan antar module (NestJS 12)</strong>: hook dipanggil per level hierarki komponen <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[2]</a></sup>; module yang di-import paling dalam (dan module global) lebih dulu, root module terakhir, dan hook setiap module di-await sebelum lanjut ke module berikutnya. Shutdown hook berjalan dengan urutan terbalik. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[3]</a></sup> Kode yang bergantung pada urutan hook perlu dicek ulang saat upgrade dari v11.</li>
+  <li>Ingat dari lesson 0018: hook ini <strong>tidak</strong> dipanggil untuk class request-scoped. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[3]</a></sup></li>
+</ul>
+<pre><code>@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  async onModuleInit() { await this.$connect(); }
+  async onModuleDestroy() { await this.$disconnect(); }
+}
+
+// main.ts
+const app = await NestFactory.create(AppModule);
+app.enableShutdownHooks();   // supaya SIGTERM memicu onModuleDestroy dan seterusnya
+await app.listen(3000);</code></pre>
+
+<section class="exercise">
+  <h2>Latihan 2 — Lifecycle hooks</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0019" data-bank-topic="nest-lifecycle" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0029.</p>
+  <blockquote>"Service Anda membuka koneksi database dan koneksi Redis. Di mana Anda membuka dan menutupnya, dan apa yang harus dipastikan supaya koneksi ditutup rapi saat container dihentikan?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Saya buka di onModuleInit, async, karena Nest menunggu Promise-nya sebelum lanjut; jadi aplikasi baru menerima request setelah koneksi siap. onApplicationBootstrap juga bisa, dipanggil setelah semua module siap tapi sebelum listen. Saya tutup di onModuleDestroy, atau onApplicationShutdown untuk hal yang harus terakhir. Urutan shutdown-nya onModuleDestroy, beforeApplicationShutdown, lalu onApplicationShutdown setelah koneksi HTTP ditutup. Yang sering lupa: shutdown hook mati secara default, jadi di main.ts harus ada app.enableShutdownHooks(), kalau tidak SIGTERM dari orchestrator tidak memicu hook apa pun. Di NestJS 12 hook dipanggil per level hierarki: module terdalam lebih dulu saat init, dan terbalik saat shutdown. Dan hook ini tidak jalan untuk provider request-scoped."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>connect di onModuleInit (atau onApplicationBootstrap) dan bahwa hook async di-await?</li>
+      <li>disconnect di onModuleDestroy atau onApplicationShutdown?</li>
+      <li>urutan shutdown: onModuleDestroy, beforeApplicationShutdown, onApplicationShutdown?</li>
+      <li>enableShutdownHooks() wajib supaya SIGTERM memicu hook?</li>
+      <li>urutan antar module: terdalam dulu saat init, terbalik saat shutdown (NestJS 12)?</li>
+      <li>hook tidak dipanggil untuk class request-scoped?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Latihan tulis kode — di kertas, tanpa IDE</h2>
+  <p>Tulis jawabannya di kertas dulu, baru buka contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0029.</p>
+  <blockquote>"Tulis <code>ProductsController</code> dengan prefix <code>products</code>: <code>GET /products?page=</code> (page angka, default 1), <code>GET /products/:id</code>, <code>POST /products</code> dengan body <code>CreateProductDto</code>, dan <code>DELETE /products/:id</code> yang mengembalikan 204. Semua memanggil <code>ProductsService</code>." (5 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>@Controller('products')
+export class ProductsController {
+  constructor(private readonly products: ProductsService) {}
+
+  @Get()
+  findAll(@Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number) {
+    return this.products.findAll(page);
+  }
+
+  @Get(':id')
+  findOne(@Param('id', ParseIntPipe) id: number) { return this.products.findOne(id); }
+
+  @Post()
+  create(@Body() dto: CreateProductDto) { return this.products.create(dto); }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@Param('id', ParseIntPipe) id: number) { return this.products.remove(id); }
+}</code></pre>
+    <p><strong>Checklist:</strong> apakah kode Anda…</p>
+    <ul>
+      <li>memakai <code>@Controller('products')</code> dan meng-inject service lewat constructor?</li>
+      <li>memakai decorator HTTP yang benar dengan path <code>':id'</code>?</li>
+      <li>mengubah param/query ke angka dengan <code>ParseIntPipe</code> (bukan anotasi tipe saja)?</li>
+      <li>memberi default untuk <code>page</code> (mis. <code>DefaultValuePipe</code>)?</li>
+      <li>memakai <code>@Body()</code> dengan DTO berupa class?</li>
+      <li>memberi <code>@HttpCode(204)</code> di DELETE dan membiarkan POST di 201 default?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">NestJS docs: Lifecycle events</a>, ±10 menit. Diagram lengkap urutan hook dan contoh <code>enableShutdownHooks()</code>.
+</div>
+
+<p>Berikutnya, <a href="0020-review-io-tooling.html">lesson 0020</a>: Review 2, menguji ulang modul I/O &amp; skala dan Modul &amp; tooling. Modul NestJS inti ini diuji di review 0029.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "NestJS inti") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa @Res mematikan interceptor?", "Apa beda onModuleInit dan onApplicationBootstrap?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/controllers">[1] NestJS docs: Controllers</a> ·
+  <a href="https://docs.nestjs.com/migration-guide">[2] NestJS docs: Migration guide (v11 ke v12)</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[3] NestJS docs: Lifecycle events</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0018-scope-dan-dynamic-module.html">← 0018 · Scope provider dan dynamic module</a>
+  <a href="0020-review-io-tooling.html">0020 · Review 2: I/O &amp; skala + Modul &amp; tooling →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0019.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0030 · Unit test NestJS dengan Jest</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0030 · Node.js · Modul Testing &amp; produksi · ±20 menit</div>
+  <h1>Unit test NestJS dengan Jest</h1>
+  <p class="subtitle"><code>Test.createTestingModule</code>, mengganti provider dengan mock, dan menguji service yang memakai <code>PrismaService</code> tanpa database</p>
+</header>
+
+<p>Modul ini membahas apa yang membuat aplikasi NestJS siap dipakai sungguhan: test, konfigurasi, logging, shutdown, dan background job. Lesson pertama mulai dari yang paling sering diminta di live coding: <em>"tulis unit test untuk service ini"</em>.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis di kertas, tanpa IDE, unit test Jest untuk service NestJS yang memakai <code>PrismaService</code>: menyusun testing module, mengganti <code>PrismaService</code> dengan mock <code>jest.fn</code>, dan menguji jalur sukses serta jalur error.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Jest di proyek NestJS</h2>
+<p>
+  <strong>Jest</strong> adalah test runner yang dipakai proyek NestJS CommonJS: ia menemukan file <code>*.spec.ts</code>, menjalankan blok <code>describe</code>/<code>it</code>, dan menyediakan <code>expect</code> serta mock function. Paket <code>@nestjs/testing</code> sendiri agnostik terhadap test runner. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/testing">[1]</a></sup>
+</p>
+<p>
+  Label versi <strong>NestJS 12</strong>: proyek ESM baru dibuat dengan Vitest sebagai default, sementara proyek CommonJS tetap memakai Jest, dan API <code>@nestjs/testing</code> sama untuk keduanya. Paket inti NestJS 12 dikirim sebagai ESM, sehingga Jest baru bisa memuatnya di <strong>Node ≥ 24.9</strong>. <sup class="cite"><a href="https://docs.nestjs.com/migration-guide">[2]</a></sup> Contoh di track ini memakai Jest.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. <code>Test.createTestingModule</code>: DI container kecil untuk test</h2>
+<p>
+  <code>Test.createTestingModule()</code> menerima metadata yang sama dengan <code>@Module()</code> (providers, imports, controllers) dan mengembalikan builder. <code>compile()</code> bersifat asinkron dan menghasilkan <code>TestingModule</code>, jadi harus di-<code>await</code>. Provider biasa diambil dengan <code>moduleRef.get()</code>; provider ber-scope REQUEST atau TRANSIENT diambil dengan <code>resolve()</code>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/testing">[1]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">createTestingModule({ providers })</span><span class="arrow">→</span>
+  <span class="box">overrideProvider(...).useValue(mock)</span><span class="arrow">→</span>
+  <span class="box">await compile()</span><span class="arrow">→</span>
+  <span class="box">moduleRef.get(UsersService)</span><span class="arrow">→</span>
+  <span class="box">panggil method + expect</span>
+</div>
+<p>
+  Kenapa tidak <code>new UsersService(prismaMock)</code> saja? Bisa, dan untuk service kecil itu sah. Testing module berguna kalau service punya beberapa dependency, memakai injection token, atau Anda ingin memastikan wiring DI-nya benar.
+</p>
+<p>
+  Ada dua cara mengganti dependency dengan mock:
+</p>
+<ul>
+  <li><strong>Daftarkan sendiri</strong>: <code>providers: [UsersService, { provide: PrismaService, useValue: prismaMock }]</code>. Paling umum untuk unit test satu service.</li>
+  <li><strong>Override</strong>: kalau test meng-import module utuh (<code>imports: [UsersModule]</code>), pakai <code>.overrideProvider(PrismaService).useValue(prismaMock)</code> sebelum <code>compile()</code>. Selain <code>useValue</code>, tersedia <code>useClass</code> dan <code>useFactory</code>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/testing">[1]</a></sup></li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 1 — Testing module</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0030" data-bank-topic="prod-unit-test" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Mock <code>PrismaService</code> dengan <code>jest.fn</code></h2>
+<p>
+  <code>jest.fn()</code> membuat <em>mock function</em>: fungsi palsu yang mencatat setiap panggilan dan argumennya, dan mengembalikan <code>undefined</code> kalau tidak diberi implementasi. Untuk method async seperti query Prisma, pakai <code>mockResolvedValue(value)</code>, singkatan dari <code>mockImplementation(() =&gt; Promise.resolve(value))</code>. Untuk jalur error, <code>mockRejectedValue(err)</code>. <sup class="cite"><a href="https://jestjs.io/docs/mock-function-api">[3]</a></sup>
+</p>
+<p>
+  Mock cukup berisi method yang benar-benar dipanggil service. Objek kecil yang ditulis tangan lebih mudah dibaca di interview daripada mock seluruh <code>PrismaClient</code>. Dokumentasi Prisma juga menunjukkan <code>mockDeep&lt;PrismaClient&gt;()</code> dari <code>jest-mock-extended</code> kalau Anda butuh mock yang lengkap dan bertipe. <sup class="cite"><a href="https://www.prisma.io/docs/orm/prisma-client/testing/unit-testing">[4]</a></sup>
+</p>
+<pre><code>// users.service.ts
+@Injectable()
+export class UsersService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findOne(id: number) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException(`User ${id} tidak ada`);
+    return user;
+  }
+}</code></pre>
+<pre><code>// users.service.spec.ts
+describe('UsersService', () =&gt; {
+  let service: UsersService;
+  const prisma = { user: { findUnique: jest.fn() } };
+
+  beforeEach(async () =&gt; {
+    const moduleRef = await Test.createTestingModule({
+      providers: [UsersService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    service = moduleRef.get(UsersService);
+    jest.clearAllMocks();
+  });
+
+  it('melempar NotFoundException kalau user tidak ada', async () =&gt; {
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.findOne(2)).rejects.toThrow(NotFoundException);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: 2 } });
+  });
+});</code></pre>
+<p>Tiga hal yang dinilai interviewer di kode ini:</p>
+<ul>
+  <li><strong>Arrange, act, assert</strong>: atur nilai mock, panggil method, periksa hasil. Satu perilaku per <code>it</code>.</li>
+  <li><strong>Jalur error ikut diuji</strong>: <code>await expect(promise).rejects.toThrow(...)</code>. Lupa <code>await</code> di sini membuat test lulus tanpa benar-benar memeriksa apa pun.</li>
+  <li><strong>Mock di-reset antar test</strong>: <code>mockClear()</code> mengosongkan catatan panggilan tapi mempertahankan implementasi; <code>mockReset()</code> juga membuang implementasinya. <sup class="cite"><a href="https://jestjs.io/docs/mock-function-api">[3]</a></sup> Tanpa reset, <code>toHaveBeenCalledWith</code> bisa lulus karena panggilan dari test sebelumnya.</li>
+</ul>
+<p>
+  Yang <em>tidak</em> dibuktikan unit test ini: query Prisma-nya benar terhadap database sungguhan. Itu tugas integration atau e2e test (<a href="0031-e2e-test.html">lesson 0031</a>).
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Mock</h2>
+  <div class="quiz" data-bank-lesson="0030" data-bank-topic="prod-mock" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Tulis kode di kertas</h2>
+  <p>Pasang timer 5 menit dan tulis jawabannya di kertas, tanpa IDE, seolah sedang live coding. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0035.</p>
+  <blockquote>Tulis unit test Jest untuk <code>UsersService.findOne(id)</code> di atas: kasus user ditemukan dan kasus <code>null</code> → <code>NotFoundException</code>. <code>PrismaService</code> harus di-mock.</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>describe('UsersService', () =&gt; {
+  let service: UsersService;
+  const prisma = { user: { findUnique: jest.fn() } };
+
+  beforeEach(async () =&gt; {
+    const moduleRef = await Test.createTestingModule({
+      providers: [UsersService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+    service = moduleRef.get(UsersService);
+    jest.clearAllMocks();
+  });
+
+  it('mengembalikan user kalau ada', async () =&gt; {
+    prisma.user.findUnique.mockResolvedValue({ id: 1, email: 'a@b.c' });
+    await expect(service.findOne(1)).resolves.toEqual({ id: 1, email: 'a@b.c' });
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: 1 } });
+  });
+
+  it('melempar NotFoundException kalau tidak ada', async () =&gt; {
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.findOne(2)).rejects.toThrow(NotFoundException);
+  });
+});</code></pre>
+    <p><strong>Checklist:</strong> apakah kode Anda…</p>
+    <ul>
+      <li>memakai Test.createTestingModule dengan UsersService di providers, lalu await compile()?</li>
+      <li>mengganti PrismaService dengan { provide: PrismaService, useValue: mock } atau overrideProvider?</li>
+      <li>membuat mock yang hanya berisi method yang dipakai: user.findUnique = jest.fn()?</li>
+      <li>memakai mockResolvedValue untuk hasil async (data dan null)?</li>
+      <li>menguji dua kasus: ditemukan, dan null → rejects.toThrow(NotFoundException)?</li>
+      <li>memeriksa argumen dengan toHaveBeenCalledWith dan mereset mock antar test?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0031-e2e-test.html">lesson 0031</a>: menjalankan aplikasi utuh di dalam test dan mengirim request HTTP sungguhan dengan supertest.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Testing &amp; produksi") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan saya pakai overrideProvider dibanding mendaftarkan mock sendiri?", "Bagaimana menguji method yang memanggil $transaction?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/fundamentals/testing">[1] NestJS docs: Testing</a> ·
+  <a href="https://docs.nestjs.com/migration-guide">[2] NestJS docs: Migration guide (v11 → v12)</a> ·
+  <a href="https://jestjs.io/docs/mock-function-api">[3] Jest docs: Mock Functions API</a> ·
+  <a href="https://www.prisma.io/docs/orm/prisma-client/testing/unit-testing">[4] Prisma docs: Unit testing</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0029-review-nestjs-pipeline.html">← 0029 · Review 3: NestJS inti + Pipeline request</a>
+  <a href="0031-e2e-test.html">0031 · E2E test dengan supertest →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0030.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

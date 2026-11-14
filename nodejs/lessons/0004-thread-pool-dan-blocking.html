@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0004 · libuv thread pool dan hal yang memblokir event loop</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0004 · Node.js · Modul Runtime · ±20 menit</div>
+  <h1>libuv thread pool dan hal yang memblokir event loop</h1>
+  <p class="subtitle">Node ternyata punya thread lain selain thread JavaScript. Siapa yang memakainya, kapan ia penuh, dan apa yang membuat seluruh server berhenti merespons</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyebut API Node yang memakai thread pool libuv dan ukuran default-nya,
+  mengenali kode yang memblokir event loop (sync API, <code>JSON.parse</code> besar, regex rentan),
+  dan menunjukkan cara mengukur event loop delay di produksi.
+</div>
+
+<p>Sebelumnya, di <a href="0001-anatomi-node.html">lesson 0001</a>: I/O file berjalan di thread pool libuv, dan pekerjaan CPU-bound di thread utama menahan semua request. Lesson ini membahas keduanya secara rinci.</p>
+
+<h2>1. Thread pool: siapa yang memakainya</h2>
+<p>
+  Node memakai API asinkron sistem operasi kalau ada. Kalau tidak ada, libuv menjalankan API sinkron di <strong>thread pool</strong> supaya dari sisi JavaScript tetap terlihat asinkron. Yang memakai thread pool <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#uv_threadpool_sizesize">[1]</a></sup>:
+</p>
+<ul>
+  <li>semua API <code>fs</code>, kecuali file watcher dan versi <code>*Sync</code>;</li>
+  <li>API <code>crypto</code> asinkron yang berat: <code>crypto.pbkdf2()</code>, <code>crypto.scrypt()</code>, <code>crypto.randomBytes()</code>, <code>crypto.randomFill()</code>, <code>crypto.generateKeyPair()</code>;</li>
+  <li><code>dns.lookup()</code>;</li>
+  <li>semua API <code>zlib</code>, kecuali versi sinkron.</li>
+</ul>
+<p>
+  Socket dan HTTP <strong>tidak</strong> memakai thread pool; keduanya dipantau OS (lesson 0001).
+  Jebakan klasik ada di DNS: <code>dns.lookup()</code>, yang dipanggil secara internal oleh berbagai API jaringan untuk me-resolve nama host (mis. <code>socket.connect()</code> memakainya sebagai resolver default), memanggil <code>getaddrinfo(3)</code> secara sinkron di thread pool.
+  Sebaliknya <code>dns.resolve*()</code> selalu melakukan query lewat jaringan secara asinkron dan tidak memakai thread pool. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/dns.html#implementation-considerations">[2]</a></sup>
+</p>
+
+<h2>2. Ukurannya kecil: UV_THREADPOOL_SIZE</h2>
+<p>
+  Ukuran default thread pool adalah <strong>4</strong>, dan bisa diubah lewat environment variable <code>UV_THREADPOOL_SIZE</code> sampai maksimum absolut 1024. <sup class="cite"><a href="https://docs.libuv.org/en/v1.x/threadpool.html">[3]</a></sup>
+  Karena ukurannya tetap, satu jenis pekerjaan yang lambat (mis. <code>pbkdf2</code> untuk hashing password) membuat API lain yang tidak berhubungan (baca file, <code>dns.lookup</code>) ikut melambat. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#uv_threadpool_sizesize">[1]</a></sup>
+</p>
+<pre><code>const crypto = require('node:crypto');
+const start = Date.now();
+for (let i = 1; i &lt;= 5; i++) {
+  crypto.pbkdf2('rahasia', 'salt', 300000, 64, 'sha512', () =&gt; {
+    console.log(`hash ${i}: ${Date.now() - start} ms`);
+  });
+}
+// Dengan pool 4: hash 1–4 selesai hampir bersamaan,
+// hash 5 menunggu thread kosong, jadi waktunya ±dua kali lipat.</code></pre>
+<p>
+  Set nilainya <strong>sebelum proses mulai</strong>, misalnya <code>UV_THREADPOOL_SIZE=8 node main.js</code>.
+  Dokumentasi Node 24 mengingatkan bahwa <code>process.env.UV_THREADPOOL_SIZE = …</code> dari dalam kode tidak dijamin bekerja, karena thread pool sudah dibuat saat runtime diinisialisasi, jauh sebelum kode Anda jalan. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#uv_threadpool_sizesize">[1]</a></sup>
+</p>
+
+<h2>3. Hal yang memblokir event loop</h2>
+<p>
+  Memblokir event loop berarti satu callback berjalan begitu lama sehingga tidak ada callback lain, termasuk request HTTP lain, yang bisa jalan. Penyebab yang sering muncul <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop">[4]</a></sup>:
+</p>
+<table>
+  <thead><tr><th>Penyebab</th><th>Contoh</th><th>Gantinya</th></tr></thead>
+  <tbody>
+    <tr><td>Sync API</td><td><code>fs.readFileSync</code>, <code>crypto.pbkdf2Sync</code>, <code>zlib.inflateSync</code>, <code>child_process.execSync</code> di handler request</td><td>Versi asinkron (callback atau <code>fs/promises</code>). Sync boleh saat startup.</td></tr>
+    <tr><td><code>JSON.parse</code>/<code>JSON.stringify</code> besar</td><td>O(n) terhadap ukuran input; di panduan resmi, parse string JSON 50 MB butuh ±1,3 detik <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop#blocking-the-event-loop-json-dos">[4]</a></sup></td><td>Batasi ukuran body, pakai stream (lesson 0008), atau pindah ke worker.</td></tr>
+    <tr><td>Regex rentan (ReDoS)</td><td><code>/(\/.+)+$/</code>: quantifier bersarang bisa butuh waktu eksponensial pada input jahat <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop#blocking-the-event-loop-redos">[4]</a></sup></td><td>Hindari quantifier bersarang dan backreference; untuk pencocokan sederhana pakai <code>indexOf</code>.</td></tr>
+    <tr><td>Hitungan CPU</td><td>Loop jutaan iterasi, sorting array raksasa, resize gambar</td><td>Pecah per potongan dengan <code>setImmediate</code> (lesson 0003) atau <code>worker_threads</code> (lesson 0010).</td></tr>
+  </tbody>
+</table>
+<p>
+  ReDoS (<em>Regular expression Denial of Service</em>) adalah serangan yang mengirim input khusus supaya regex butuh waktu sangat lama. Karena regex dijalankan di thread JavaScript, satu request jahat cukup untuk menghentikan seluruh server.
+</p>
+
+<h2>4. Mengukur event loop delay</h2>
+<p>
+  <strong>Event loop delay</strong> adalah selisih antara kapan sebuah callback seharusnya jalan dan kapan ia benar-benar jalan. Kalau loop terblokir, angka ini naik.
+  Node menyediakan <code>perf_hooks.monitorEventLoopDelay()</code> (ada sejak Node 11.10), yang membuat histogram delay dalam <strong>nanodetik</strong>, dengan sampling setiap <code>resolution</code> ms (default 10). <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/perf_hooks.html#perf_hooksmonitoreventloopdelayoptions">[5]</a></sup>
+  Opsi <code>samplePerIteration</code> (sampling sekali per putaran loop) baru ada sejak Node 24.19. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/perf_hooks.html#perf_hooksmonitoreventloopdelayoptions">[5]</a></sup>
+</p>
+<pre><code>const { monitorEventLoopDelay } = require('node:perf_hooks');
+const h = monitorEventLoopDelay({ resolution: 20 });
+h.enable();
+setInterval(() =&gt; {
+  const p99ms = h.percentile(99) / 1e6; // nanodetik → ms
+  console.log(`event loop delay p99: ${p99ms.toFixed(1)} ms`);
+  h.reset();
+}, 10000);</code></pre>
+<p>
+  Kirim angka p99 dan max ke sistem monitoring. p99 yang naik dari beberapa ms menjadi ratusan ms adalah tanda ada callback yang memblokir. Langkah berikutnya adalah profiling CPU (lesson 0011) untuk mencari fungsi mana.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Thread pool</h2>
+  <div class="quiz" data-bank-lesson="0004" data-bank-topic="runtime-thread-pool" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan 2 — Memblokir event loop</h2>
+  <div class="quiz" data-bank-lesson="0004" data-bank-topic="runtime-blocking" data-stack></div>
+</section>
+
+<section class="exercise">
+  <h2>Latihan lisan — Jawab lisan</h2>
+  <p>Pasang timer, jawab dengan suara keras, baru buka jawaban contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0012.</p>
+
+  <blockquote>"API Node Anda tiba-tiba lambat untuk <em>semua</em> endpoint, padahal database sehat. Apa saja kemungkinan penyebabnya di sisi Node, dan bagaimana Anda membuktikannya?" (2 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>
+      "Kalau semua endpoint ikut lambat, curiga pertama event loop terblokir, karena JavaScript berjalan di satu thread. Penyebab umumnya: sync API di handler seperti readFileSync atau pbkdf2Sync,
+      JSON.parse atau stringify payload yang sangat besar, regex rentan ReDoS pada input user, atau hitungan CPU berat.
+      Kemungkinan kedua thread pool libuv penuh. Ukurannya default 4, dan dipakai fs, dns.lookup, crypto asinkron seperti pbkdf2, dan zlib. Kalau hashing password memenuhi pool, baca file dan dns.lookup ikut antre.
+      Untuk membuktikan, saya ukur event loop delay dengan monitorEventLoopDelay dari perf_hooks dan lihat p99-nya. Kalau tinggi, profiling CPU untuk menemukan fungsinya.
+      Perbaikannya: ganti ke API asinkron, batasi ukuran body, perbaiki regex, pindahkan hitungan ke worker thread, atau naikkan UV_THREADPOOL_SIZE lewat environment sebelum proses mulai."
+    </p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>semua endpoint lambat menandakan event loop terblokir (satu thread JS)?</li>
+      <li>minimal dua penyebab blocking: sync API, JSON.parse besar, regex ReDoS, hitungan CPU?</li>
+      <li>thread pool libuv default 4, dipakai fs, dns.lookup, crypto, zlib?</li>
+      <li>pool penuh membuat API lain yang tidak berhubungan ikut antre?</li>
+      <li>mengukur dengan monitorEventLoopDelay (p99/max), lalu profiling CPU?</li>
+      <li>perbaikan: API asinkron, worker thread, atau UV_THREADPOOL_SIZE sebelum proses mulai?</li>
+    </ul>
+    <p class="note">Lulus kalau minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama</span>
+  <a href="https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop">Node.js Learn: Don't Block the Event Loop (or the Worker Pool)</a>. ±20 menit. Opsional, tidak dihitung dalam durasi.
+</div>
+
+<p>Berikutnya, lesson 0005 membuka modul Async &amp; error: setelah tahu cara kerja loop, bagaimana menjalankan banyak operasi async sekaligus dengan benar?</p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke agent. Agent adalah guru Anda di track ini.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Runtime") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#uv_threadpool_sizesize">[1] Node.js v24 API: CLI, UV_THREADPOOL_SIZE</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/dns.html#implementation-considerations">[2] Node.js v24 API: DNS, Implementation considerations</a> ·
+  <a href="https://docs.libuv.org/en/v1.x/threadpool.html">[3] libuv: Thread pool work scheduling</a> ·
+  <a href="https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop">[4] Node.js Learn: Don't Block the Event Loop (or the Worker Pool)</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/perf_hooks.html#perf_hooksmonitoreventloopdelayoptions">[5] Node.js v24 API: perf_hooks.monitorEventLoopDelay()</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0003-microtask-dan-nexttick.html">← 0003 · process.nextTick vs microtask; latihan tebak urutan output</a>
+  <a href="0005-kombinator-promise.html">0005 · Kombinator Promise; await berurutan vs paralel →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0004.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

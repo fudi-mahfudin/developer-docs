@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0018 · Scope provider dan dynamic module</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0018 · Node.js · Modul NestJS inti · ±20 menit</div>
+  <h1>Scope provider dan dynamic module</h1>
+  <p class="subtitle">Kapan provider dibuat ulang per request, kenapa scope itu merambat ke atas, dan bagaimana module menerima konfigurasi lewat forRoot, forFeature, atau register</p>
+</header>
+
+<p>
+  Di <a href="0017-provider-dan-dependency-injection.html">lesson 0017</a> semua provider singleton: dibuat sekali saat start. Itu cocok untuk Node, karena satu proses melayani banyak request di satu thread.
+  Lesson ini membahas pengecualiannya (scope REQUEST dan TRANSIENT) beserta biayanya, lalu pola yang dipakai hampir semua paket resmi Nest: dynamic module seperti <code>ConfigModule.forRoot()</code> dan <code>TypeOrmModule.forFeature()</code>.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Apa itu scope provider, dan apa itu dynamic module?"</em> tanpa catatan, dalam 60 detik: tiga scope (DEFAULT, REQUEST, TRANSIENT),
+  kenapa request scope merambat ke pemakainya dan apa biayanya, serta arti konvensi <code>forRoot</code> / <code>forFeature</code> / <code>register</code>.
+  Anda juga bisa <strong>menulis di kertas</strong> dynamic module sederhana dengan <code>forRoot(options)</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Tiga scope</h2>
+<table>
+  <thead><tr><th>Scope</th><th>Instance</th><th>Contoh pemakaian</th></tr></thead>
+  <tbody>
+    <tr><td><code>DEFAULT</code> (singleton)</td><td>Satu instance dibagi ke seluruh aplikasi</td><td>Hampir semua service, repository, client database</td></tr>
+    <tr><td><code>REQUEST</code></td><td>Instance baru untuk setiap request masuk, dibuang setelah request selesai</td><td>Data per request: tenant, user, correlation id</td></tr>
+    <tr><td><code>TRANSIENT</code></td><td>Setiap pemakai yang meng-inject mendapat instance sendiri</td><td>Logger yang menyimpan nama konteks pemakainya</td></tr>
+  </tbody>
+</table>
+<p>Definisi di tabel mengikuti dokumentasi Nest, yang juga menyatakan <em>"Singleton scope is recommended for most use cases"</em>: instance di-cache dan hanya diinisialisasi sekali saat start. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/injection-scopes">[1]</a></sup></p>
+<pre><code>import { Injectable, Scope, Inject } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
+import type { Request } from 'express';
+
+@Injectable({ scope: Scope.REQUEST })
+export class TenantContext {
+  constructor(@Inject(REQUEST) private readonly req: Request) {}
+  get tenantId() { return this.req.headers['x-tenant-id']; }
+}</code></pre>
+
+<!-- ============ 2 ============ -->
+<h2>2. Scope merambat ke atas (bubbling) dan biayanya</h2>
+<p>
+  Scope REQUEST tidak berhenti di provider yang Anda tandai. Dokumentasi memberi contoh rantai <code>CatsController &lt;- CatsService &lt;- CatsRepository</code>: kalau hanya <code>CatsService</code> yang request-scoped,
+  <code>CatsController</code> yang meng-inject-nya <strong>ikut menjadi request-scoped</strong>, sedangkan <code>CatsRepository</code> di bawahnya tetap singleton. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/injection-scopes">[1]</a></sup>
+  Alasannya sederhana: singleton tidak bisa memegang referensi ke object yang berganti setiap request.
+</p>
+<div class="flow">
+  <span class="box">CatsController → ikut REQUEST</span><span class="arrow">←</span>
+  <span class="box">CatsService · REQUEST</span><span class="arrow">←</span>
+  <span class="box">CatsRepository · tetap singleton</span>
+</div>
+<p>
+  Biayanya: setiap request, Nest membuat ulang seluruh rantai di atas provider itu. Menurut dokumentasi, aplikasi yang dirancang dengan baik dan memakai request-scoped provider seharusnya tidak melihat kenaikan latency lebih dari <em>"~5%"</em>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/injection-scopes">[1]</a></sup>
+  Dua akibat lain: lifecycle hook seperti <code>onModuleInit</code> tidak dipanggil untuk class request-scoped <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[2]</a></sup>, dan satu provider request-scoped yang di-inject ke banyak tempat bisa membuat sebagian besar graf ikut dibuat per request.
+</p>
+<p class="note">
+  Alternatif yang lebih murah untuk "data per request" adalah <code>AsyncLocalStorage</code> dari modul <code>node:async_hooks</code>, yang menyimpan konteks sepanjang rantai async satu request tanpa mengubah scope provider.
+  Untuk aplikasi multi-tenant, dokumentasi Nest juga menyediakan <em>durable providers</em>: satu sub-graf dipakai ulang per tenant, bukan per request. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/injection-scopes">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Scope</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0018" data-bank-topic="nest-scope" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Dynamic module: module yang dikonfigurasi saat dipakai</h2>
+<p>
+  Module biasa (static) selalu berisi provider yang sama. Dynamic module menerima opsi dari pemakainya. <em>"Dynamic modules let you create modules that are configured at runtime."</em> <sup class="cite"><a href="https://docs.nestjs.com/modules">[3]</a></sup>
+  Secara teknis, dynamic module adalah method static yang mengembalikan object dengan properti yang sama seperti <code>@Module</code>, <em>"plus the <code>module</code> property"</em>; properti itu memperluas metadata <code>@Module</code>, bukan menimpanya. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/dynamic-modules">[4]</a></sup>
+</p>
+<pre><code>@Module({})
+export class MailModule {
+  static forRoot(options: { from: string }): DynamicModule {
+    return {
+      module: MailModule,
+      providers: [
+        { provide: MAIL_OPTIONS, useValue: options },
+        MailService,                  // MailService meng-inject MAIL_OPTIONS
+      ],
+      exports: [MailService],
+      global: false,
+    };
+  }
+}
+
+// pemakai: imports: [MailModule.forRoot({ from: 'no-reply@app.id' })]</code></pre>
+<p>Nama method-nya bukan aturan keras, tapi paket <code>@nestjs/*</code> mengikuti konvensi berikut: <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/dynamic-modules">[4]</a></sup></p>
+<table>
+  <thead><tr><th>Method</th><th>Arti</th><th>Contoh</th></tr></thead>
+  <tbody>
+    <tr><td><code>forRoot</code></td><td>Dikonfigurasi sekali, konfigurasinya dipakai ulang di banyak tempat</td><td><code>ConfigModule.forRoot()</code>, koneksi database di root module</td></tr>
+    <tr><td><code>forFeature</code></td><td>Memakai konfigurasi <code>forRoot</code>, tapi menyesuaikan sebagian untuk satu feature module</td><td><code>TypeOrmModule.forFeature([User])</code> di <code>UsersModule</code></td></tr>
+    <tr><td><code>register</code></td><td>Dikonfigurasi khusus untuk module pemanggil saja</td><td><code>HttpModule.register({ timeout: 5000 })</code></td></tr>
+  </tbody>
+</table>
+<p>
+  Masing-masing biasanya punya pasangan async, mis. <code>forRootAsync</code>, untuk opsi yang bergantung pada provider lain (bentuknya <code>useFactory</code> + <code>inject</code> seperti lesson 0017).
+  Untuk menulis dynamic module sendiri dengan lebih sedikit kode, Nest menyediakan <code>ConfigurableModuleBuilder</code>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/dynamic-modules">[4]</a></sup>
+</p>
+<pre><code>TypeOrmModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) =&gt; ({ url: config.get('DATABASE_URL') }),
+})</code></pre>
+
+<section class="exercise">
+  <h2>Latihan 2 — Dynamic module</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0018" data-bank-topic="nest-dynamic-module" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0029.</p>
+  <blockquote>"Rekan Anda ingin membuat semua service request-scoped supaya bisa membaca user dari request. Apa tanggapan Anda?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Nest punya tiga scope: DEFAULT atau singleton, REQUEST yang dibuat ulang per request, dan TRANSIENT yang memberi instance sendiri ke setiap pemakai. Singleton direkomendasikan karena dibuat sekali saat start. Request scope merambat ke atas: controller atau service yang meng-inject provider request-scoped ikut dibuat ulang setiap request, jadi kalau semuanya request-scoped, seluruh graf dibuat per request. Dokumentasi menyebut aplikasi yang dirancang baik sekitar 5% latency tambahan, tapi itu kalau dipakai hemat. Lifecycle hook seperti onModuleInit juga tidak jalan untuk class request-scoped. Untuk membaca user, saya ambil dari request di controller lewat parameter decorator lalu oper sebagai argumen, atau simpan di AsyncLocalStorage. Kalau memang butuh satu provider per request, cukup provider kecil itu, bukan semuanya."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>tiga scope: DEFAULT, REQUEST, TRANSIENT?</li>
+      <li>singleton sebagai rekomendasi default?</li>
+      <li>request scope merambat ke atas ke pemakainya (bubbling)?</li>
+      <li>biaya: graf dibuat ulang per request, latency bertambah?</li>
+      <li>lifecycle hook tidak dipanggil untuk class request-scoped?</li>
+      <li>alternatif: oper data sebagai argumen, AsyncLocalStorage, atau batasi ke satu provider kecil?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Latihan tulis kode — di kertas, tanpa IDE</h2>
+  <p>Tulis jawabannya di kertas dulu, baru buka contoh. Soal ini juga ada di bank soal dan bisa ditarik review 0029.</p>
+  <blockquote>"Tulis dynamic module <code>StorageModule</code> dengan <code>static forRoot(options: { bucket: string })</code>. Opsi disimpan dengan token <code>STORAGE_OPTIONS</code>, <code>StorageService</code> meng-inject opsi itu, dan module bisa dijadikan global lewat opsi <code>isGlobal</code>." (5 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>export const STORAGE_OPTIONS = Symbol('STORAGE_OPTIONS');
+
+@Injectable()
+export class StorageService {
+  constructor(@Inject(STORAGE_OPTIONS) private readonly opts: { bucket: string }) {}
+}
+
+@Module({})
+export class StorageModule {
+  static forRoot(options: { bucket: string; isGlobal?: boolean }): DynamicModule {
+    return {
+      module: StorageModule,
+      global: options.isGlobal ?? false,
+      providers: [{ provide: STORAGE_OPTIONS, useValue: options }, StorageService],
+      exports: [StorageService],
+    };
+  }
+}</code></pre>
+    <p><strong>Checklist:</strong> apakah kode Anda…</p>
+    <ul>
+      <li>memakai method <code>static</code> yang mengembalikan <code>DynamicModule</code>?</li>
+      <li>mengisi properti <code>module</code> dengan class module itu sendiri?</li>
+      <li>menyimpan opsi sebagai provider <code>useValue</code> dengan token sendiri?</li>
+      <li>meng-inject opsi di service dengan <code>@Inject(TOKEN)</code>?</li>
+      <li>meng-export <code>StorageService</code> supaya bisa dipakai pemanggil?</li>
+      <li>memetakan <code>isGlobal</code> ke properti <code>global</code>?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">NestJS docs: Dynamic modules</a>, ±20 menit. Membangun <code>ConfigModule</code> sendiri langkah demi langkah, lalu versi <code>ConfigurableModuleBuilder</code>.
+</div>
+
+<p>Berikutnya, <a href="0019-controller-dan-lifecycle.html">lesson 0019</a>: controller sebagai pintu masuk request, decorator routing dan parameter, serta urutan lifecycle hook saat aplikasi start dan berhenti.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "NestJS inti") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan TRANSIENT berguna?", "Apa beda forRoot dan register?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/fundamentals/injection-scopes">[1] NestJS docs: Injection scopes</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">[2] NestJS docs: Lifecycle events</a> ·
+  <a href="https://docs.nestjs.com/modules">[3] NestJS docs: Modules (dynamic modules)</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">[4] NestJS docs: Dynamic modules</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0017-provider-dan-dependency-injection.html">← 0017 · Provider dan dependency injection</a>
+  <a href="0019-controller-dan-lifecycle.html">0019 · Controller, routing, dan lifecycle hooks →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0018.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

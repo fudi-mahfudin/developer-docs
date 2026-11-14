@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0010 · worker_threads vs cluster vs child_process</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0010 · Node.js · Modul I/O &amp; skala · ±20 menit</div>
+  <h1>worker_threads vs cluster vs child_process</h1>
+  <p class="subtitle">Tiga cara keluar dari satu thread JavaScript: thread di proses yang sama, beberapa proses yang berbagi port, atau menjalankan program lain. Kapan memakai yang mana, dan kapan cukup menambah replika container</p>
+</header>
+
+<p>
+  Di modul Runtime, Anda melihat bahwa JavaScript di Node berjalan di satu thread, dan pekerjaan CPU berat memblokir event loop untuk semua request (lesson 0004).
+  Stream (lesson 0008–0009) menyelesaikan I/O besar, tapi tidak membantu pekerjaan <strong>CPU-bound</strong>, yaitu pekerjaan yang waktunya habis untuk menghitung, bukan menunggu disk atau jaringan.
+  Pertanyaan interview yang sering muncul: <em>"Node single-threaded, jadi bagaimana memakai 8 core?"</em>
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Kapan memakai worker_threads, cluster, atau child_process?"</em>
+  tanpa catatan, dalam 60 detik: satu kasus untuk masing-masing, kenapa worker tidak membantu I/O, kenapa state tidak terbagi di cluster,
+  dan kenapa di Kubernetes biasanya cukup menambah replika container.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Peta singkat</h2>
+<table>
+  <thead><tr><th></th><th><code>worker_threads</code></th><th><code>cluster</code></th><th><code>child_process</code></th></tr></thead>
+  <tbody>
+    <tr><td>Unit</td><td>Thread di proses yang sama</td><td>Proses Node terpisah, berbagi port server</td><td>Proses apa pun (Node atau program lain)</td></tr>
+    <tr><td>Memori</td><td>Terpisah per worker, tapi bisa berbagi <code>SharedArrayBuffer</code></td><td>Terpisah</td><td>Terpisah</td></tr>
+    <tr><td>Komunikasi</td><td><code>postMessage</code>, memori bersama</td><td>IPC (pesan antar proses)</td><td>stdin/stdout, IPC untuk <code>fork()</code></td></tr>
+    <tr><td>Kasus tipikal</td><td>Resize gambar, hashing, parsing besar dalam JS</td><td>Memakai semua core untuk server HTTP di satu mesin</td><td>Menjalankan <code>ffmpeg</code>, <code>git</code>, skrip Python</td></tr>
+  </tbody>
+</table>
+
+<!-- ============ 2 ============ -->
+<h2>2. <code>worker_threads</code>: CPU-bound di JavaScript</h2>
+<p>
+  Dokumentasi Node v24 tegas: worker <em>"are useful for performing CPU-intensive JavaScript operations. They do not help much with I/O-intensive work."</em>
+  I/O bawaan Node sudah asinkron dan lebih efisien daripada worker. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/worker_threads.html#worker-threads">[1]</a></sup>
+  Berbeda dengan <code>cluster</code> dan <code>child_process</code>, worker bisa berbagi memori dengan mentransfer <code>ArrayBuffer</code> atau memakai <code>SharedArrayBuffer</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/worker_threads.html#worker-threads">[1]</a></sup>
+</p>
+<pre><code>// main.js
+const { Worker } = require('node:worker_threads');
+
+function hashInWorker(password) {
+  return new Promise((resolve, reject) => {
+    const w = new Worker('./hash-worker.js', { workerData: password });
+    w.once('message', resolve);
+    w.once('error', reject);
+  });
+}
+
+// hash-worker.js
+const { parentPort, workerData } = require('node:worker_threads');
+parentPort.postMessage(slowHash(workerData)); // CPU berat, event loop utama tetap bebas</code></pre>
+<p>
+  Contoh di atas membuat satu worker per panggilan supaya mudah dibaca. Di produksi, dokumentasi menyarankan <em>"use a pool of Workers"</em>, karena biaya membuat worker bisa lebih besar daripada manfaatnya. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/worker_threads.html#worker-threads">[1]</a></sup>
+  Library seperti piscina menyediakan pool siap pakai.
+</p>
+<p class="note">
+  Jangan tertukar dengan libuv thread pool (lesson 0004). <code>UV_THREADPOOL_SIZE</code> hanya menambah thread untuk operasi bawaan seperti <code>fs</code>, <code>crypto.pbkdf2</code>, dan <code>zlib</code>.
+  Kode JavaScript Anda sendiri tetap berjalan di thread utama, kecuali dipindah ke worker.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — worker_threads</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0020.</p>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="io-worker-threads" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. <code>cluster</code>: beberapa proses, satu port</h2>
+<p>
+  <code>cluster</code> membuat beberapa proses Node (worker) yang <em>"all share server ports"</em>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cluster.html#cluster">[2]</a></sup>
+  Secara default (semua platform kecuali Windows), proses primary menerima koneksi dan membagikannya ke worker secara round-robin. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cluster.html#how-it-works">[3]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Client</span><span class="arrow">→</span>
+  <span class="box">Primary (port 3000)</span><span class="arrow">→</span>
+  <span class="box">round-robin</span><span class="arrow">→</span>
+  <span class="box">Worker 1 … Worker N (proses terpisah)</span>
+</div>
+<p>Dua konsekuensi yang sering ditanyakan:</p>
+<ul>
+  <li><strong>State tidak terbagi.</strong> Setiap worker adalah proses dengan memori sendiri. Node <em>"does not provide routing logic"</em>, jadi aplikasi sebaiknya tidak bergantung pada objek di memori untuk session dan login. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cluster.html#how-it-works">[3]</a></sup> Simpan session di Redis (penyimpanan key-value di memori yang diakses lewat jaringan) atau pakai token.</li>
+  <li><strong>Jumlah worker tidak dikelola otomatis.</strong> Worker yang mati tidak dihidupkan ulang sendiri; dokumentasi menyebut aplikasi bertanggung jawab mengelola pool worker. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cluster.html#how-it-works">[3]</a></sup></li>
+</ul>
+
+<!-- ============ 4 ============ -->
+<h2>4. Cluster vs banyak replika container</h2>
+<p>
+  Kalau aplikasi berjalan di Kubernetes atau platform container sejenis, orkestrator sudah melakukan hal yang dikerjakan <code>cluster</code>:
+  membagi trafik ke banyak instance (Service/load balancer), menghidupkan ulang yang mati (health check), dan menambah instance saat beban naik (autoscaling).
+  Karena itu, pola yang umum adalah <strong>satu proses Node per container</strong>, lalu menambah <strong>replika</strong>, bukan menjalankan <code>cluster</code> di dalam container.
+</p>
+<ul>
+  <li><strong>Replika container</strong>: satu proses per container, limit CPU/memori dan metrik per pod jelas, restart ditangani orkestrator.</li>
+  <li><strong><code>cluster</code></strong> tetap masuk akal di satu VM atau server tanpa orkestrator, misalnya dikelola PM2 (process manager untuk Node).</li>
+</ul>
+<p class="note">Ini keputusan arsitektur, bukan aturan Node. Jawaban yang baik di interview menyebut kedua opsi dan alasan memilih salah satunya.</p>
+
+<!-- ============ 5 ============ -->
+<h2>5. <code>child_process</code>: menjalankan program lain</h2>
+<p>
+  <code>child_process</code> menjalankan proses lain. <code>spawn()</code> adalah dasarnya; <code>exec()</code> menjalankan perintah di dalam shell; <code>execFile()</code> tanpa shell; <code>fork()</code> menjalankan modul Node dengan kanal IPC ke parent. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/child_process.html#child-process">[4]</a></sup>
+  Setiap proses hasil <code>fork()</code> punya memori dan instance V8 sendiri, jadi membuat banyak proses anak tidak disarankan. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/child_process.html#child_processforkmodulepath-args-options">[5]</a></sup>
+</p>
+<pre><code>const { spawn } = require('node:child_process');
+
+// Aman: argumen sebagai array, tanpa shell
+const p = spawn('ffmpeg', ['-i', inputPath, '-vf', 'scale=640:-1', outPath]);
+p.on('close', code => console.log('selesai dengan kode', code));
+
+// Berbahaya: input user masuk ke string shell (command injection)
+// exec(`ffmpeg -i ${req.query.file} out.mp4`);</code></pre>
+<p>
+  Untuk <code>exec()</code>, dokumentasi memberi peringatan tebal: <em>"Never pass unsanitized user input to this function."</em> <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/child_process.html#child_processexeccommand-options-callback">[6]</a></sup>
+  Input seperti <code>a.mp4; rm -rf /</code> akan dijalankan shell sebagai dua perintah.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — cluster, child_process, dan replika</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <div class="quiz" data-bank-lesson="0010" data-bank-topic="io-cluster-proses" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0020.</p>
+  <blockquote>"Kapan Anda memakai worker_threads, cluster, atau child_process? Beri satu contoh kasus untuk masing-masing." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Ketiganya untuk hal berbeda. <code>worker_threads</code> untuk pekerjaan CPU-bound di JavaScript, misalnya resize gambar atau parsing besar, supaya event loop tidak terblokir; worker satu proses dengan memori bisa dibagi lewat <code>SharedArrayBuffer</code>, dan saya pakai pool karena membuat worker mahal. Untuk I/O biasa worker tidak membantu karena I/O Node sudah asinkron. <code>cluster</code> menjalankan beberapa proses Node yang berbagi satu port, untuk memakai semua core di satu mesin; state seperti session harus di luar proses. Di Kubernetes saya lebih memilih beberapa replika container berproses tunggal karena orkestrator sudah menangani load balancing dan restart. <code>child_process</code> untuk menjalankan program lain seperti ffmpeg, dengan <code>spawn</code> dan argumen array, bukan <code>exec</code> dengan input user."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li><code>worker_threads</code> untuk CPU-bound JavaScript, tidak membantu I/O?</li>
+      <li>worker berbagi memori (<code>SharedArrayBuffer</code>/transfer), sebaiknya lewat pool?</li>
+      <li><code>cluster</code> = beberapa proses berbagi port untuk memakai semua core?</li>
+      <li>state (session) tidak terbagi antar proses cluster?</li>
+      <li>di container/Kubernetes lebih suka replika ketimbang cluster?</li>
+      <li><code>child_process</code> untuk program eksternal, hindari <code>exec</code> dengan input user?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0011-memory-leak-dan-profiling.html">lesson 0011</a>: proses sudah dibagi dengan benar, tapi memorinya terus naik sampai crash. Memory leak, heap snapshot, dan profiling.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "I/O &amp; skala") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa worker tidak membantu query database?", "Apa beda spawn dan exec?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/worker_threads.html">[1] Node.js v24: Worker threads</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cluster.html">[2] Node.js v24: Cluster</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cluster.html#how-it-works">[3] Node.js v24: Cluster, How it works</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/child_process.html#child-process">[4] Node.js v24: Child process</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/child_process.html#child_processforkmodulepath-args-options">[5] Node.js v24: child_process.fork()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/child_process.html#child_processexeccommand-options-callback">[6] Node.js v24: child_process.exec()</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0009-backpressure-dan-buffer.html">← 0009 · Backpressure, highWaterMark, dan Buffer</a>
+  <a href="0011-memory-leak-dan-profiling.html">0011 · Memory leak dan profiling →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
