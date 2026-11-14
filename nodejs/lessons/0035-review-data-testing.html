@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0035 · Review 4: Data &amp; auth + Testing &amp; produksi + topik lemah</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0035 · Node.js · Review · ±25 menit · seam penguasaan</div>
+  <h1>Review 4: Data &amp; auth + Testing &amp; produksi + topik lemah</h1>
+  <p class="subtitle">Tanpa materi baru: soal kuis dan lisan dari modul sebelumnya, diacak bersama (interleaving).</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> keluar dengan daftar jujur topik yang <em>benar-benar menempel</em> dari modul Data &amp; auth (0025–0028) dan Testing &amp; produksi (0030–0034), ditambah topik lemah Review 1–3, dan yang perlu diulang.
+</div>
+
+<p class="note">
+  Review ini menguji modul Data &amp; auth (0025–0028), yang tertunda satu modul, dan modul Testing &amp; produksi (0030–0034), ditambah topik lemah dari Review 1–3 (0012, 0020, 0029). Karena Testing &amp; produksi adalah modul terakhir, beri jeda minimal satu hari setelah lesson 0034 sebelum mengerjakan review ini. Jeda itu membuat skornya mengukur ingatan (retensi), bukan hafalan beberapa menit sebelumnya (fluency). Tanpa materi baru.
+</p>
+
+<h2>Aturan main</h2>
+<ol>
+  <li><strong>Jangan buka catatan, lesson, reference, IDE, atau tab lain.</strong> Yang diuji adalah kemampuan menjawab pertanyaan interview Node.js dan NestJS tanpa catatan. Kalau Anda mengintip, hasilnya tidak berarti.</li>
+  <li><strong>Soal kuis:</strong> pilih satu jawaban. Ada tepat satu soal kuis untuk setiap topik modul yang diuji (19 topik = 19 kuis, ditambah satu kuis per topik lemah), jadi setiap topik diuji minimal sekali.</li>
+  <li><strong>Soal lisan:</strong> jawab dengan suara keras (±60–90 detik, boleh direkam di ponsel) <em>sebelum</em> membuka checklist, lalu centang hanya poin yang benar-benar Anda sebut, bukan yang "sebenarnya tahu".
+    Untuk soal "tulis kode", tulis kodenya di kertas dulu, baru buka checklist.</li>
+  <li><strong>Kriteria lulus per topik:</strong> soal kuis acak dijawab benar, dan soal lisan topik itu lulus (minimal 2/3 poin checklist dicentang, misalnya 4 dari 6). Satu kesalahan di topik itu = topik lemah.
+    Topik yang kuisnya benar tapi tidak mendapat soal lisan tampil sebagai <em>Kuis lulus, lisan belum diuji</em> dan belum dihitung lulus.</li>
+  <li><strong>Topik lemah Review 1–3</strong> ikut diuji di sini kalau agent sudah memasukkan slug-nya ke <code>data-topics</code> (dari baris "Topik lemah Node.js …" di <code>nodejs/NOTES.md</code>). Kalau <code>data-topics</code> masih kosong, review ini hanya menguji modul Data &amp; auth dan Testing &amp; produksi.</li>
+</ol>
+
+<p class="note">
+  Urutan soal mengikuti seed yang tampil di bawah. Tombol "Acak ulang" membuat set baru, tapi kerjakan <strong>set pertama</strong> sampai selesai sebelum mengacak ulang; hasil set pertama itulah yang dilaporkan.
+  Untuk mengulang set yang sama nanti, tambahkan <code>?seed=NNN</code> di URL. Hanya 3 soal lisan yang ditarik, jadi topik lain bisa diuji lewat <code>?seed=</code> berbeda di sesi berikutnya (pengulangan berjarak).
+</p>
+
+<!--
+  Pengaturan review (cara agent mengubahnya):
+  - data-lessons = lesson modul yang diuji (semua topiknya ikut).
+  - data-mc = jumlah topik kuis di pool (sekarang 19: data- 9, prod- 10), supaya draw() menarik tepat satu kuis per topik.
+    Hitung ulang bila bank soal modul itu mendapat topik baru; tests/nodejs/review.test.js memeriksanya.
+  - data-oral = 3, supaya review muat ±25 menit.
+  - data-topics: slug topik lemah dari Review 1–3 (baris 'Topik lemah Node.js …' di nodejs/NOTES.md); semua bank dimuat supaya slug apa pun bisa dipilih. Tambahkan jumlah topik lemah ke data-mc.
+-->
+<div class="review" data-title="Review 4: Data &amp; auth + Testing &amp; produksi + topik lemah" data-lessons="0025,0026,0027,0028,0030,0031,0032,0033,0034"
+     data-topics="" data-mc="19" data-oral="3"></div>
+
+<section class="exercise">
+  <h2>Setelah selesai: laporkan hasilnya ke agent</h2>
+  <ol>
+    <li>Setelah semua soal dijawab, ringkasan per topik muncul di bawah soal terakhir.</li>
+    <li>Tekan <strong>Salin</strong> (atau blok teks di kotak ringkasan), lalu <strong>tempel ke agent</strong> di terminal, misalnya:
+      <em>"Ini hasil review 0035 Node.js, tolong dicatat."</em></li>
+    <li>Agent menulis learning record "sudah dikuasai" di <code>nodejs/learning-records/</code> <strong>hanya untuk topik yang lulus</strong> (kuis benar dan lisan lulus), dengan seed dan skor sebagai bukti.
+      Topik <em>Kuis lulus, lisan belum diuji</em> dicatat di NOTES saja, tanpa learning record.</li>
+    <li>Topik yang lemah dicatat sebagai baris "Topik lemah Node.js 0035: …" di <code>nodejs/NOTES.md</code>. Ulangi review ini dengan slug itu di <code>data-topics</code> dan <code>?seed=</code> baru sebelum interview.</li>
+  </ol>
+  <p class="note">Hanya hasil review 0012, 0020, 0029, dan 0035 yang dicatat sebagai bukti penguasaan Node.js. Skor kuis di lesson biasa tidak dihitung.</p>
+</section>
+
+<h2>Kalau ada topik lemah</h2>
+<p>
+  Jangan baca ulang seluruh modul. Untuk topik <code>data-</code>, buka hanya bagian topik itu di lesson 0025–0028; untuk <code>prod-</code>, di lesson 0030–0034.
+  Untuk topik lemah dari Review 1–3, buka bagian topik itu di lesson modulnya (<code>runtime-</code> dan <code>async-</code> di 0001–0007, <code>io-</code> dan <code>tooling-</code> di 0008–0015, <code>nest-</code> dan <code>pipeline-</code> di 0016–0024).
+  Lalu tutup, dan jelaskan lagi dengan suara keras (atau tulis ulang kodenya di kertas).
+</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa jawaban soal transaksi Prisma tadi salah?", "Beri saya satu soal lagi tentang idempotensi job BullMQ."</p>
+
+<nav class="lesson-nav">
+  <a href="0034-background-job-bullmq.html">← 0034 · Background job dengan BullMQ</a>
+  <a href="0036-mock-interview.html">0036 · Mock interview tiga babak (opsional) →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0001.js"></script>
+<script src="../assets/questions/0002.js"></script>
+<script src="../assets/questions/0003.js"></script>
+<script src="../assets/questions/0004.js"></script>
+<script src="../assets/questions/0005.js"></script>
+<script src="../assets/questions/0006.js"></script>
+<script src="../assets/questions/0007.js"></script>
+<script src="../assets/questions/0008.js"></script>
+<script src="../assets/questions/0009.js"></script>
+<script src="../assets/questions/0010.js"></script>
+<script src="../assets/questions/0011.js"></script>
+<script src="../assets/questions/0013.js"></script>
+<script src="../assets/questions/0014.js"></script>
+<script src="../assets/questions/0015.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../assets/questions/0017.js"></script>
+<script src="../assets/questions/0018.js"></script>
+<script src="../assets/questions/0019.js"></script>
+<script src="../assets/questions/0021.js"></script>
+<script src="../assets/questions/0022.js"></script>
+<script src="../assets/questions/0023.js"></script>
+<script src="../assets/questions/0024.js"></script>
+<script src="../assets/questions/0025.js"></script>
+<script src="../assets/questions/0026.js"></script>
+<script src="../assets/questions/0027.js"></script>
+<script src="../assets/questions/0028.js"></script>
+<script src="../assets/questions/0030.js"></script>
+<script src="../assets/questions/0031.js"></script>
+<script src="../assets/questions/0032.js"></script>
+<script src="../assets/questions/0033.js"></script>
+<script src="../assets/questions/0034.js"></script>
+<script src="../../assets/review.js"></script>
+</body>
+</html>
