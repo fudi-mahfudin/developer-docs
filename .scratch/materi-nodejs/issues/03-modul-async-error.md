@@ -1,6 +1,6 @@
 # 03: Modul Async & error (0005–0007)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 
