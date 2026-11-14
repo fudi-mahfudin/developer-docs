@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0036 · Mock interview 45 menit: konsep Node, konsep NestJS, live coding</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0036 · Node.js · Penutup · ±45 menit · opsional, pengecualian durasi</div>
+  <h1>Mock interview 45 menit: konsep Node, konsep NestJS, live coding</h1>
+  <p class="subtitle">Tiga babak seperti satu ronde interview backend: dua babak pertanyaan konsep lisan, satu babak menulis kode di kertas, lalu dinilai sendiri dengan checklist</p>
+</header>
+
+<p>
+  Lesson ini <strong>opsional</strong> dan merupakan satu-satunya pengecualian durasi di track ini: ±45 menit, sama dengan satu ronde interview.
+  Tidak ada materi baru. Semua pertanyaan diambil dari modul 1–8, tetapi kali ini Anda menjawab dulu, tanpa catatan, baru membuka jawaban contoh.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> dalam 45 menit tanpa catatan, Anda bisa menjelaskan event loop dan backpressure (15 menit), menjelaskan DI, scope, dan pipeline request NestJS (15 menit),
+  lalu menulis di kertas endpoint CRUD dengan DTO + validation, <code>RolesGuard</code>, service dengan Prisma, dan satu unit test (15 menit).
+  Nilainya minimal 4 dari 6 poin checklist di setiap babak.
+</div>
+
+<!-- ============ ATURAN ============ -->
+<h2>Aturan main</h2>
+<ol>
+  <li>Siapkan kertas dan pulpen, tanpa IDE. Jawab babak 1 dan 2 dengan suara keras, seolah interviewer duduk di depan Anda. Merekam suara sendiri sangat membantu saat menilai.</li>
+  <li>Tekan <strong>Mulai</strong>. Timer pindah segmen sendiri, seperti interviewer yang memotong: kalau waktu babak habis, lanjut ke babak berikutnya.</li>
+  <li>Jangan buka jawaban contoh selama mock. Buka per babak <em>setelah</em> timer selesai, lalu nilai dengan checklist.</li>
+  <li>Di babak 3, sintaks yang sedikit salah tidak apa-apa. Interviewer menilai struktur dan keputusan: di mana validasi, di mana otorisasi, apa yang di-mock.</li>
+</ol>
+
+<div class="timer" data-segments="Konsep Node:15,Konsep NestJS:15,Live coding:15"></div>
+
+<!-- ============ BABAK 1 ============ -->
+<h2>Babak 1 · Konsep Node (±15 menit)</h2>
+<blockquote>"Jelaskan event loop Node. Di mana <code>process.nextTick</code> dan Promise dijalankan relatif terhadap <code>setTimeout</code> dan <code>setImmediate</code>? Lalu jelaskan backpressure pada stream: apa yang terjadi kalau Anda mengabaikannya?"</blockquote>
+<p>Lalu interviewer menunjukkan kode berikut (CommonJS, Node 24): "Tulis urutan outputnya dan jelaskan setiap baris."</p>
+<pre><code>console.log('1');
+setImmediate(() =&gt; console.log('2'));
+Promise.resolve().then(() =&gt; {
+  console.log('3');
+  process.nextTick(() =&gt; console.log('4'));
+});
+process.nextTick(() =&gt; console.log('5'));
+(async () =&gt; {
+  console.log('6');
+  await null;
+  console.log('7');
+})();
+console.log('8');</code></pre>
+<details>
+  <summary>Lihat urutan output</summary>
+  <ol>
+    <li><code>1</code></li>
+    <li><code>6</code></li>
+    <li><code>8</code></li>
+    <li><code>5</code></li>
+    <li><code>3</code></li>
+    <li><code>7</code></li>
+    <li><code>4</code></li>
+    <li><code>2</code></li>
+  </ol>
+  <p>
+    Kode sinkron jalan sampai habis: 1, badan async function sampai <code>await</code> (6), lalu 8. Next tick queue dikosongkan (5), baru microtask queue: 3 lalu lanjutan setelah <code>await</code> (7), sesuai urutan masuk antrean.
+    nextTick yang dijadwalkan dari dalam microtask (4) jalan setelah microtask queue habis. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[1]</a></sup>
+    <code>setImmediate</code> (2) menunggu fase check. Kunci ini diverifikasi dengan menjalankan kodenya di Node v24.
+  </p>
+</details>
+
+<section class="exercise">
+  <details>
+    <summary>Lihat jawaban contoh babak 1</summary>
+    <p>"Node menjalankan JavaScript di satu thread; I/O diserahkan ke libuv, dan callback-nya dijalankan event loop. Satu putaran punya fase timers untuk setTimeout/setInterval, pending callbacks, poll untuk callback I/O, check untuk setImmediate, dan close callbacks. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#phases-overview">[2]</a></sup> Di luar fase itu ada dua antrean yang dikosongkan setiap kali satu callback selesai: next tick queue dulu, lalu microtask queue untuk Promise. Jadi nextTick dan then selalu mendahului timer dan immediate berikutnya. setTimeout 0 vs setImmediate di main module tidak deterministik, tetapi di dalam callback I/O setImmediate selalu duluan. Backpressure: write() mengembalikan false kalau buffer Writable melewati highWaterMark; produsen harus berhenti dan menunggu event 'drain'. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[3]</a></sup> Kalau diabaikan, data menumpuk di memori sampai proses membengkak. Paling aman memakai stream.pipeline, yang menangani backpressure dan error sekaligus."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>satu thread JavaScript, I/O diserahkan ke libuv?</li>
+      <li>fase utama berurutan: timers → poll → check (setImmediate) → close?</li>
+      <li>next tick queue dikosongkan sebelum microtask queue, keduanya setelah setiap callback?</li>
+      <li>setTimeout 0 vs setImmediate: tidak deterministik di main module, immediate duluan di callback I/O?</li>
+      <li><code>write()</code> mengembalikan <code>false</code> di atas highWaterMark, lalu tunggu event <code>'drain'</code>?</li>
+      <li>mengabaikan backpressure membuat memori membengkak; solusinya <code>stream.pipeline()</code>?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6. Soal urutan output dinilai terpisah: benar semua atau tidak.</p>
+  </details>
+</section>
+
+<!-- ============ BABAK 2 ============ -->
+<h2>Babak 2 · Konsep NestJS (±15 menit)</h2>
+<blockquote>"Bagaimana dependency injection bekerja di NestJS, dan apa beda scope DEFAULT, REQUEST, dan TRANSIENT? Sebutkan urutan pipeline request. Kenapa otorisasi role ditaruh di guard, bukan di middleware?"</blockquote>
+<p>Pertanyaan lanjutan yang sering muncul: "Kalau <code>OrdersService</code> meng-inject provider request-scoped, apa yang terjadi?" dan "User bukan admin mengirim body tidak valid: dapat 400 atau 403?"</p>
+
+<section class="exercise">
+  <details>
+    <summary>Lihat jawaban contoh babak 2</summary>
+    <p>"Class bertanda @Injectable didaftarkan sebagai provider di sebuah module; IoC container Nest membaca tipe parameter constructor dan menyuntikkan instance-nya. Provider bisa dipakai module lain kalau di-export. Scope DEFAULT berarti singleton, satu instance untuk seluruh aplikasi, dan itu yang direkomendasikan. REQUEST dibuat per request, dan scope itu naik ke atas rantai: siapa pun yang meng-inject-nya ikut request-scoped. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/injection-scopes">[4]</a></sup> TRANSIENT memberi instance baru untuk setiap consumer.
+    Pipeline-nya: middleware, guard, interceptor bagian sebelum, pipe, handler, lalu interceptor bagian sesudah dengan urutan terbalik; exception yang lolos ditangani exception filter. <sup class="cite"><a href="https://docs.nestjs.com/faq/request-lifecycle">[5]</a></sup>
+    Otorisasi di guard karena guard menerima ExecutionContext, jadi tahu handler mana yang akan jalan dan bisa membaca metadata @Roles lewat Reflector, sedangkan middleware tidak tahu handler berikutnya. Guard juga jalan sebelum pipe, jadi user bukan admin dengan body tidak valid mendapat 403, bukan 400."
+    Dokumentasi Nest: guard dijalankan <em>"after all middleware, but before any interceptor or pipe."</em> <sup class="cite"><a href="https://docs.nestjs.com/guards">[6]</a></sup></p>
+    <div class="flow">
+      <span class="box">Middleware</span><span class="arrow">→</span>
+      <span class="box">Guard</span><span class="arrow">→</span>
+      <span class="box">Interceptor (sebelum)</span><span class="arrow">→</span>
+      <span class="box">Pipe</span><span class="arrow">→</span>
+      <span class="box">Handler</span><span class="arrow">→</span>
+      <span class="box">Interceptor (sesudah)</span>
+    </div>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>provider @Injectable didaftarkan di module dan disuntik lewat constructor oleh IoC container?</li>
+      <li>DEFAULT = singleton dan direkomendasikan; REQUEST per request; TRANSIENT per consumer?</li>
+      <li>scope REQUEST naik ke class yang meng-inject-nya?</li>
+      <li>urutan: middleware → guard → interceptor → pipe → handler → interceptor; exception filter untuk error?</li>
+      <li>guard tahu handler lewat ExecutionContext dan membaca metadata dengan Reflector; middleware tidak?</li>
+      <li>guard jalan sebelum pipe, jadi request tak berhak ditolak (403) sebelum validasi?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<!-- ============ BABAK 3 ============ -->
+<h2>Babak 3 · Live coding di kertas (±15 menit)</h2>
+<blockquote>"Kita punya tabel <code>Product</code> di Prisma. Tulis endpoint <code>POST /products</code> yang hanya boleh dipanggil admin, dan <code>GET /products/:id</code>. Saya ingin melihat DTO dengan validasi, guard berbasis role, service yang memakai <code>PrismaService</code>, controller, dan satu unit test untuk service."</blockquote>
+<p>Anggap <code>req.user</code> sudah diisi auth guard (JWT) sebelumnya dan <code>PrismaService</code> sudah ada. Fokus pada empat potongan: DTO, guard, service + controller, test.</p>
+
+<section class="exercise">
+  <details>
+    <summary>Lihat jawaban contoh babak 3</summary>
+<pre><code>// create-product.dto.ts
+import { IsString, IsInt, Min } from 'class-validator';
+export class CreateProductDto {
+  @IsString() name: string;
+  @IsInt() @Min(0) price: number;
+}
+
+// roles.guard.ts (req.user sudah diisi auth guard sebelumnya)
+export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+  canActivate(ctx: ExecutionContext): boolean {
+    const roles = this.reflector.get(Roles, ctx.getHandler());
+    if (!roles) return true;
+    const { user } = ctx.switchToHttp().getRequest();
+    return roles.some(r =&gt; user?.roles?.includes(r));
+  }
+}
+
+// products.service.ts
+@Injectable()
+export class ProductsService {
+  constructor(private prisma: PrismaService) {}
+  create(dto: CreateProductDto) { return this.prisma.product.create({ data: dto }); }
+  async findOne(id: number) {
+    const p = await this.prisma.product.findUnique({ where: { id } });
+    if (!p) throw new NotFoundException();
+    return p;
+  }
+}
+
+// products.controller.ts (main.ts: app.useGlobalPipes(new ValidationPipe({ whitelist: true })))
+@Controller('products')
+@UseGuards(RolesGuard)
+export class ProductsController {
+  constructor(private products: ProductsService) {}
+  @Post() @Roles(['admin'])
+  create(@Body() dto: CreateProductDto) { return this.products.create(dto); }
+  @Get(':id')
+  findOne(@Param('id', ParseIntPipe) id: number) { return this.products.findOne(id); }
+}
+
+// products.service.spec.ts
+it('findOne melempar NotFoundException kalau produk tidak ada', async () =&gt; {
+  const prisma = { product: { findUnique: jest.fn().mockResolvedValue(null) } };
+  const mod = await Test.createTestingModule({
+    providers: [ProductsService, { provide: PrismaService, useValue: prisma }],
+  }).compile();
+  await expect(mod.get(ProductsService).findOne(1)).rejects.toThrow(NotFoundException);
+});</code></pre>
+    <p>
+      DTO harus class, bukan interface, karena <code>ValidationPipe</code> membaca decorator class-validator saat runtime; <code>whitelist</code> membuang properti tanpa decorator. <sup class="cite"><a href="https://docs.nestjs.com/techniques/validation">[7]</a></sup>
+      Di unit test, <code>PrismaService</code> diganti objek berisi <code>jest.fn()</code> lewat <code>useValue</code> sehingga tidak ada database yang disentuh. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/testing">[8]</a></sup>
+      Kalau waktu tersisa, sebut apa yang akan Anda tambah: test untuk <code>create</code>, e2e test dengan supertest untuk 403 dan 400.
+    </p>
+    <p><strong>Checklist:</strong> apakah kode Anda…</p>
+    <ul>
+      <li>punya DTO berupa class dengan decorator class-validator (<code>@IsString</code>, <code>@IsInt</code>) dan <code>ValidationPipe</code> aktif?</li>
+      <li>punya <code>RolesGuard</code> yang mengimplementasikan <code>CanActivate</code> dan membaca <code>@Roles</code> lewat <code>Reflector</code> dari <code>context.getHandler()</code>?</li>
+      <li>memasang guard di controller atau method (<code>@UseGuards</code>) dan <code>@Roles(['admin'])</code> hanya di POST?</li>
+      <li>meng-inject <code>PrismaService</code> di service lewat constructor dan memanggil <code>create</code>/<code>findUnique</code>?</li>
+      <li>menghasilkan <code>NotFoundException</code> (404) kalau data tidak ada, dengan id diubah lewat <code>ParseIntPipe</code>?</li>
+      <li>memakai <code>Test.createTestingModule</code> dengan <code>PrismaService</code> di-mock (<code>useValue</code> + <code>jest.fn</code>) dan <code>expect</code> pada hasilnya?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<section class="exercise">
+  <h2>Cek cepat setelah mock</h2>
+  <p>Kuis singkat untuk mengunci jawaban utama. Ini feedback cepat, bukan bukti penguasaan; yang dicatat tetap hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0036" data-bank-topic="mock-konsep-node" data-stack></div>
+  <div class="quiz" data-bank-lesson="0036" data-bank-topic="mock-konsep-nestjs" data-stack></div>
+  <div class="quiz" data-bank-lesson="0036" data-bank-topic="mock-live-coding" data-stack></div>
+</section>
+
+<h2>Setelah mock</h2>
+<ul>
+  <li>Catat babak yang kehabisan waktu dan poin checklist yang terlewat. Ulangi lesson asalnya: event loop di 0002–0003, streams di 0008–0009, DI dan scope di 0017–0018, pipeline di 0021–0024, testing di 0030.</li>
+  <li>Baca ulang dua cheat sheet: <a href="../reference/urutan-event-loop.html">urutan event loop</a> · <a href="../reference/pipeline-request-nestjs.html">pipeline request NestJS</a>.</li>
+  <li>Ulangi mock dengan variasi: endpoint <code>PATCH</code> dengan <code>PartialType</code>, guard berbasis kepemilikan data, atau unit test untuk kasus sukses. Minta agent menjadi interviewer.</li>
+</ul>
+
+<p>Track Node.js selesai. Kembali ke <a href="../index.html">indeks</a> untuk mengulang lesson atau review yang lemah.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Penutup") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "jadilah interviewer dan beri saya soal live coding baru", "nilai kode babak 3 saya dengan checklist ini", atau "kenapa nextTick dari dalam then jalan setelah lanjutan await?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[1] Node.js v24 API: When to use queueMicrotask() vs. process.nextTick()</a> ·
+  <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#phases-overview">[2] Node.js Learn: The Node.js Event Loop, Phases overview</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[3] Node.js v24 API: Stream, Buffering</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/injection-scopes">[4] NestJS docs: Injection scopes</a> ·
+  <a href="https://docs.nestjs.com/faq/request-lifecycle">[5] NestJS docs: Request lifecycle</a> ·
+  <a href="https://docs.nestjs.com/guards">[6] NestJS docs: Guards</a> ·
+  <a href="https://docs.nestjs.com/techniques/validation">[7] NestJS docs: Validation</a> ·
+  <a href="https://docs.nestjs.com/fundamentals/testing">[8] NestJS docs: Testing</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0035-review-data-testing.html">← 0035 · Review 4: Data &amp; auth + Testing &amp; produksi</a>
+  <a href="../index.html">Indeks →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0036.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+<script src="../../assets/timer.js"></script>
+</body>
+</html>

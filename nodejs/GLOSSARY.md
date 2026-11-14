@@ -381,3 +381,11 @@ _Avoid_: cron job (itu terjadwal, bukan dipicu request)
 **Idempotent (job)**:
 Handler yang bila dijalankan dua kali berefek sama dengan sekali, wajib karena retry bisa mengulang job; dibantu penanda di database atau `jobId` unik (lesson 0034).
 _Avoid_: exactly-once
+
+## Penutup
+
+Slug topik bank soal 0036 (prefix `mock-`): `mock-konsep-node` (babak 1) · `mock-konsep-nestjs` (babak 2) · `mock-live-coding` (babak 3). Cheat sheet: `reference/urutan-event-loop.html`, `reference/pipeline-request-nestjs.html`.
+
+**Babak (mock)**:
+Satu segmen 15 menit di mock interview 0036: konsep Node, konsep NestJS, atau live coding di kertas; dinilai sendiri dengan checklist 6 poin, lulus kalau minimal 4 (lesson 0036).
+_Avoid_: ronde (satu ronde = seluruh mock 45 menit)

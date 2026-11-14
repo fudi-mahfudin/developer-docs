@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Urutan event loop Node.js</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Node.js · Urutan event loop</div>
+<h1>Urutan event loop</h1>
+<p class="subtitle">Ringkasan satu halaman untuk dibaca ulang menjelang interview. Dari Lesson <a href="../lessons/0002-fase-event-loop.html">0002</a> (fase) dan <a href="../lessons/0003-microtask-dan-nexttick.html">0003</a> (nextTick dan microtask). Latihan penuhnya: mock <a href="../lessons/0036-mock-interview.html">0036</a>.</p>
+
+<h2>Enam fase dalam satu putaran</h2>
+<div class="flow">
+  <span class="box">timers</span><span class="arrow">→</span>
+  <span class="box">pending callbacks</span><span class="arrow">→</span>
+  <span class="box">idle, prepare</span><span class="arrow">→</span>
+  <span class="box">poll</span><span class="arrow">→</span>
+  <span class="box">check</span><span class="arrow">→</span>
+  <span class="box">close callbacks</span><span class="arrow">↻</span>
+</div>
+<table>
+  <thead><tr><th>Fase</th><th>Callback yang dijalankan</th></tr></thead>
+  <tbody>
+    <tr><td><strong>timers</strong></td><td><code>setTimeout()</code> dan <code>setInterval()</code> yang waktunya sudah lewat</td></tr>
+    <tr><td><strong>pending callbacks</strong></td><td>Callback I/O yang ditunda ke putaran berikutnya (mis. beberapa error TCP)</td></tr>
+    <tr><td><strong>idle, prepare</strong></td><td>Internal</td></tr>
+    <tr><td><strong>poll</strong></td><td>Callback I/O; Node menunggu di sini kalau tidak ada pekerjaan lain</td></tr>
+    <tr><td><strong>check</strong></td><td><code>setImmediate()</code></td></tr>
+    <tr><td><strong>close callbacks</strong></td><td>Event close, mis. <code>socket.on('close', …)</code></td></tr>
+  </tbody>
+</table>
+<p class="note">Fase dan isinya mengikuti panduan resmi Node. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#phases-overview">[1]</a></sup></p>
+
+<h2>Prioritas: nextTick → microtask → fase berikutnya</h2>
+<div class="flow">
+  <span class="box">Kode sinkron / satu callback</span><span class="arrow">→</span>
+  <span class="box">next tick queue</span><span class="arrow">→</span>
+  <span class="box">microtask queue</span><span class="arrow">→</span>
+  <span class="box">callback / fase berikutnya</span>
+</div>
+<ul>
+  <li>Setelah kode sinkron atau <em>setiap</em> callback selesai, Node mengosongkan seluruh next tick queue (<code>process.nextTick</code>), lalu seluruh microtask queue (<code>Promise.then</code>, lanjutan <code>await</code>, <code>queueMicrotask</code>). <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[2]</a></sup></li>
+  <li>nextTick yang dijadwalkan dari dalam microtask menunggu sampai microtask queue habis, lalu jalan sebelum loop lanjut.</li>
+  <li>Pengecualian ESM: di top-level modul ESM, microtask (<code>then</code>, <code>queueMicrotask</code>) jalan <em>sebelum</em> nextTick, karena modul ESM sendiri dijalankan sebagai bagian dari microtask queue. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[2]</a></sup> Semua soal di bawah memakai CommonJS.</li>
+  <li>nextTick rekursif bisa membuat I/O kelaparan (starvation), karena loop tidak pernah sampai ke poll.</li>
+</ul>
+
+<h2>setTimeout(fn, 0) vs setImmediate(fn)</h2>
+<table>
+  <thead><tr><th>Dipanggil dari</th><th>Urutan</th></tr></thead>
+  <tbody>
+    <tr><td>Main module (top-level file)</td><td><strong>tidak deterministik</strong>: bergantung apakah 1 ms sudah lewat saat loop masuk fase timers</td></tr>
+    <tr><td>Di dalam callback I/O</td><td>Selalu <code>setImmediate</code> duluan: callback I/O di poll, fase berikutnya check</td></tr>
+  </tbody>
+</table>
+<p class="note">Keduanya dari panduan resmi Node. <sup class="cite"><a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick#setimmediate-vs-settimeout">[1]</a></sup> Delay di bawah 1 diubah menjadi 1 ms. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/timers.html#settimeoutcallback-delay-args">[3]</a></sup></p>
+
+<h2>Soal tebak urutan output</h2>
+<p>Tulis urutannya di kertas dulu, baru buka jawaban. Semua kunci diverifikasi dengan menjalankan kodenya di Node 24 (CommonJS).</p>
+
+<h3>Soal 1 — di dalam callback I/O</h3>
+<pre><code>const fs = require('node:fs');
+fs.readFile(__filename, () =&gt; {
+  setTimeout(() =&gt; console.log('timeout'), 0);
+  setImmediate(() =&gt; console.log('immediate'));
+});</code></pre>
+<details>
+  <summary>Lihat jawaban soal 1</summary>
+  <ol>
+    <li><code>immediate</code></li>
+    <li><code>timeout</code></li>
+  </ol>
+  <p>Callback readFile berjalan di poll; fase berikutnya check, jadi immediate duluan. Timer menunggu fase timers putaran berikutnya.</p>
+</details>
+
+<h3>Soal 2 — async/await</h3>
+<pre><code>async function f() {
+  console.log('f mulai');
+  await g();
+  console.log('f selesai');
+}
+async function g() {
+  console.log('g');
+}
+console.log('awal');
+f();
+Promise.resolve().then(() =&gt; console.log('then'));
+console.log('akhir');</code></pre>
+<details>
+  <summary>Lihat jawaban soal 2</summary>
+  <ol>
+    <li><code>awal</code></li>
+    <li><code>f mulai</code></li>
+    <li><code>g</code></li>
+    <li><code>akhir</code></li>
+    <li><code>f selesai</code></li>
+    <li><code>then</code></li>
+  </ol>
+  <p>Badan async function jalan sinkron sampai <code>await</code> pertama, termasuk isi <code>g()</code>. Lanjutan setelah <code>await</code> masuk microtask queue lebih dulu daripada <code>then</code>, jadi "f selesai" mendahului "then".</p>
+</details>
+
+<h3>Soal 3 — microtask di antara dua timer</h3>
+<pre><code>setTimeout(() =&gt; {
+  console.log('t1');
+  Promise.resolve().then(() =&gt; console.log('promise dari t1'));
+  process.nextTick(() =&gt; console.log('tick dari t1'));
+}, 0);
+setTimeout(() =&gt; console.log('t2'), 0);</code></pre>
+<details>
+  <summary>Lihat jawaban soal 3</summary>
+  <ol>
+    <li><code>t1</code></li>
+    <li><code>tick dari t1</code></li>
+    <li><code>promise dari t1</code></li>
+    <li><code>t2</code></li>
+  </ol>
+  <p>Kedua antrean dikosongkan setelah <em>setiap</em> callback, bukan setelah seluruh fase timers selesai. Jadi nextTick lalu promise dari t1 jalan sebelum t2.</p>
+</details>
+
+<h3>Soal 4 — executor, then berantai, queueMicrotask</h3>
+<pre><code>const p = new Promise(resolve =&gt; {
+  console.log('executor');
+  resolve();
+});
+p.then(() =&gt; console.log('then 1')).then(() =&gt; console.log('then 2'));
+queueMicrotask(() =&gt; console.log('microtask'));
+process.nextTick(() =&gt; console.log('nextTick'));
+console.log('sync');</code></pre>
+<details>
+  <summary>Lihat jawaban soal 4</summary>
+  <ol>
+    <li><code>executor</code></li>
+    <li><code>sync</code></li>
+    <li><code>nextTick</code></li>
+    <li><code>then 1</code></li>
+    <li><code>microtask</code></li>
+    <li><code>then 2</code></li>
+  </ol>
+  <p>Executor Promise jalan sinkron. Setelah kode sinkron: nextTick dulu, lalu microtask sesuai urutan masuk: then 1, microtask. "then 2" baru masuk antrean setelah then 1 selesai, jadi paling akhir.</p>
+</details>
+
+<p class="note sources">
+  <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick">[1] Node.js Learn: The Node.js Event Loop</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick">[2] Node.js v24 API: When to use queueMicrotask() vs. process.nextTick()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/timers.html#settimeoutcallback-delay-args">[3] Node.js v24 API: Timers, setTimeout()</a>
+</p>
+<p class="note">Cheat sheet lain: <a href="pipeline-request-nestjs.html">pipeline request NestJS</a> · <a href="../index.html">Indeks</a></p>
+</main>
+</body>
+</html>
