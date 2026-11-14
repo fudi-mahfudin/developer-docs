@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0009 · Backpressure, highWaterMark, dan Buffer</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0009 · Node.js · Modul I/O &amp; skala · ±20 menit</div>
+  <h1>Backpressure, highWaterMark, dan Buffer</h1>
+  <p class="subtitle">Apa yang terjadi kalau sumber data lebih cepat daripada tujuannya, bagaimana stream memberi sinyal "berhenti dulu", dan apa sebenarnya isi sebuah chunk</p>
+</header>
+
+<p>
+  Di <a href="0008-streams.html">lesson 0008</a>, stream membaca file per potongan supaya memori tetap kecil. Itu hanya benar kalau ada <strong>backpressure</strong>.
+  Membaca dari disk bisa jauh lebih cepat daripada mengirim ke client lewat jaringan lambat; tanpa rem, potongan yang sudah dibaca menumpuk di memori.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Apa itu backpressure, dan apa yang terjadi kalau diabaikan?"</em>
+  tanpa catatan, dalam 60 detik: peran <code>highWaterMark</code>, arti <code>write()</code> yang mengembalikan <code>false</code> dan event <code>'drain'</code>,
+  kenapa <code>pipe</code> tanpa error handling berbahaya, dan beda panjang string dengan jumlah byte di Buffer.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Buffer internal dan <code>highWaterMark</code></h2>
+<p>
+  Setiap Readable dan Writable menyimpan data di buffer internal. Ukurannya diatur <code>highWaterMark</code>: jumlah byte untuk stream biasa, jumlah objek untuk stream <code>objectMode</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[1]</a></sup>
+</p>
+<ul>
+  <li><strong>Readable</strong>: begitu buffer baca mencapai <code>highWaterMark</code>, stream berhenti membaca dari sumber sampai data dikonsumsi.</li>
+  <li><strong>Writable</strong>: selama buffer tulis di bawah <code>highWaterMark</code>, <code>write()</code> mengembalikan <code>true</code>; begitu mencapai atau melewatinya, <code>write()</code> mengembalikan <code>false</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[1]</a></sup></li>
+</ul>
+<p>
+  Default-nya (<strong>Node ≥ 22</strong>): 65536 byte (64 KiB) untuk stream byte di non-Windows, 16384 (16 KiB) di Windows, dan 16 objek untuk <code>objectMode</code>.
+  Default byte dinaikkan dari 16 KiB di Node v22.0.0, jadi artikel lama yang menyebut 16 KiB tidak salah, hanya untuk versi lama. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#streamgetdefaulthighwatermarkobjectmode">[2]</a></sup>
+</p>
+<p class="note">
+  Jebakan interview: <code>highWaterMark</code> adalah <em>"a threshold, not a limit"</em>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[1]</a></sup>
+  <code>write()</code> yang mengembalikan <code>false</code> tetap menerima chunk itu. Stream tidak menolak data; ia hanya memberi sinyal.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. <code>write()</code> = <code>false</code>, lalu tunggu <code>'drain'</code></h2>
+<p>
+  Kalau <code>write()</code> mengembalikan <code>false</code>, <em>"further attempts to write data to the stream should stop until the 'drain' event is emitted"</em>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#writablewritechunk-encoding-callback">[3]</a></sup>
+  Event <code>'drain'</code> muncul <em>"when it is appropriate to resume writing data"</em>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#event-drain">[4]</a></sup>
+</p>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 170" role="img" aria-label="Producer menulis ke Writable. Kalau write mengembalikan true, producer lanjut menulis. Kalau false, producer berhenti sampai event drain, lalu lanjut.">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="62" width="110" height="36" rx="4"/><text x="65" y="80">Producer</text></g>
+  <g class="node queue"><rect x="200" y="62" width="160" height="36" rx="4"/><text x="280" y="80">buffer Writable</text></g>
+  <g class="node store"><rect x="470" y="62" width="150" height="36" rx="4"/><text x="545" y="80">disk / socket</text></g>
+  <path class="edge" d="M120,80 H198"/>
+  <path class="edge" d="M360,80 H468"/>
+  <path class="edge async" d="M280,62 C280,15 65,15 65,60"/>
+  <path class="edge async" d="M280,98 C280,150 65,150 65,100"/>
+  <text class="label" x="160" y="74">write(chunk)</text>
+  <text class="label" x="172" y="22">true: lanjut tulis</text>
+  <text class="label" x="172" y="150">false: berhenti, tunggu 'drain'</text>
+  <text class="label" x="414" y="74">lambat</text>
+</svg>
+<figcaption>Nilai kembalian <code>write()</code> adalah rem. Garis putus-putus = sinyal balik ke producer.</figcaption>
+</figure>
+<p>Menulis manual dengan backpressure yang benar:</p>
+<pre><code>const { once } = require('node:events');
+
+async function writeAll(ws, rows) {
+  for (const row of rows) {
+    if (!ws.write(row + '\n')) {
+      await once(ws, 'drain'); // buffer penuh: tunggu kosong dulu
+    }
+  }
+  ws.end();
+}</code></pre>
+<p>
+  Seberapa besar bedanya? Panduan Node.js Learn membandingkan proses yang sama dengan dan tanpa backpressure: memori maksimum ±88 MB vs ±1,52 GB, dan GC berjalan lebih tidak teratur saat backpressure diabaikan. <sup class="cite"><a href="https://nodejs.org/en/learn/modules/backpressuring-in-streams">[5]</a></sup>
+  Panduan yang sama merangkum aturannya: <em>"Never call .write() after it returns false but wait for 'drain' instead."</em>
+</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Kenapa <code>pipe</code> tanpa error handling berbahaya</h2>
+<p>
+  <code>pipe()</code> dan <code>pipeline()</code> sama-sama menangani backpressure secara otomatis: mereka berhenti membaca saat <code>write()</code> mengembalikan <code>false</code> dan lanjut saat <code>'drain'</code>.
+  Bedanya di error. Dengan <code>pipe()</code>, kalau sumber error, tujuan <em>"is not closed automatically"</em>, dan setiap stream harus ditutup manual untuk mencegah memory leak. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablepipedestination-options">[6]</a></sup>
+  Error juga tidak diteruskan antar stream: <code>a.pipe(b).pipe(c)</code> butuh handler <code>'error'</code> di setiap stream, dan EventEmitter tanpa listener <code>'error'</code> akan melempar error itu dan bisa mematikan proses. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/events.html#error-events">[11]</a></sup>
+</p>
+<pre><code>// Berbahaya: error di gzip atau res tidak ditangani, stream file bisa tetap terbuka
+fs.createReadStream(path).pipe(zlib.createGzip()).pipe(res);
+
+// Aman: satu tempat untuk error, semua stream dihancurkan kalau gagal
+pipeline(fs.createReadStream(path), zlib.createGzip(), res, err => {
+  if (err) console.error('download gagal', err);
+});</code></pre>
+
+<section class="exercise">
+  <h2>Latihan 1 — Backpressure</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0020.</p>
+  <div class="quiz" data-bank-lesson="0009" data-bank-topic="io-backpressure" data-stack></div>
+</section>
+
+<!-- ============ 4 ============ -->
+<h2>4. Buffer dan encoding</h2>
+<p>
+  Chunk dari stream byte adalah <code>Buffer</code>: <em>"a fixed-length sequence of bytes"</em>, subclass dari <code>Uint8Array</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/buffer.html#buffer">[7]</a></sup>
+  Saat mengubah antara string dan Buffer, encoding default adalah UTF-8; encoding lain yang umum: <code>'hex'</code>, <code>'base64'</code>, <code>'base64url'</code>, <code>'latin1'</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/buffer.html#buffers-and-character-encodings">[8]</a></sup>
+</p>
+<pre><code>const s = 'é';
+s.length;                         // 1  (code unit UTF-16)
+Buffer.byteLength(s);             // 2  (byte UTF-8)
+Buffer.from('hi').toString('hex');    // '6869'
+Buffer.from('hi').toString('base64'); // 'aGk='</code></pre>
+<p>
+  <code>Buffer.byteLength()</code> menghitung byte setelah di-encode, berbeda dengan <code>String.prototype.length</code>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/buffer.html#static-method-bufferbytelengthstring-encoding">[9]</a></sup>
+  Ini penting saat menghitung header <code>Content-Length</code> atau batas ukuran payload: pakai byte, bukan panjang string.
+</p>
+<p>
+  Jebakan kedua: batas chunk dihitung dalam byte, jadi karakter UTF-8 multi-byte bisa terbelah di antara dua chunk, dan <code>chunk.toString()</code> per chunk menghasilkan karakter rusak.
+  Panggil <code>readable.setEncoding('utf8')</code>; stream lalu <em>"will properly handle multi-byte characters"</em> dan memberi string utuh. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablesetencodingencoding">[10]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Buffer dan encoding</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <div class="quiz" data-bank-lesson="0009" data-bank-topic="io-buffer" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0020.</p>
+  <blockquote>"Apa itu backpressure di stream Node, dan apa yang terjadi kalau diabaikan? Bagaimana menanganinya kalau Anda menulis ke Writable secara manual?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Backpressure adalah sinyal dari tujuan yang lebih lambat bahwa sumber harus berhenti dulu. Setiap stream punya buffer internal dengan ambang <code>highWaterMark</code>, default 64 KiB sejak Node 22. Begitu buffer Writable mencapai ambang itu, <code>write()</code> mengembalikan <code>false</code>. Penulis harus berhenti dan menunggu event <code>'drain'</code>. Kalau diabaikan, data tetap ditampung di memori karena <code>highWaterMark</code> hanya ambang, bukan batas; contoh di dokumentasi Node memakai ±1,5 GB memori tanpa backpressure vs ±88 MB dengan backpressure, dan GC bekerja lebih keras. Cara paling mudah: pakai <code>stream.pipeline</code>, yang menangani backpressure dan error otomatis. Kalau menulis manual, cek nilai <code>write()</code> dan <code>await once(ws, 'drain')</code>."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>backpressure = tujuan lebih lambat memberi sinyal ke sumber untuk berhenti?</li>
+      <li><code>highWaterMark</code> sebagai ambang buffer internal (bukan batas keras)?</li>
+      <li><code>write()</code> mengembalikan <code>false</code> saat buffer mencapai <code>highWaterMark</code>?</li>
+      <li>berhenti menulis dan lanjut setelah event <code>'drain'</code>?</li>
+      <li>akibat diabaikan: memori membengkak, GC berat, bisa crash?</li>
+      <li><code>pipeline</code>/<code>pipe</code> menangani backpressure otomatis?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://nodejs.org/en/learn/modules/backpressuring-in-streams">Node.js Learn: Backpressuring in Streams</a>, ±25 menit. Eksperimen lengkap dengan dan tanpa backpressure, serta aturan saat menulis Readable/Writable sendiri.
+</div>
+
+<p>Berikutnya, <a href="0010-worker-cluster-child-process.html">lesson 0010</a>: stream menyelesaikan I/O besar. Bagaimana dengan pekerjaan CPU yang berat? <code>worker_threads</code>, <code>cluster</code>, dan <code>child_process</code>.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "I/O &amp; skala") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa write() yang false tetap menerima chunk?", "Kapan memakai objectMode?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#buffering">[1] Node.js v24: Stream, Buffering</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#streamgetdefaulthighwatermarkobjectmode">[2] Node.js v24: stream.getDefaultHighWaterMark()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#writablewritechunk-encoding-callback">[3] Node.js v24: writable.write()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#event-drain">[4] Node.js v24: Event 'drain'</a> ·
+  <a href="https://nodejs.org/en/learn/modules/backpressuring-in-streams">[5] Node.js Learn: Backpressuring in Streams</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablepipedestination-options">[6] Node.js v24: readable.pipe()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/buffer.html#buffer">[7] Node.js v24: Buffer</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/buffer.html#buffers-and-character-encodings">[8] Node.js v24: Buffers and character encodings</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/buffer.html#static-method-bufferbytelengthstring-encoding">[9] Node.js v24: Buffer.byteLength()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/stream.html#readablesetencodingencoding">[10] Node.js v24: readable.setEncoding()</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/events.html#error-events">[11] Node.js v24: Events, Error events</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0008-streams.html">← 0008 · Streams: Readable, Writable, Transform, pipeline</a>
+  <a href="0010-worker-cluster-child-process.html">0010 · worker_threads vs cluster vs child_process →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0009.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

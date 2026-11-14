@@ -53,6 +53,23 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### I/O & skala
 
+- [Node.js v24: Stream](https://nodejs.org/docs/latest-v24.x/api/stream.html)
+  Use for: lesson 0008 dan lesson 0009. Empat jenis stream, `stream.pipeline` (menghancurkan semua stream saat error), caveat `.pipe()`, async iterator, buffering dan `highWaterMark` (default 64 KiB sejak v22.0.0), `write()`/`'drain'`, `setEncoding`.
+- [Node.js v24: File system](https://nodejs.org/docs/latest-v24.x/api/fs.html)
+  Use for: lesson 0008. `fs.readFile` membaca seluruh isi file, `fs.createReadStream` dengan `highWaterMark` 64 KiB.
+- [Node.js v24: Buffer](https://nodejs.org/docs/latest-v24.x/api/buffer.html)
+  Use for: lesson 0009. Buffer, encoding, `Buffer.byteLength`.
+- [Node.js Learn: Backpressuring in Streams](https://nodejs.org/en/learn/modules/backpressuring-in-streams)
+  Use for: lesson 0009. Angka memori dengan vs tanpa backpressure, aturan `write()`/`'drain'`.
+- [Node.js v24: Worker threads](https://nodejs.org/docs/latest-v24.x/api/worker_threads.html), [Cluster](https://nodejs.org/docs/latest-v24.x/api/cluster.html), [Child process](https://nodejs.org/docs/latest-v24.x/api/child_process.html)
+  Use for: lesson 0010. Worker untuk CPU-bound dan memori bersama, cluster round-robin dan state per proses, `spawn`/`exec`/`fork` dan peringatan input user di `exec`.
+- [Node.js v24: CLI](https://nodejs.org/docs/latest-v24.x/api/cli.html), [v8](https://nodejs.org/docs/latest-v24.x/api/v8.html), [process.memoryUsage()](https://nodejs.org/docs/latest-v24.x/api/process.html#processmemoryusage), [events.defaultMaxListeners](https://nodejs.org/docs/latest-v24.x/api/events.html#eventsdefaultmaxlisteners)
+  Use for: lesson 0011. `--max-old-space-size`, `--inspect`, `--cpu-prof` (stabil v22.4.0), `--heapsnapshot-signal`, `--heapsnapshot-near-heap-limit`, biaya `v8.writeHeapSnapshot`, batas 10 listener.
+- [Node.js Learn: Using Heap Snapshot](https://nodejs.org/en/learn/diagnostics/memory/using-heap-snapshot), [Understanding and Tuning Memory](https://nodejs.org/en/learn/diagnostics/memory/understanding-and-tuning-memory), [Profiling](https://nodejs.org/en/learn/getting-started/profiling)
+  Use for: lesson 0011. Langkah membandingkan dua snapshot, new space vs old space, `--prof`.
+- [V8 blog: Trash talk](https://v8.dev/blog/trash-talk)
+  Use for: lesson 0011. Generational GC, Scavenger vs Mark-Compact.
+
 ### Modul & tooling
 
 ### NestJS inti
