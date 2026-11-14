@@ -1,6 +1,6 @@
 # 09: Modul Pipeline request (0021–0024)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 
