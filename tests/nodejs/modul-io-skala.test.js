@@ -3,9 +3,7 @@
 // Aturan umum (kata opsi, posisi jawaban, format lisan, kicker, nav ke tetangga, sumber primer) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
+const { forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
 const LESSONS = {
@@ -61,20 +59,14 @@ test("modul I/O & skala nav: 0007 → 0008 → 0009 → 0010 → 0011 → 0012",
 });
 
 test("modul I/O & skala lessons are listed as tersedia in the index", () => {
-  const index = fs.readFileSync(path.join(ROOT, "nodejs", "index.html"), "utf8");
-  NUMS.forEach(n => assert.match(index,
-    new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`)));
+  nj.assertListedAsTersedia(LESSONS);
 });
 
 test("modul I/O & skala glossary and resources sections are filled", () => {
-  const section = (file, head) => {
-    const txt = fs.readFileSync(path.join(ROOT, "nodejs", file), "utf8");
-    return (txt.split(head)[1] || "").split(/\n#{2,3} /)[0];
-  };
-  const glossary = section("GLOSSARY.md", "\n## I/O & skala\n");
+  const glossary = nj.section("GLOSSARY.md", "## I/O & skala");
   ["Stream", "stream.pipeline", "Backpressure", "highWaterMark", "Buffer", "Worker thread", "Cluster", "Heap snapshot", "Memory leak"]
     .forEach(t => assert.match(glossary, new RegExp(`\\*\\*${t}[^*]*\\*\\*:`), `GLOSSARY I/O & skala belum punya ${t}`));
   NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(glossary.includes(t), `slug ${t} belum dicatat di GLOSSARY`));
-  const resources = section("RESOURCES.md", "\n### I/O & skala\n");
+  const resources = nj.section("RESOURCES.md", "### I/O & skala");
   NUMS.forEach(n => assert.ok(resources.includes(`lesson ${n}`), `RESOURCES I/O & skala belum menyebut lesson ${n}`));
 });

@@ -46,7 +46,6 @@
 <pre><code>// test/users.e2e-spec.ts
 describe('Users (e2e)', () =&gt; {
   let app: INestApplication;
-
   beforeAll(async () =&gt; {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();

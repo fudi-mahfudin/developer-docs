@@ -120,9 +120,8 @@ export class EmailProcessor extends WorkerHost {
     <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
 <pre><code>// users.module.ts
 @Module({ imports: [BullModule.registerQueue({ name: 'email' })], providers: [UsersService, EmailProcessor] })
-export class UsersModule {}
-
-// users.service.ts
+export class UsersModule {}</code></pre>
+<pre><code>// users.service.ts
 constructor(@InjectQueue('email') private emailQueue: Queue, private prisma: PrismaService) {}
 
 async register(dto: RegisterDto) {
@@ -133,9 +132,8 @@ async register(dto: RegisterDto) {
     backoff: { type: 'exponential', delay: 1000 },
   });
   return user;
-}
-
-// email.processor.ts
+}</code></pre>
+<pre><code>// email.processor.ts
 @Processor('email')
 export class EmailProcessor extends WorkerHost {
   async process(job: Job&lt;{ userId: number }&gt;) {

@@ -12,9 +12,9 @@
 | Async & error | 0005–0007 | Kombinator Promise, concurrency, error handling async, EventEmitter, `AbortController` |
 | I/O & skala | 0008–0011 | Streams, backpressure, Buffer, worker threads vs cluster vs child process, memory leak dan profiling |
 | **Review 1** | 0012 | Runtime + Async & error (tertunda satu modul) |
-| Modul & tooling | 0013–0015 | CommonJS vs ESM, `package.json` dan semver, TypeScript di Node, env var dan config |
+| Paket & tooling | 0013–0015 | CommonJS vs ESM, `package.json` dan semver, TypeScript di Node, env var dan config |
 | NestJS inti | 0016–0019 | `@Module`, provider dan DI, scope dan dynamic module, controller dan lifecycle hooks |
-| **Review 2** | 0020 | I/O & skala + Modul & tooling |
+| **Review 2** | 0020 | I/O & skala + Paket & tooling |
 | Pipeline request | 0021–0024 | Urutan pipeline (susun urutan), pipe dan `ValidationPipe`, guard vs middleware, interceptor dan exception filter |
 | Data & auth | 0025–0028 | Prisma dan `PrismaService`, transaksi dan migrasi (+ TypeORM singkat), JWT + Passport, RBAC |
 | **Review 3** | 0029 | NestJS inti + Pipeline request |

@@ -7,7 +7,7 @@ Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetc
 | `style.css` | Stylesheet bersama untuk lesson, reference, dan indeks (termasuk aturan cetak). |
 | `quiz.js` | Kuis pilihan ganda dari markup `.quiz > .q` (skor + tombol Ulangi). Tidak berubah. |
 | `bank.js` | Bank soal bersama: global `QuestionBank` (logic murni, diuji di `tests/shared/bank.test.js`). |
-| `<track>/assets/questions/NNNN.js` | **Satu file per lesson** yang mendaftarkan soal lesson itu ke bank. Ada di folder track (`dotnet/`, `fhir/`, `sysdesign/`), bukan di sini. |
+| `<track>/assets/questions/NNNN.js` | **Satu file per lesson** yang mendaftarkan soal lesson itu ke bank. Ada di folder track (`dotnet/`, `fhir/`, `sysdesign/`, `nodejs/`), bukan di sini. |
 | `bank-quiz.js` | Merender soal kuis dari bank ke markup `quiz.js` di halaman lesson. |
 | `review.js` | Review campuran: tarik + acak soal dari beberapa lesson/topik, ringkasan per topik. |
 | `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/shared/order.test.js`. |
@@ -121,7 +121,8 @@ Satu baris `<li>` per lesson. Saat lesson selesai, ganti hanya baris lesson itu 
 ## Test
 
 ```sh
-node --test      # dari root repo; menjalankan semua *.test.js di tests/{shared,dotnet,fhir,sysdesign}/, tanpa npm
+node --test                          # dari root repo; menjalankan semua *.test.js di tests/{shared,dotnet,fhir,sysdesign,nodejs}/, tanpa npm
+node --test "tests/nodejs/*.test.js"  # satu track saja: pakai glob, bukan folder (node --test tests/nodejs/ memperlakukan folder sebagai file dan gagal)
 ```
 
-Test bank soal per lesson (`tests/<track>/questions-NNNN.test.js`) dan review (`tests/<track>/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal track .NET ke bank baru (`forTrack("fhir")` untuk track lain), `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`, `assertCitesNumbered(html, label)`), untuk test modul `readLesson(num)` (halaman lesson dari nomornya) dan `assertModuleTopics(lessons, prefix)` (topik milik lesson, berprefiks modul, >= 2 kuis per topik, >= 1 lisan per lesson), dan untuk lesson database `scriptBlocks(html)` / `assertScriptsMatchFiles(html, { min })` (blok skrip identik dengan file `.sql`-nya). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.
+Test bank soal per lesson (`tests/<track>/questions-NNNN.test.js`) dan review (`tests/<track>/review-NNNN.test.js`) memakai `tests/helpers.js`: `loadLesson("0004")` / `loadLesson(...DAY1)` memuat file soal track .NET ke bank baru (`forTrack("fhir")` untuk track lain), `runAsBrowserScripts([...])` menjalankannya seperti `<script>` di satu global scope, aturan teach (`assertEqualOptionWords`, `assertAnswerPositionsVary`, `assertOralFormat`, `assertCitesNumbered(html, label)`), untuk test modul `readLesson(num)` (halaman lesson dari nomornya), `assertModuleTopics(lessons, prefix)` (topik milik lesson, berprefiks modul, >= 2 kuis per topik, >= 1 lisan per lesson), serta di `forTrack(track)` saja `read(file)` (file track), `section(file, "## Judul")` (isi satu bagian GLOSSARY/RESOURCES) dan `assertListedAsTersedia(lessons)` (lesson `{ NNNN: { file } }` tercantum `tersedia` di index track), dan untuk lesson database `scriptBlocks(html)` / `assertScriptsMatchFiles(html, { min })` (blok skrip identik dengan file `.sql`-nya). `helpers.js` tidak cocok dengan pola nama test default `node --test`, jadi tidak dijalankan sebagai test.

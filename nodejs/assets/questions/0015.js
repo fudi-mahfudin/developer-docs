@@ -1,8 +1,8 @@
-// Soal lesson 0015 (track Node.js, modul Modul & tooling) · TypeScript di Node, env var, dan config per environment. Format: assets/README.md.
+// Soal lesson 0015 (track Node.js, modul Paket & tooling) · TypeScript di Node, env var, dan config per environment. Format: assets/README.md.
 // Sumber: Node.js v24 docs (Modules: TypeScript, CLI --env-file, process.env, process.loadEnvFile), TypeScript Modules Reference, NestJS docs (SWC recipe).
 QuestionBank.labelTopics({
-  "tooling-typescript-node": "Modul & tooling: TypeScript di Node, tsc vs type stripping, module nodenext",
-  "tooling-env-config": "Modul & tooling: env var, --env-file, config per environment",
+  "tooling-typescript-node": "Paket & tooling: TypeScript di Node, tsc vs type stripping, module nodenext",
+  "tooling-env-config": "Paket & tooling: env var, --env-file, config per environment",
 });
 
 // Urutan registrasi diselang-seling antar topik; posisi jawaban a c b d c.

@@ -4,9 +4,7 @@
 // Aturan umum (kata opsi, posisi jawaban, format lisan, kicker, nav ke tetangga) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
+const { forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
 const LESSONS = {
@@ -31,14 +29,12 @@ test("modul Data & auth: own topics with data- prefix, >= 2 mc per topic, >= 1 o
 });
 
 test("modul Data & auth topic slugs are recorded in the glossary", () => {
-  const glossary = fs.readFileSync(path.join(ROOT, "nodejs", "GLOSSARY.md"), "utf8");
-  const section = (glossary.match(/## Data & auth\n([\s\S]*?)(\n## |$)/) || [])[1] || "";
+  const section = nj.section("GLOSSARY.md", "## Data & auth");
   NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(section.includes(`\`${t}\``), `GLOSSARY ## Data & auth belum mencatat ${t}`));
 });
 
 test("modul Data & auth sources are listed in RESOURCES under Data & auth", () => {
-  const resources = fs.readFileSync(path.join(ROOT, "nodejs", "RESOURCES.md"), "utf8");
-  const section = (resources.match(/### Data & auth\n([\s\S]*?)(\n### |\n## |$)/) || [])[1] || "";
+  const section = nj.section("RESOURCES.md", "### Data & auth");
   assert.match(section, /\]\(https:\/\//, "RESOURCES ### Data & auth masih kosong");
 });
 
@@ -94,7 +90,5 @@ test("modul Data & auth nav: 0024 → 0025 → 0026 → 0027 → 0028 → 0029",
 });
 
 test("modul Data & auth lessons are listed as tersedia in the nodejs index", () => {
-  const index = fs.readFileSync(path.join(ROOT, "nodejs", "index.html"), "utf8");
-  NUMS.forEach(n => assert.match(index,
-    new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`), `${n}: belum tersedia di index`));
+  nj.assertListedAsTersedia(LESSONS);
 });

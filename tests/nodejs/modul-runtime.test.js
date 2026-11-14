@@ -7,7 +7,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
+const { forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
 const LESSONS = {
@@ -36,8 +36,7 @@ test("modul Runtime covers the spec keywords", () => {
 });
 
 test("modul Runtime: new topic slugs are recorded in the glossary", () => {
-  const glossary = fs.readFileSync(path.join(ROOT, "nodejs", "GLOSSARY.md"), "utf8");
-  const section = (glossary.match(/## Runtime\n([\s\S]*?)\n## /) || [])[1] || "";
+  const section = nj.section("GLOSSARY.md", "## Runtime");
   NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(section.includes(t), `slug ${t} belum di GLOSSARY ## Runtime`));
 });
 
@@ -89,9 +88,7 @@ test("0003 output-order answers match what Node actually prints (CommonJS)", () 
 });
 
 test("modul Runtime: index marks 0001–0004 tersedia with the right files", () => {
-  const index = fs.readFileSync(path.join(ROOT, "nodejs", "index.html"), "utf8");
-  NUMS.forEach(n => assert.match(index,
-    new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`)));
+  nj.assertListedAsTersedia(LESSONS);
 });
 
 test("modul Runtime nav: index → 0001 → 0002 → 0003 → 0004 → 0005", () => {

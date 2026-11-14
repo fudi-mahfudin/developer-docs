@@ -4,9 +4,7 @@
 // dan slug topik di GLOSSARY. Aturan umum (bank ≥ 4 mc + ≥ 1 oral, kicker, nav, sumber primer) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
+const { forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
 const LESSONS = {
@@ -18,7 +16,7 @@ const LESSONS = {
 };
 const NUMS = Object.keys(LESSONS);
 const text = html => html.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ");
-const read = f => fs.readFileSync(path.join(ROOT, "nodejs", f), "utf8");
+const read = nj.read;
 
 test("modul Testing & produksi: topics, prefix prod-, >=2 mc per topic, orals", () => {
   nj.assertModuleTopics(LESSONS, "prod-");
@@ -72,14 +70,13 @@ test("0030 has an oral 'tulis kode' question: unit test a service with PrismaSer
 });
 
 test("index lists 0030–0034 as available with their spec file names", () => {
-  const index = read("index.html");
-  NUMS.forEach(n => assert.match(index, new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`), `index: ${n} belum tersedia`));
+  nj.assertListedAsTersedia(LESSONS);
 });
 
 test("GLOSSARY Testing & produksi records the module's topic slugs; RESOURCES lists the module's sources", () => {
-  const section = read("GLOSSARY.md").split("## Testing & produksi")[1] || "";
+  const section = nj.section("GLOSSARY.md", "## Testing & produksi");
   NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(section.includes(`\`${t}\``), `slug ${t} belum di GLOSSARY Testing & produksi`));
-  const res = (read("RESOURCES.md").split("### Testing & produksi")[1] || "").split(/\n## /)[0];
+  const res = nj.section("RESOURCES.md", "### Testing & produksi");
   [/fundamentals\/testing/, /techniques\/configuration/, /recipes\/terminus/, /security\/rate-limiting/, /techniques\/queues/].forEach(re =>
     assert.match(res, re, `RESOURCES Testing & produksi belum mencatat ${re}`));
 });

@@ -123,7 +123,6 @@ describe('UsersService', () =&gt; {
 <pre><code>describe('UsersService', () =&gt; {
   let service: UsersService;
   const prisma = { user: { findUnique: jest.fn() } };
-
   beforeEach(async () =&gt; {
     const moduleRef = await Test.createTestingModule({
       providers: [UsersService, { provide: PrismaService, useValue: prisma }],
@@ -131,13 +130,11 @@ describe('UsersService', () =&gt; {
     service = moduleRef.get(UsersService);
     jest.clearAllMocks();
   });
-
   it('mengembalikan user kalau ada', async () =&gt; {
     prisma.user.findUnique.mockResolvedValue({ id: 1, email: 'a@b.c' });
     await expect(service.findOne(1)).resolves.toEqual({ id: 1, email: 'a@b.c' });
     expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: 1 } });
   });
-
   it('melempar NotFoundException kalau tidak ada', async () =&gt; {
     prisma.user.findUnique.mockResolvedValue(null);
     await expect(service.findOne(2)).rejects.toThrow(NotFoundException);

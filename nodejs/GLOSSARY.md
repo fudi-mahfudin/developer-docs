@@ -152,7 +152,7 @@ _Avoid_: heap dump (boleh, tapi sebut snapshot)
 Rekaman fungsi mana yang memakai waktu CPU, dari `--cpu-prof` (stabil sejak Node 22.4) atau tab Performance DevTools lewat `--inspect` (lesson 0011).
 _Avoid_: heap snapshot (untuk masalah CPU)
 
-## Modul & tooling
+## Paket & tooling
 
 Slug topik bank soal modul ini: `tooling-format-modul`, `tooling-interop-esm` (0013), `tooling-semver-lockfile`, `tooling-field-package` (0014), `tooling-typescript-node`, `tooling-env-config` (0015).
 

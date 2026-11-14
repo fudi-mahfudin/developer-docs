@@ -4,9 +4,7 @@
 // Aturan teach umum (kata opsi, posisi jawaban, format lisan, kicker, nav ke tetangga) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
+const { forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
 const LESSONS = {
@@ -36,8 +34,7 @@ test("modul Pipeline request covers the spec keywords", () => {
 });
 
 test("modul Pipeline request: new topic slugs are recorded in the glossary", () => {
-  const glossary = fs.readFileSync(path.join(ROOT, "nodejs", "GLOSSARY.md"), "utf8");
-  const section = (glossary.match(/## Pipeline request\n([\s\S]*?)(\n## |$)/) || [])[1] || "";
+  const section = nj.section("GLOSSARY.md", "## Pipeline request");
   NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(section.includes(t), `slug ${t} belum di GLOSSARY ## Pipeline request`));
 });
 
@@ -81,9 +78,7 @@ test("0022: StandardSchemaValidationPipe is mentioned with a NestJS 12 version l
 });
 
 test("modul Pipeline request: index marks 0021–0024 tersedia with the right files", () => {
-  const index = fs.readFileSync(path.join(ROOT, "nodejs", "index.html"), "utf8");
-  NUMS.forEach(n => assert.match(index,
-    new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`)));
+  nj.assertListedAsTersedia(LESSONS);
 });
 
 test("modul Pipeline request nav: 0020 → 0021 → 0022 → 0023 → 0024 → 0025", () => {

@@ -52,9 +52,9 @@ Track baru `nodejs/`: 36 lesson ±20 menit dalam 9 modul tematik ditambah 4 revi
 | 0010 | `0010-worker-cluster-child-process.html` | I/O & skala | `worker_threads` vs `cluster` vs `child_process`, pekerjaan CPU-bound, cluster vs banyak replika container | 20 |
 | 0011 | `0011-memory-leak-dan-profiling.html` | I/O & skala | Heap V8, `--max-old-space-size`, sumber leak umum (cache global, closure, listener), heap snapshot, `--inspect`, `--cpu-prof` | 20 |
 | 0012 | `0012-review-runtime-async.html` | Review 1 | pool 0001–0007 | 20 |
-| 0013 | `0013-commonjs-vs-esm.html` | Modul & tooling | `require` vs `import`, field `type`, `.mjs`/`.cjs`, interop, `require(esm)` (beri label versi), top-level await | 20 |
-| 0014 | `0014-package-json-dan-dependency.html` | Modul & tooling | Field `exports`/`main`, semver `^` vs `~`, lockfile, `npm ci`, dependencies vs devDependencies vs peerDependencies | 20 |
-| 0015 | `0015-typescript-dan-config.html` | Modul & tooling | TypeScript di Node (build dengan `tsc` vs type stripping native, beri label versi), `module: nodenext`, env var, `--env-file`, config per environment | 20 |
+| 0013 | `0013-commonjs-vs-esm.html` | Paket & tooling | `require` vs `import`, field `type`, `.mjs`/`.cjs`, interop, `require(esm)` (beri label versi), top-level await | 20 |
+| 0014 | `0014-package-json-dan-dependency.html` | Paket & tooling | Field `exports`/`main`, semver `^` vs `~`, lockfile, `npm ci`, dependencies vs devDependencies vs peerDependencies | 20 |
+| 0015 | `0015-typescript-dan-config.html` | Paket & tooling | TypeScript di Node (build dengan `tsc` vs type stripping native, beri label versi), `module: nodenext`, env var, `--env-file`, config per environment | 20 |
 | 0016 | `0016-nestjs-dan-module.html` | NestJS inti | Kenapa NestJS (struktur, DI, platform Express/Fastify), `@Module` (imports, providers, controllers, exports), feature module, global module | 20 |
 | 0017 | `0017-provider-dan-dependency-injection.html` | NestJS inti | Provider, DI container, injection token, `useClass`/`useValue`/`useFactory`/`useExisting`, circular dependency + `forwardRef` | 20 |
 | 0018 | `0018-scope-dan-dynamic-module.html` | NestJS inti | Scope DEFAULT/REQUEST/TRANSIENT, scope yang merambat ke atas (bubbling) dan biayanya, dynamic module `forRoot`/`forFeature`/`register` | 20 |

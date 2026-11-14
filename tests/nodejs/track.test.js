@@ -1,8 +1,7 @@
 // Run from repo root: node --test
 // Track Node.js + NestJS (nodejs/): aturan ADR 0003 untuk setiap bank soal nodejs/assets/questions/NNNN.js,
-// dan setiap lesson yang "tersedia" di nodejs/index.html ada, memuat komponen bersama dari ../../assets/,
-// memuat bank soalnya sendiri, bernavigasi ke lesson sebelum/sesudahnya, dan tidak merujuk track lain.
-// Lesson yang masih "segera" di index belum dicek.
+// dan setiap lesson 0001–0036 di nodejs/index.html tersedia, ada, memuat komponen bersama dari ../../assets/,
+// memuat bank soalnya sendiri (kecuali review), bernavigasi ke lesson sebelum/sesudahnya, dan tidak merujuk track lain.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -11,11 +10,8 @@ const { ROOT, forTrack, assertEqualOptionWords, assertAnswerPositionsVary, asser
 
 const TRACK = "nodejs";
 const nj = forTrack(TRACK);
-const read = f => fs.readFileSync(path.join(ROOT, TRACK, f), "utf8");
-const listDir = (...p) => {
-  const dir = path.join(ROOT, TRACK, ...p);
-  return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
-};
+const read = nj.read;
+const listDir = (...p) => fs.readdirSync(path.join(ROOT, TRACK, ...p));
 const questionNums = listDir("assets", "questions").filter(f => /^\d{4}\.js$/.test(f)).map(f => f.slice(0, 4)).sort();
 const index = read("index.html");
 const lessons = [...index.matchAll(/<li class="tersedia[^"]*"><span class="num">(\d{4})<\/span><a class="title" href="(lessons\/[\w-]+\.html)">/g)]
@@ -29,6 +25,11 @@ test("nodejs index lists lessons 0001–0036 in order, with the four delayed rev
   assert.deepEqual(nums, Array.from({ length: 36 }, (_, i) => String(i + 1).padStart(4, "0")));
   const seams = [...index.matchAll(/<li class="[a-z]+ seam"><span class="num">(\d{4})<\/span>/g)].map(m => m[1]);
   assert.deepEqual(seams, SEAMS);
+});
+
+test("nodejs: every lesson is tersedia, and every non-review lesson has its own question bank", () => {
+  assert.deepEqual(lessons.map(l => l.num), nums, "semua lesson di index harus tersedia");
+  assert.deepEqual(questionNums, nums.filter(n => !SEAMS.includes(n)), "bank soal per lesson non-review");
 });
 
 test("nodejs index marks the 0036 mock interview as optional, ±45 menit", () => {
@@ -51,6 +52,14 @@ test("nodejs MISSION records the verified NestJS major version and Node 24 LTS i
 test("nodejs RESOURCES lists out-of-scope topics as further reading", () => {
   const extra = (read("RESOURCES.md").match(/## Bacaan lanjutan \(di luar cakupan\)\n([\s\S]*?)(\n## |$)/) || [])[1] || "";
   [/GraphQL/, /microservices/, /WebSocket/, /CQRS/].forEach(re => assert.match(extra, re));
+});
+
+test("nodejs module 4 is named Paket & tooling everywhere (no 'Modul Modul' collision)", () => {
+  const files = ["index.html", "ROADMAP.md", "GLOSSARY.md", "RESOURCES.md",
+    ...fs.readdirSync(path.join(ROOT, TRACK, "lessons")).map(f => `lessons/${f}`),
+    ...fs.readdirSync(path.join(ROOT, TRACK, "assets", "questions")).map(f => `assets/questions/${f}`)];
+  files.forEach(f => assert.doesNotMatch(read(f), /Modul (&amp;|&) tooling/, `${f}: nama modul lama`));
+  assert.match(index, /<h2>Modul 4 · Paket &amp; tooling<\/h2>/);
 });
 
 test("nodejs is linked from the root index, the glossary map, and CLAUDE.md", () => {
@@ -94,7 +103,7 @@ lessons.forEach(({ num, href }) => {
       assert.match(s, /^\.\.\/\.\.\/assets\/[\w-]+\.js$/, `${s}: komponen bersama harus dari ../../assets/`));
     scripts.filter(s => s.startsWith("../assets/questions/")).forEach(s =>
       assert.ok(fs.existsSync(path.join(ROOT, TRACK, "lessons", s)), `${s} tidak ada`));
-    if (questionNums.includes(num)) assert.ok(scripts.includes(`../assets/questions/${num}.js`), `lesson belum memuat bank soal ${num}`);
+    if (!SEAMS.includes(num)) assert.ok(scripts.includes(`../assets/questions/${num}.js`), `lesson belum memuat bank soal ${num}`);
     assert.doesNotMatch(html, /href="[^"]*\.\.\/(dotnet|fhir|sysdesign)\//, `${href}: track mandiri, jangan menautkan track lain`);
     const nav = (html.match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
     const prev = String(Number(num) - 1).padStart(4, "0");
@@ -113,5 +122,17 @@ const references = listDir("reference").filter(f => f.endsWith(".html")).map(f =
     const html = read(page);
     const urls = [...html.matchAll(/<sup class="cite"><a href="([^"]+)"/g), ...html.matchAll(/<a href="([^"]+)">\[\d+\] /g)].map(m => m[1]);
     urls.forEach(u => assert.doesNotMatch(u, NOT_PRIMARY, `${page}: ${u} bukan sumber primer`));
+  });
+});
+
+// Spec: contoh kode pendek, maksimal 20 baris per blok <pre>. Pengecualian: jawaban model lengkap di mock 0036.
+test("nodejs lessons keep every code block at 20 lines or fewer (except the 0036 model answer)", () => {
+  lessons.filter(l => l.num !== MOCK).forEach(({ href }) => {
+    const html = read(href);
+    [...html.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/g)].forEach(m => {
+      const lines = m[1].replace(/\n$/, "").split("\n").length;
+      const at = html.slice(0, m.index).split("\n").length;
+      assert.ok(lines <= 20, `${href}:${at}: blok kode ${lines} baris`);
+    });
   });
 });

@@ -145,9 +145,8 @@ export class ApiKeyGuard implements CanActivate {
     }
     return true;
   }
-}
-
-// app.module.ts
+}</code></pre>
+<pre><code>// app.module.ts
 providers: [{ provide: APP_GUARD, useClass: ApiKeyGuard }]
 
 // pemakaian

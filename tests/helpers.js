@@ -151,9 +151,30 @@ function assertModuleTopics(lessons, prefix, track = DEFAULT_TRACK) {
     assert.ok(mc.filter(q => q.topic === t).length >= 2, `butuh >= 2 soal kuis untuk ${t}`));
 }
 
+// A track file (path relative to <track>/), e.g. readTrackFile("nodejs", "GLOSSARY.md").
+const readTrackFile = (track, file) => fs.readFileSync(path.join(ROOT, track, file), "utf8");
+
+// Text under one Markdown heading line (e.g. "## I/O & skala" or "### Data & auth") of a track
+// file, up to the next ## or ### heading. Empty string if the heading is missing.
+function trackSection(track, file, heading) {
+  return (readTrackFile(track, file).split(`\n${heading}\n`)[1] || "").split(/\n#{2,3} /)[0];
+}
+
+// Module rule: lessons = { NNNN: { file } } are listed as available in <track>/index.html,
+// i.e. <li class="tersedia"> linking lessons/<file>.
+function assertListedAsTersedia(lessons, track) {
+  const index = readTrackFile(track, "index.html");
+  Object.entries(lessons).forEach(([n, { file }]) => assert.ok(
+    index.includes(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${file}">`),
+    `${track}/index.html: ${n} belum tersedia dengan file ${file}`));
+}
+
 // The same loaders bound to one track's question files.
 function forTrack(track) {
   return {
+    read: file => readTrackFile(track, file),
+    section: (file, heading) => trackSection(track, file, heading),
+    assertListedAsTersedia: lessons => assertListedAsTersedia(lessons, track),
     loadLesson: (...nums) => loadTrackLesson(track, nums),
     runAsBrowserScripts: nums => runAsBrowserScripts(nums, track),
     lessonQuestions: num => lessonQuestions(num, track),

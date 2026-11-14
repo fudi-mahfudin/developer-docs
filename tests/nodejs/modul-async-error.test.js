@@ -3,9 +3,7 @@
 // Aturan teach umum (kata opsi, posisi jawaban, format lisan, kicker, nav ke tetangga) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { ROOT, forTrack, assertCitesNumbered } = require("../helpers.js");
+const { forTrack, assertCitesNumbered } = require("../helpers.js");
 
 const nj = forTrack("nodejs");
 const LESSONS = {
@@ -51,9 +49,7 @@ test("modul Async & error labels version-dependent behaviour with a Node version
 });
 
 test("modul Async & error: index marks 0005–0007 tersedia with the right files", () => {
-  const index = fs.readFileSync(path.join(ROOT, "nodejs", "index.html"), "utf8");
-  NUMS.forEach(n => assert.match(index,
-    new RegExp(`<li class="tersedia"><span class="num">${n}</span><a class="title" href="lessons/${LESSONS[n].file}">`)));
+  nj.assertListedAsTersedia(LESSONS);
 });
 
 test("modul Async & error nav: 0004 → 0005 → 0006 → 0007 → 0008", () => {
@@ -65,14 +61,10 @@ test("modul Async & error nav: 0004 → 0005 → 0006 → 0007 → 0008", () => 
 });
 
 test("modul Async & error glossary and resources sections are filled", () => {
-  const section = (file, head) => {
-    const txt = fs.readFileSync(path.join(ROOT, "nodejs", file), "utf8");
-    return (txt.split(head)[1] || "").split(/\n#{2,3} /)[0];
-  };
-  const glossary = section("GLOSSARY.md", "\n## Async & error\n");
+  const glossary = nj.section("GLOSSARY.md", "## Async & error");
   NUMS.flatMap(n => LESSONS[n].topics).forEach(t => assert.ok(glossary.includes(t), `slug ${t} belum dicatat di GLOSSARY`));
   ["Promise.allSettled", "Unhandled rejection", "Operational error", "AbortSignal"].forEach(t =>
     assert.ok(glossary.includes(`**${t}`), `GLOSSARY Async & error belum punya ${t}`));
-  const resources = section("RESOURCES.md", "\n### Async & error\n");
+  const resources = nj.section("RESOURCES.md", "### Async & error");
   NUMS.forEach(n => assert.ok(resources.includes(`lesson ${n}`), `RESOURCES Async & error belum menyebut lesson ${n}`));
 });
