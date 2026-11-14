@@ -1,6 +1,6 @@
 # 12: Modul Testing & produksi (0030–0034)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 01
 
