@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0034 · Background job dengan BullMQ</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0034 · Node.js · Modul Testing &amp; produksi · ±20 menit</div>
+  <h1>Background job dengan BullMQ</h1>
+  <p class="subtitle">Kenapa pekerjaan dipindah ke luar request, producer dan processor di <code>@nestjs/bullmq</code>, retry + backoff, dan idempotency</p>
+</header>
+
+<p>Beberapa pekerjaan tidak cocok dikerjakan di dalam request: mengirim email, membuat PDF, memanggil API pihak ketiga yang lambat. Lesson terakhir modul ini memindahkannya ke queue.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis di kertas registrasi queue, producer, dan processor <code>@nestjs/bullmq</code> dengan retry dan backoff exponential, dan menjelaskan kenapa handler job harus idempoten.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Kenapa job dipindah ke luar request</h2>
+<p>
+  <em>Queue</em> adalah daftar pekerjaan yang disimpan di luar proses: producer menaruh job, worker mengambil dan mengerjakannya nanti, terpisah dari siklus request. Request yang menunggu pekerjaan 40 detik menahan koneksi, rawan timeout di proxy, dan pekerjaannya hilang kalau proses restart. Dengan queue, handler hanya menambah job lalu menjawab (misalnya <code>202 Accepted</code> dengan id job), dan job yang gagal bisa diulang.
+</p>
+<div class="flow">
+  <span class="box">POST /reports</span><span class="arrow">→</span>
+  <span class="box">Producer: queue.add()</span><span class="arrow">→</span>
+  <span class="box">Redis (job tersimpan)</span><span class="arrow">→</span>
+  <span class="box">Worker: process(job)</span><span class="arrow">→</span>
+  <span class="box">completed, atau retry → failed</span>
+</div>
+<p>
+  <strong>BullMQ</strong> adalah library queue untuk Node yang secara default menyimpan job di <strong>Redis</strong>; <code>@nestjs/bullmq</code> membungkusnya dengan module dan decorator NestJS. Install: <code>npm install @nestjs/bullmq bullmq ioredis</code>. <sup class="cite"><a href="https://docs.nestjs.com/techniques/queues">[1]</a></sup> Worker bisa berjalan di proses yang sama dengan API, atau di proses/container terpisah supaya pekerjaan berat tidak memblokir event loop API.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Producer dan processor di <code>@nestjs/bullmq</code></h2>
+<p>
+  Koneksi Redis didaftarkan sekali dengan <code>BullModule.forRoot({ connection: { host, port } })</code>, lalu setiap queue dengan <code>BullModule.registerQueue({ name })</code>. Producer meng-inject queue dengan <code>@InjectQueue('nama')</code> dan memanggil <code>queue.add(namaJob, data, opts)</code>. Consumer adalah class <code>@Processor('nama')</code> yang <code>extends WorkerHost</code> dan mengimplementasikan <code>async process(job)</code>; event worker ditangkap dengan <code>@OnWorkerEvent('completed')</code> dan sejenisnya. <sup class="cite"><a href="https://docs.nestjs.com/techniques/queues">[1]</a></sup>
+</p>
+<pre><code>// app.module.ts
+BullModule.forRoot({ connection: { host: 'localhost', port: 6379 } }),
+BullModule.registerQueue({ name: 'email' }),
+
+// users.service.ts (producer)
+constructor(@InjectQueue('email') private emailQueue: Queue) {}
+
+await this.emailQueue.add('welcome', { userId: user.id }, {
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 1000 },
+  jobId: `welcome-${user.id}`,
+});
+
+// email.processor.ts (consumer)
+@Processor('email')
+export class EmailProcessor extends WorkerHost {
+  async process(job: Job&lt;{ userId: number }&gt;) {
+    if (job.name === 'welcome') await this.sendWelcome(job.data.userId);
+  }
+}</code></pre>
+<p>
+  Data job sebaiknya kecil dan bisa diserialisasi ke JSON, misalnya <code>userId</code>, bukan seluruh objek user. Worker membaca data terbaru dari database saat job dijalankan.
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Queue di NestJS</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0034" data-bank-topic="prod-bullmq" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Retry dan backoff</h2>
+<p>
+  Job yang melempar error dianggap gagal. Tanpa <code>attempts</code> lebih dari 1, job yang gagal tidak diulang. <code>attempts</code> adalah jumlah percobaan maksimum, dan <code>backoff</code> mengatur jeda: <code>fixed</code> (jeda tetap) atau <code>exponential</code>, dengan jeda <code>2^(attempts - 1) × delay</code> milidetik. Opsi <code>jitter</code> (0–1) mengacak jeda supaya banyak job yang gagal bersamaan tidak mengulang di detik yang sama. <sup class="cite"><a href="https://docs.bullmq.io/guide/retrying-failing-jobs">[2]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Percobaan ulang ke-</th><th>Jeda (exponential, delay 1000)</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>1 detik</td></tr>
+    <tr><td>2</td><td>2 detik</td></tr>
+    <tr><td>3</td><td>4 detik</td></tr>
+    <tr><td>4</td><td>8 detik</td></tr>
+  </tbody>
+</table>
+<p>
+  Setelah percobaan habis, job pindah ke status <em>failed</em>, dan bisa disimpan untuk diperiksa atau dihapus otomatis sesuai pengaturan queue. <sup class="cite"><a href="https://docs.bullmq.io/guide/retrying-failing-jobs">[2]</a></sup> Backoff exponential memberi waktu bagi dependency yang sedang bermasalah untuk pulih, alih-alih dibanjiri percobaan ulang.
+</p>
+
+<!-- ============ 4 ============ -->
+<h2>4. Idempotency secara singkat</h2>
+<p>
+  <em>Idempotent</em> berarti menjalankan operasi dua kali berefek sama dengan menjalankannya sekali. Retry membuat handler job bisa berjalan lebih dari sekali: kalau job gagal <strong>setelah</strong> email terkirim tapi <strong>sebelum</strong> statusnya disimpan, percobaan ulang mengirim email kedua. Karena itu handler memeriksa penanda sebelum melakukan efek samping:
+</p>
+<pre><code>async sendWelcome(userId: number) {
+  const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (user.welcomeSentAt) return;                       // sudah pernah: lewati
+  await this.mailer.send(user.email, 'Selamat datang');
+  await this.prisma.user.update({ where: { id: userId }, data: { welcomeSentAt: new Date() } });
+}</code></pre>
+<p>
+  Di sisi producer, <code>jobId</code> custom mencegah job ganda: menambah job dengan id yang sudah ada diabaikan dan tidak masuk queue. Id custom tidak boleh mengandung <code>:</code> dan tidak boleh hanya angka, jadi pakai prefix seperti <code>welcome-42</code>. Job yang sudah dihapus tidak dihitung sebagai duplikat. <sup class="cite"><a href="https://docs.bullmq.io/guide/jobs/job-ids">[3]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Retry dan idempotency</h2>
+  <div class="quiz" data-bank-lesson="0034" data-bank-topic="prod-retry-idempotency" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Tulis kode di kertas</h2>
+  <p>Pasang timer 5 menit dan tulis jawabannya di kertas, tanpa IDE, seolah sedang live coding. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0035.</p>
+  <blockquote>Setelah user mendaftar, <code>UsersService</code> menambah job <code>welcome</code> ke queue <code>email</code> dengan retry 5 kali dan backoff exponential, dan processor-nya mengirim email. Tulis registrasi queue, producer, dan processor.</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>// users.module.ts
+@Module({ imports: [BullModule.registerQueue({ name: 'email' })], providers: [UsersService, EmailProcessor] })
+export class UsersModule {}
+
+// users.service.ts
+constructor(@InjectQueue('email') private emailQueue: Queue, private prisma: PrismaService) {}
+
+async register(dto: RegisterDto) {
+  const user = await this.prisma.user.create({ data: dto });
+  await this.emailQueue.add('welcome', { userId: user.id }, {
+    jobId: `welcome-${user.id}`,
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 1000 },
+  });
+  return user;
+}
+
+// email.processor.ts
+@Processor('email')
+export class EmailProcessor extends WorkerHost {
+  async process(job: Job&lt;{ userId: number }&gt;) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: job.data.userId } });
+    if (user.welcomeSentAt) return;           // idempoten
+    await this.mailer.send(user.email, 'Selamat datang');
+    await this.prisma.user.update({ where: { id: user.id }, data: { welcomeSentAt: new Date() } });
+  }
+}</code></pre>
+    <p><strong>Checklist:</strong> apakah kode Anda…</p>
+    <ul>
+      <li>mendaftarkan BullModule.registerQueue({ name: 'email' }) (dan BullModule.forRoot dengan koneksi Redis)?</li>
+      <li>meng-inject @InjectQueue('email') di producer dan memanggil queue.add(nama, data, opts)?</li>
+      <li>mengirim data job kecil (userId), bukan seluruh objek user?</li>
+      <li>memberi opts attempts: 5 dan backoff { type: 'exponential', delay }?</li>
+      <li>menulis @Processor('email') class extends WorkerHost dengan async process(job)?</li>
+      <li>membuat handler idempoten (cek welcomeSentAt atau jobId unik) karena retry bisa mengulang?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0035-review-data-testing.html">lesson 0035</a>: Review 4, menguji modul Data &amp; auth dan Testing &amp; produksi, ditambah topik lemah dari review sebelumnya.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Testing &amp; produksi") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Bagaimana menjalankan worker di container terpisah dari API?", "Kapan memakai job terjadwal (repeatable) dibanding @Cron?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/techniques/queues">[1] NestJS docs: Queues</a> ·
+  <a href="https://docs.bullmq.io/guide/retrying-failing-jobs">[2] BullMQ docs: Retrying failing jobs</a> ·
+  <a href="https://docs.bullmq.io/guide/jobs/job-ids">[3] BullMQ docs: Job IDs</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0033-shutdown-health-throttle-cache.html">← 0033 · Graceful shutdown, health check, throttle, cache</a>
+  <a href="0035-review-data-testing.html">0035 · Review 4: Data &amp; auth + Testing &amp; produksi →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0034.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>

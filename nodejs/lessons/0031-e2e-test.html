@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0031 · E2E test dengan supertest</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0031 · Node.js · Modul Testing &amp; produksi · ±20 menit</div>
+  <h1>E2E test dengan supertest</h1>
+  <p class="subtitle">Menyalakan aplikasi NestJS utuh di dalam test, mengirim request HTTP sungguhan, dan memilih database untuk test</p>
+</header>
+
+<p>Di <a href="0030-unit-test-nestjs.html">lesson 0030</a>, unit test membuktikan logika service dengan <code>PrismaService</code> palsu. Yang belum terbukti: route, guard, pipe, dan query ke database bekerja bersama. Itu tugas e2e test.</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis kerangka e2e test NestJS dengan supertest (<code>createNestApplication</code>, <code>app.init()</code>, <code>app.close()</code>), menyebut jebakan konfigurasi <code>main.ts</code>, dan menjelaskan dalam 60 detik pembagian unit, integration, dan e2e test serta database yang dipakai.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Unit vs integration vs e2e</h2>
+<table>
+  <thead><tr><th>Jenis</th><th>Yang diuji</th><th>Dependency</th><th>Menangkap</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Unit</strong></td><td>Satu class (service, guard, pipe)</td><td>Di-mock</td><td>Logika cabang, error yang dilempar</td></tr>
+    <tr><td><strong>Integration</strong></td><td>Beberapa komponen sungguhan</td><td>Sebagian nyata, mis. service + database test</td><td>Query salah, mapping data, transaksi</td></tr>
+    <tr><td><strong>E2E</strong></td><td>Aplikasi utuh lewat HTTP</td><td>Nyata, kecuali layanan eksternal</td><td>Route, status code, validasi, guard, format response</td></tr>
+  </tbody>
+</table>
+<p>
+  Porsinya: banyak unit test (cepat, murah), sedikit e2e untuk alur kritis (login, checkout). E2E lebih lambat dan lebih sulit didiagnosis saat gagal, jadi tidak dipakai untuk setiap cabang logika.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Kerangka e2e test</h2>
+<p>
+  <code>compile()</code> saja tidak membuat HTTP adapter. Untuk e2e, buat aplikasi dengan <code>moduleRef.createNestApplication()</code>, jalankan <code>await app.init()</code>, lalu berikan <code>app.getHttpServer()</code> ke supertest. Tutup dengan <code>await app.close()</code> di <code>afterAll</code>. Konvensi Nest: file e2e di folder <code>test</code> dengan akhiran <code>.e2e-spec</code>. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/testing">[1]</a></sup>
+</p>
+<p>
+  <strong>supertest</strong> adalah library untuk menguji server HTTP: ia menerima <code>http.Server</code> atau fungsi handler, dan kalau server belum listen, ia mengikatnya ke port ephemeral sendiri. Jadi <code>app.listen()</code> tidak perlu. Request mengembalikan Promise, sehingga bisa di-<code>await</code>. <sup class="cite"><a href="https://github.com/ladjs/supertest">[2]</a></sup>
+</p>
+<pre><code>// test/users.e2e-spec.ts
+describe('Users (e2e)', () =&gt; {
+  let app: INestApplication;
+
+  beforeAll(async () =&gt; {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true })); // sama dengan main.ts
+    await app.init();
+  });
+
+  afterAll(async () =&gt; { await app.close(); });
+
+  it('POST /users menolak email tidak valid', () =&gt;
+    request(app.getHttpServer()).post('/users').send({ email: 'bukan-email' }).expect(400));
+
+  it('GET /users/1 mengembalikan JSON', async () =&gt; {
+    const res = await request(app.getHttpServer()).get('/users/1').expect(200);
+    expect(res.body).toMatchObject({ id: 1 });
+  });
+});</code></pre>
+<p>
+  <strong>Jebakan klasik:</strong> test membuat aplikasi dari <code>TestingModule</code>, bukan dari <code>main.ts</code>. Global pipe, filter, prefix, atau CORS yang dipasang di bootstrap tidak ikut. Pasang ulang di test (seperti baris <code>useGlobalPipes</code> di atas), atau daftarkan lewat provider <code>APP_PIPE</code>/<code>APP_FILTER</code> di module supaya otomatis terbawa.
+</p>
+<p>
+  <code>app.close()</code> menjalankan hook shutdown, misalnya <code>PrismaService</code> memutus koneksi. Tanpa itu, koneksi yang masih terbuka membuat Jest menggantung atau memperingatkan <em>open handles</em>.
+</p>
+<p>
+  Layanan eksternal (payment gateway, email) tetap diganti dengan <code>.overrideProvider(...)</code> di e2e, supaya test tidak mengirim email sungguhan. <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/testing">[1]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — E2E dengan supertest</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0035.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0035.</p>
+  <div class="quiz" data-bank-lesson="0031" data-bank-topic="prod-e2e" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Database untuk test</h2>
+<p>
+  Panduan integration testing Prisma menjalankan test terhadap database di <strong>lingkungan test tersendiri</strong>, yaitu Postgres lewat Docker Compose, terpisah dari database production dan development. Data diisi di <code>beforeAll</code> dan dihapus sesudahnya dengan <code>deleteMany()</code> di dalam <code>$transaction</code>; <code>TRUNCATE</code> lewat raw SQL disebut sebagai opsi yang lebih efisien untuk banyak tabel. <sup class="cite"><a href="https://www.prisma.io/docs/orm/prisma-client/testing/integration-testing">[3]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Jalankan Postgres test (Docker)</span><span class="arrow">→</span>
+  <span class="box">DATABASE_URL ke DB test</span><span class="arrow">→</span>
+  <span class="box">prisma migrate deploy</span><span class="arrow">→</span>
+  <span class="box">seed di beforeAll</span><span class="arrow">→</span>
+  <span class="box">jalankan e2e</span><span class="arrow">→</span>
+  <span class="box">bersihkan data + app.close()</span>
+</div>
+<p>Tiga aturan yang sering ditanyakan:</p>
+<ul>
+  <li><strong>Jangan pernah ke production atau database development orang lain.</strong> Test menghapus data.</li>
+  <li><strong>Test tidak saling bergantung.</strong> Setiap test (atau suite) menyiapkan datanya sendiri, sehingga urutan eksekusi tidak mengubah hasil.</li>
+  <li><strong>Engine yang sama dengan production.</strong> Mengganti Postgres dengan database lain hanya untuk test bisa meloloskan perbedaan perilaku SQL.</li>
+</ul>
+
+<section class="exercise">
+  <h2>Latihan 2 — Jenis test dan database</h2>
+  <div class="quiz" data-bank-lesson="0031" data-bank-topic="prod-jenis-test" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0035.</p>
+  <blockquote>"Bagaimana Anda membagi test di aplikasi NestJS: apa yang diuji unit test, integration test, dan e2e test, dan bagaimana menangani database?" (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Unit test menguji satu class, biasanya service, dengan dependency di-mock lewat Test.createTestingModule dan useValue. Cepat dan banyak, tapi tidak membuktikan query benar. Integration test memasang beberapa bagian sungguhan, misalnya service dengan PrismaService ke database test. E2E test menyalakan aplikasi utuh dengan createNestApplication dan app.init, lalu mengirim request HTTP lewat supertest ke app.getHttpServer, dan memeriksa status serta body. Database-nya database khusus test, misalnya Postgres di Docker, dengan migrasi dijalankan dulu dan data dibersihkan antar suite supaya test tidak saling bergantung. Global pipe dan konfigurasi dari main.ts dipasang ulang di test, dan app.close di afterAll. Porsinya: banyak unit test, sedikit e2e untuk alur kritis."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>unit test: satu class, dependency di-mock, cepat, tidak membuktikan query?</li>
+      <li>integration test: beberapa komponen sungguhan, misalnya ke database test?</li>
+      <li>e2e: createNestApplication + app.init(), request via supertest ke getHttpServer()?</li>
+      <li>database khusus test (bukan production/dev), migrasi dulu, data dibersihkan?</li>
+      <li>konfigurasi main.ts (global pipe) dipasang ulang di test, app.close() di afterAll?</li>
+      <li>porsi: banyak unit, sedikit e2e untuk alur kritis?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<p>Berikutnya, <a href="0032-config-dan-logging.html">lesson 0032</a>: aplikasi yang sama berjalan di test, staging, dan production dengan konfigurasi berbeda. Bagaimana konfigurasi itu divalidasi, dan bagaimana log-nya bisa ditelusuri per request?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Testing &amp; produksi") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Bagaimana menguji endpoint yang dilindungi JWT di e2e?", "Kapan cukup override PrismaService di e2e?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/fundamentals/testing">[1] NestJS docs: Testing (end-to-end testing)</a> ·
+  <a href="https://github.com/ladjs/supertest">[2] supertest: README (repo resmi)</a> ·
+  <a href="https://www.prisma.io/docs/orm/prisma-client/testing/integration-testing">[3] Prisma docs: Integration testing</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0030-unit-test-nestjs.html">← 0030 · Unit test NestJS dengan Jest</a>
+  <a href="0032-config-dan-logging.html">0032 · Config dan logging →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0031.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
