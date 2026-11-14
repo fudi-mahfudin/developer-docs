@@ -55,6 +55,25 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### Modul & tooling
 
+- [Node.js v24: Modules: CommonJS modules](https://nodejs.org/docs/latest-v24.x/api/modules.html)
+  Use for: `require(esm)` beserta riwayat versinya (tanpa flag 22.12, stabil 24.15) dan `ERR_REQUIRE_ASYNC_MODULE` (lesson 0013).
+- [Node.js v24: Modules: ECMAScript modules](https://nodejs.org/docs/latest-v24.x/api/esm.html)
+  Use for: ekstensi wajib, interop import CommonJS (default export = `module.exports`), `import.meta.dirname`, top-level await (lesson 0013).
+- [Node.js v24: Modules: Packages](https://nodejs.org/docs/latest-v24.x/api/packages.html)
+  Use for: menentukan format modul (`.mjs`/`.cjs`/`"type"`, syntax detection), `"exports"` vs `"main"`, conditional exports, `ERR_PACKAGE_PATH_NOT_EXPORTED` (lesson 0013, 0014).
+- [Semantic Versioning 2.0.0](https://semver.org/) dan [node-semver](https://github.com/npm/node-semver)
+  Use for: arti MAJOR/MINOR/PATCH, batas persis range `^` dan `~` termasuk 0.x (lesson 0014).
+- [npm Docs: package.json](https://docs.npmjs.com/cli/v11/configuring-npm/package-json), [package-lock.json](https://docs.npmjs.com/cli/v11/configuring-npm/package-lock-json), [npm ci](https://docs.npmjs.com/cli/v11/commands/npm-ci), [config](https://docs.npmjs.com/cli/v11/using-npm/config)
+  Use for: jenis dependency (peer dipasang default sejak npm v7), tujuan lockfile, perilaku `npm ci` dan `--omit=dev`, `save-prefix` default `^` (lesson 0014).
+- [Node.js v24: Modules: TypeScript](https://nodejs.org/docs/latest-v24.x/api/typescript.html)
+  Use for: type stripping (default 23.6, stabil 24.12), fitur yang tidak didukung (enum, parameter properties, decorator), tsconfig tidak dibaca (lesson 0015).
+- [TypeScript Handbook: Modules Reference](https://www.typescriptlang.org/docs/handbook/modules/reference.html)
+  Use for: `module: nodenext`, deteksi format per file, import berekstensi `.js` (lesson 0015).
+- [Node.js v24: CLI `--env-file`](https://nodejs.org/docs/latest-v24.x/api/cli.html#--env-filefile) dan [process.env](https://nodejs.org/docs/latest-v24.x/api/process.html#processenv)
+  Use for: memuat `.env` (20.6, stabil 24.10), prioritas environment, nilai env selalu string, `process.loadEnvFile()` (lesson 0015).
+- [NestJS: SWC](https://docs.nestjs.com/recipes/swc)
+  Use for: builder SWC vs `tsc` default, SWC tanpa type-check (lesson 0015).
+
 ### NestJS inti
 
 ### Pipeline request

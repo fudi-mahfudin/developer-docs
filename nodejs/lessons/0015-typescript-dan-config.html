@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0015 · TypeScript di Node, env var, dan config per environment</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0015 · Node.js · Modul Modul &amp; tooling · ±20 menit</div>
+  <h1>TypeScript di Node, env var, dan config per environment</h1>
+  <p class="subtitle">Build dengan <code>tsc</code> vs type stripping bawaan Node, apa arti <code>module: nodenext</code>, dan cara membaca config dari environment tanpa kejutan</p>
+</header>
+
+<p>
+  Anda sudah memakai TypeScript. Yang sering ditanyakan di interview adalah apa yang <em>sebenarnya</em> dijalankan Node: file <code>.ts</code> langsung, atau JavaScript hasil kompilasi?
+  Bagian kedua lesson ini membahas config. Aplikasi yang sama berjalan di laptop, CI, staging, dan produksi dengan nilai berbeda, dan nilai itu datang dari environment variable.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis di kertas modul <code>config.ts</code> yang membaca, mengonversi, dan memvalidasi env var saat start,
+  dan menjelaskan kenapa aplikasi NestJS tetap di-build dengan <code>tsc</code>/SWC walaupun Node 24 bisa menjalankan <code>.ts</code> langsung.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Dua cara menjalankan TypeScript</h2>
+<figure class="diagram-fig">
+<svg class="diagram" viewBox="0 0 640 200" role="img" aria-label="Jalur build: src .ts dikompilasi tsc atau SWC menjadi dist .js lalu dijalankan node. Jalur type stripping: node langsung menjalankan .ts dengan menghapus anotasi tipe">
+  <defs><marker id="panah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+  <g class="node client"><rect x="10" y="82" width="100" height="36" rx="4"/><text x="60" y="100">src/*.ts</text></g>
+  <g class="node service"><rect x="180" y="22" width="130" height="36" rx="4"/><text x="245" y="40">tsc / SWC</text></g>
+  <g class="node store"><rect x="360" y="22" width="110" height="36" rx="4"/><text x="415" y="40">dist/*.js</text></g>
+  <g class="node service"><rect x="520" y="82" width="110" height="36" rx="4"/><text x="575" y="100">node</text></g>
+  <g class="node cache"><rect x="220" y="142" width="210" height="36" rx="4"/><text x="325" y="160">type stripping (hapus tipe)</text></g>
+  <path class="edge" d="M110,92 L178,46"/>
+  <path class="edge" d="M310,40 H358"/>
+  <path class="edge" d="M470,46 L540,82"/>
+  <path class="edge async" d="M110,108 L218,155"/>
+  <path class="edge async" d="M430,155 L540,118"/>
+  <text class="label" x="415" y="74">build, lalu jalankan JS</text>
+  <text class="label" x="325" y="130">langsung, Node ≥ 23.6</text>
+</svg>
+<figcaption>Garis penuh: jalur build (wajib untuk NestJS). Garis putus-putus: Node menjalankan <code>.ts</code> langsung tanpa type-check.</figcaption>
+</figure>
+<ul>
+  <li><strong>Build dengan <code>tsc</code> (atau SWC)</strong>: kode dikompilasi ke JavaScript di <code>dist/</code>, lalu Node menjalankan hasilnya. <code>tsc</code> juga melakukan type-check. Semua fitur TypeScript didukung.</li>
+  <li><strong>Type stripping</strong>: Node menjalankan file <code>.ts</code> yang hanya berisi sintaks TypeScript yang bisa dihapus (<em>erasable</em>). Anotasi tipe diganti spasi, dan <strong>tidak ada type-check</strong>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/typescript.html#type-stripping">[1]</a></sup>
+    Label versi: aktif default sejak <strong>Node ≥ 23.6</strong>, tanpa peringatan experimental sejak 24.3, dan berstatus stabil sejak <strong>Node 24.12</strong>. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/typescript.html#modules-typescript">[1]</a></sup></li>
+</ul>
+<p>Batas type stripping yang perlu Anda sebut di interview: <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/typescript.html#typescript-features">[1]</a></sup></p>
+<ul>
+  <li>Fitur yang butuh pembuatan kode JavaScript error tanpa flag <code>--experimental-transform-types</code>: <code>enum</code>, <code>namespace</code> berisi kode runtime, parameter properties (<code>constructor(private repo: Repo)</code>), dan import alias.</li>
+  <li><strong>Decorator</strong> tidak ditransformasi dan menghasilkan parser error.</li>
+  <li>Node tidak membaca <code>tsconfig.json</code>, jadi <code>paths</code> dan target lama tidak berlaku. Import tipe harus memakai <code>import type</code>. File <code>.ts</code> di <code>node_modules</code> ditolak.</li>
+</ul>
+<p>
+  Akibatnya untuk NestJS: decorator (<code>@Module</code>, <code>@Injectable</code>) dan parameter properties ada di setiap file, jadi aplikasi NestJS tetap di-build. Nest CLI (<code>nest build</code>) memakai <code>tsc</code>, dan bisa diganti SWC, yang menurut dokumentasi NestJS sekitar 20 kali lebih cepat tapi tidak melakukan type-check sendiri. <sup class="cite"><a href="https://docs.nestjs.com/recipes/swc">[3]</a></sup>
+  Type stripping cocok untuk script kecil dan tooling.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. <code>module: nodenext</code></h2>
+<p>
+  Opsi <code>module</code> di <code>tsconfig.json</code> memberi tahu TypeScript sistem modul runtime target. Dengan <code>nodenext</code>, TypeScript meniru aturan Node dari lesson <a href="0013-commonjs-vs-esm.html">0013</a>: <sup class="cite"><a href="https://www.typescriptlang.org/docs/handbook/modules/reference.html#module-format-detection">[2]</a></sup>
+</p>
+<ul>
+  <li><code>.mts</code> selalu ESM, <code>.cts</code> selalu CommonJS, <code>.ts</code> mengikuti field <code>"type"</code> di <code>package.json</code> terdekat. Format output mengikuti format yang terdeteksi.</li>
+  <li><code>module: nodenext</code> sekaligus memaksa <code>moduleResolution: nodenext</code>. <sup class="cite"><a href="https://www.typescriptlang.org/docs/handbook/modules/reference.html#implied-and-enforced-options">[2]</a></sup></li>
+  <li>Import relatif di file ESM wajib berekstensi, dan yang ditulis adalah ekstensi <em>hasil build</em>: <code>'./db.js'</code>, walaupun file sumbernya <code>db.ts</code>. TypeScript memetakannya ke file sumber. <sup class="cite"><a href="https://www.typescriptlang.org/docs/handbook/modules/reference.html#file-extension-substitution">[2]</a></sup></li>
+</ul>
+<pre><code>// tsconfig.json (potongan)
+{ "compilerOptions": { "module": "nodenext", "outDir": "dist" } }
+
+// src/app.ts, dengan "type": "module" di package.json
+import { db } from './db.js';    // benar: db.ts dikompilasi menjadi db.js
+// import { db } from './db';    // error di ESM: ekstensi wajib</code></pre>
+
+<section class="exercise">
+  <h2>Latihan 1 — TypeScript di Node</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0020.</p>
+  <div class="quiz" data-bank-lesson="0015" data-bank-topic="tooling-typescript-node" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Env var dan <code>--env-file</code></h2>
+<p>
+  <strong>Environment variable</strong> adalah pasangan nama=nilai yang diberikan sistem operasi ke sebuah proses. Di Node, semuanya ada di <code>process.env</code>.
+  Nilainya <strong>selalu string</strong>: assignment non-string pun dikonversi menjadi string, dan perilaku konversi itu sudah deprecated. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#processenv">[5]</a></sup>
+  Jadi <code>FEATURE_X=false</code> menghasilkan string <code>"false"</code>, yang truthy.
+</p>
+<p>
+  File <code>.env</code> dulu dimuat dengan paket pihak ketiga. Sekarang Node bisa memuatnya sendiri dengan <code>--env-file</code> (<strong>Node ≥ 20.6</strong>, tidak lagi experimental sejak 24.10): <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--env-filefile">[4]</a></sup>
+</p>
+<pre><code>node --env-file=.env --env-file=.env.local dist/main.js</code></pre>
+<ul>
+  <li>Kalau variabel yang sama ada di environment dan di file, <strong>environment menang</strong>.</li>
+  <li>Beberapa <code>--env-file</code> boleh dipakai; file berikutnya menimpa file sebelumnya.</li>
+  <li>File yang tidak ada membuat error; pakai <code>--env-file-if-exists</code> kalau file itu opsional. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/cli.html#--env-file-if-existsfile">[4]</a></sup></li>
+  <li>Dari kode, <code>process.loadEnvFile()</code> memuat <code>./.env</code> secara default. <sup class="cite"><a href="https://nodejs.org/docs/latest-v24.x/api/process.html#processloadenvfilepath">[5]</a></sup></li>
+</ul>
+
+<!-- ============ 4 ============ -->
+<h2>4. Config per environment: satu modul, validasi saat start</h2>
+<p>
+  Pola yang aman: kode aplikasi tidak membaca <code>process.env</code> di mana-mana. Satu modul config membaca semua variabel, mengonversi tipe, memvalidasi, dan <em>throw</em> saat start kalau ada yang salah (fail fast).
+  Bedanya antar environment hanya isi env: <code>.env</code> untuk laptop (tidak di-commit), variabel CI untuk test, dan secret dari platform deploy untuk produksi.
+</p>
+<pre><code>// config.ts
+function required(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Env ${name} wajib diisi`);
+  return v;
+}
+const port = Number(process.env.PORT ?? 3000);
+if (!Number.isInteger(port)) throw new Error('PORT harus angka');
+
+export const config = Object.freeze({
+  port,
+  databaseUrl: required('DATABASE_URL'),
+  isProd: process.env.NODE_ENV === 'production',
+});</code></pre>
+<p class="note">Di NestJS, peran modul ini diambil <code>@nestjs/config</code> dengan validasi skema; itu dibahas di lesson 0032. Prinsipnya sama: baca sekali, validasi saat start.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — Env var dan config</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0020.</p>
+  <div class="quiz" data-bank-lesson="0015" data-bank-topic="tooling-env-config" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Tulis kode di kertas</h2>
+  <p>Tutup lesson ini, ambil kertas, pasang timer 3 menit. Tulis kodenya tanpa IDE, lalu jelaskan dengan suara keras. Soal ini juga ada di bank soal dan bisa ditarik review 0020.</p>
+  <blockquote>"Tulis modul <code>config.ts</code> yang membaca <code>PORT</code> (default 3000) dan <code>DATABASE_URL</code> (wajib) dari env, mengubah PORT menjadi number, dan menghentikan aplikasi saat start kalau config tidak valid. Jelaskan juga cara memuat file <code>.env</code> di Node 24." (3 menit)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>Kode seperti di bagian 4. Penjelasannya: "Modul ini dimuat sekali saat start; kalau throw, aplikasi gagal start (fail fast), bukan error di tengah request. File .env dimuat dengan <code>node --env-file=.env dist/main.js</code> (Node ≥ 20.6, stabil sejak 24.10); variabel yang sudah ada di environment menang. Di produksi nilai datang dari environment server, bukan file .env yang di-commit."</p>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>membaca dari process.env di satu modul config, bukan tersebar di kode?</li>
+      <li>mengubah PORT ke number dan memvalidasinya (nilai env selalu string)?</li>
+      <li>membuat DATABASE_URL wajib: throw kalau kosong?</li>
+      <li>memvalidasi saat start (fail fast), bukan saat request?</li>
+      <li>menyebut --env-file (atau process.loadEnvFile) untuk memuat .env?</li>
+      <li>menyebut environment mengalahkan file .env, dan secret produksi tidak di-commit?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan utama (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://nodejs.org/docs/latest-v24.x/api/typescript.html">Node.js v24: Modules: TypeScript</a>, ±10 menit. Batas type stripping dan tsconfig yang disarankan.
+</div>
+
+<p>Berikutnya, <a href="0016-nestjs-dan-module.html">lesson 0016</a>: masuk ke NestJS. Kenapa framework ini memakai struktur module, dan bagaimana <code>@Module</code> menyusun aplikasi.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Modul &amp; tooling") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kenapa import di TypeScript ditulis './db.js' padahal filenya db.ts?", "Kapan type stripping cukup tanpa build?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nodejs.org/docs/latest-v24.x/api/typescript.html">[1] Node.js v24: Modules: TypeScript</a> ·
+  <a href="https://www.typescriptlang.org/docs/handbook/modules/reference.html">[2] TypeScript Handbook: Modules Reference</a> ·
+  <a href="https://docs.nestjs.com/recipes/swc">[3] NestJS: SWC (fast compiler)</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/cli.html">[4] Node.js v24: Command-line options (--env-file)</a> ·
+  <a href="https://nodejs.org/docs/latest-v24.x/api/process.html">[5] Node.js v24: process (process.env, process.loadEnvFile)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0014-package-json-dan-dependency.html">← 0014 · package.json, semver, lockfile, dan jenis dependency</a>
+  <a href="0016-nestjs-dan-module.html">0016 · Kenapa NestJS; @Module dan feature module →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0015.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
