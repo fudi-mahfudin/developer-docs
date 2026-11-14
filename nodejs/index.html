@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indeks lesson · Persiapan interview Node.js + NestJS</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  ol.lessons { list-style: none; padding: 0; margin: .4rem 0 0; }
+  ol.lessons li { display: flex; gap: .8rem; align-items: baseline; padding: .45rem 0; border-bottom: 1px solid var(--rule); }
+  ol.lessons .num { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .8rem; color: var(--muted); min-width: 2.6rem; }
+  ol.lessons .title { flex: 1; }
+  ol.lessons li::after { font-family: -apple-system, "Helvetica Neue", sans-serif; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+  ol.lessons li.tersedia::after { content: "tersedia"; color: var(--ok); }
+  ol.lessons li.segera::after { content: "segera"; color: var(--muted); }
+  ol.lessons li.segera .title { color: var(--muted); }
+  ol.lessons li.seam .title::after { content: " · seam penguasaan"; font-size: .8rem; color: var(--accent); font-style: italic; }
+</style>
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Indeks · 36 lesson · ±20 menit per lesson · self-paced</div>
+  <h1>Persiapan interview Node.js + NestJS</h1>
+  <p class="subtitle">Dari runtime Node sampai NestJS siap produksi, level mid-level. Konsep + latihan menulis kode di kertas, tanpa lab. Rencana: <a href="ROADMAP.md">ROADMAP</a> · Tujuan: <a href="MISSION.md">MISSION</a></p>
+</header>
+
+<p class="note">
+  Hanya hasil review 0012, 0020, 0029, dan 0035 yang dicatat sebagai bukti penguasaan. Kuis di lesson lain adalah feedback cepat.
+  Soal lisan bertipe "tulis kode" melatih live coding: tulis jawabannya di kertas, tanpa IDE.
+</p>
+
+<!--
+  Cara mengubah status: ganti SATU baris <li> lesson Anda saja.
+    segera   : <li class="segera"><span class="num">NNNN</span><span class="title">Judul</span></li>
+    tersedia : <li class="tersedia"><span class="num">NNNN</span><a class="title" href="lessons/NNNN-slug.html">Judul</a></li>
+  Pertahankan class "seam" untuk 0012, 0020, 0029, 0035. Biarkan baris kosong di antara <li> supaya branch paralel tidak bentrok saat merge.
+-->
+
+<h2>Modul 1 · Runtime</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0001</span><span class="title">Anatomi Node: V8, libuv, dan kenapa cocok untuk I/O-bound</span></li>
+
+<li class="segera"><span class="num">0002</span><span class="title">Fase event loop; setTimeout vs setImmediate</span></li>
+
+<li class="segera"><span class="num">0003</span><span class="title">process.nextTick vs microtask; latihan tebak urutan output</span></li>
+
+<li class="segera"><span class="num">0004</span><span class="title">libuv thread pool dan hal yang memblokir event loop</span></li>
+
+</ol>
+
+<h2>Modul 2 · Async &amp; error</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0005</span><span class="title">Kombinator Promise; await berurutan vs paralel</span></li>
+
+<li class="segera"><span class="num">0006</span><span class="title">Error handling async: unhandled rejection, uncaughtException, Error.cause</span></li>
+
+<li class="segera"><span class="num">0007</span><span class="title">EventEmitter dan AbortController</span></li>
+
+</ol>
+
+<h2>Modul 3 · I/O &amp; skala</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0008</span><span class="title">Streams: Readable, Writable, Transform, pipeline</span></li>
+
+<li class="segera"><span class="num">0009</span><span class="title">Backpressure, highWaterMark, dan Buffer</span></li>
+
+<li class="segera"><span class="num">0010</span><span class="title">worker_threads vs cluster vs child_process</span></li>
+
+<li class="segera"><span class="num">0011</span><span class="title">Memory leak dan profiling</span></li>
+
+</ol>
+
+<h2>Review 1</h2>
+<ol class="lessons">
+
+<li class="segera seam"><span class="num">0012</span><span class="title">Review 1: Runtime + Async &amp; error</span></li>
+
+</ol>
+
+<h2>Modul 4 · Modul &amp; tooling</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0013</span><span class="title">CommonJS vs ESM</span></li>
+
+<li class="segera"><span class="num">0014</span><span class="title">package.json, semver, lockfile, dan jenis dependency</span></li>
+
+<li class="segera"><span class="num">0015</span><span class="title">TypeScript di Node, env var, dan config per environment</span></li>
+
+</ol>
+
+<h2>Modul 5 · NestJS inti</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0016</span><span class="title">Kenapa NestJS; @Module dan feature module</span></li>
+
+<li class="segera"><span class="num">0017</span><span class="title">Provider dan dependency injection</span></li>
+
+<li class="segera"><span class="num">0018</span><span class="title">Scope provider dan dynamic module</span></li>
+
+<li class="segera"><span class="num">0019</span><span class="title">Controller, routing, dan lifecycle hooks</span></li>
+
+</ol>
+
+<h2>Review 2</h2>
+<ol class="lessons">
+
+<li class="segera seam"><span class="num">0020</span><span class="title">Review 2: I/O &amp; skala + Modul &amp; tooling</span></li>
+
+</ol>
+
+<h2>Modul 6 · Pipeline request</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0021</span><span class="title">Urutan pipeline request NestJS; latihan susun urutan</span></li>
+
+<li class="segera"><span class="num">0022</span><span class="title">Pipe dan ValidationPipe; latihan tulis DTO</span></li>
+
+<li class="segera"><span class="num">0023</span><span class="title">Guard vs middleware; latihan tulis guard</span></li>
+
+<li class="segera"><span class="num">0024</span><span class="title">Interceptor dan exception filter</span></li>
+
+</ol>
+
+<h2>Modul 7 · Data &amp; auth</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0025</span><span class="title">Prisma dan PrismaService</span></li>
+
+<li class="segera"><span class="num">0026</span><span class="title">Transaksi, migrasi, dan perbandingan TypeORM</span></li>
+
+<li class="segera"><span class="num">0027</span><span class="title">Autentikasi: hashing password, JWT, Passport</span></li>
+
+<li class="segera"><span class="num">0028</span><span class="title">Otorisasi role: RolesGuard, @Public, 401 vs 403; latihan tulis RolesGuard</span></li>
+
+</ol>
+
+<h2>Review 3</h2>
+<ol class="lessons">
+
+<li class="segera seam"><span class="num">0029</span><span class="title">Review 3: NestJS inti + Pipeline request</span></li>
+
+</ol>
+
+<h2>Modul 8 · Testing &amp; produksi</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0030</span><span class="title">Unit test NestJS dengan Jest; latihan tulis unit test service</span></li>
+
+<li class="segera"><span class="num">0031</span><span class="title">E2E test dengan supertest</span></li>
+
+<li class="segera"><span class="num">0032</span><span class="title">Config dan logging</span></li>
+
+<li class="segera"><span class="num">0033</span><span class="title">Graceful shutdown, health check, throttle, cache</span></li>
+
+<li class="segera"><span class="num">0034</span><span class="title">Background job dengan BullMQ</span></li>
+
+</ol>
+
+<h2>Review 4</h2>
+<ol class="lessons">
+
+<li class="segera seam"><span class="num">0035</span><span class="title">Review 4: Data &amp; auth + Testing &amp; produksi + topik lemah</span></li>
+
+</ol>
+
+<h2>Penutup · mock interview</h2>
+<ol class="lessons">
+
+<li class="segera"><span class="num">0036</span><span class="title">Mock interview tiga babak (opsional, ±45 menit, pengecualian durasi)</span></li>
+
+</ol>
+
+<p>Cheat sheet (segera): urutan event loop · pipeline request NestJS</p>
+
+<p>Istilah: <a href="GLOSSARY.md">GLOSSARY.md</a> · Sumber: <a href="RESOURCES.md">RESOURCES.md</a></p>
+
+</main>
+</body>
+</html>
