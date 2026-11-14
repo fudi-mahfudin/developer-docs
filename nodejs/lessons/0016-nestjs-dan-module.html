@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0016 · Kenapa NestJS; @Module dan feature module</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0016 · Node.js · Modul NestJS inti · ±20 menit</div>
+  <h1>Kenapa NestJS; @Module dan feature module</h1>
+  <p class="subtitle">Apa yang ditambahkan NestJS di atas Express, dan bagaimana aplikasi dipecah menjadi module yang saling meng-import</p>
+</header>
+
+<p>
+  Modul ini pindah dari runtime Node ke framework. Anda sudah pernah membuat API Express: satu file <code>app.js</code>, router, dan service yang di-<code>require</code> langsung.
+  Di interview NestJS, pertanyaan pembukanya hampir selalu "kenapa NestJS dan bukan Express saja?", lalu "jelaskan module di Nest". Lesson ini menjawab keduanya.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab <em>"Kenapa NestJS, dan apa isi sebuah @Module?"</em>
+  tanpa catatan, dalam 60 detik: struktur + DI di atas platform HTTP (Express default, Fastify opsional), empat properti <code>@Module</code> (imports, providers, controllers, exports),
+  kenapa provider harus di-export supaya bisa dipakai module lain, dan kapan (jarang) memakai <code>@Global</code>.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Kenapa NestJS: struktur dan DI, bukan pengganti Express</h2>
+<p>
+  Express hanya menyediakan routing dan middleware. Cara menyusun folder, cara service saling memanggil, dan cara mengganti dependency saat test diserahkan ke tim.
+  NestJS menambahkan tiga hal di atasnya:
+</p>
+<ul>
+  <li><strong>Struktur yang seragam</strong>: aplikasi dipecah menjadi module, controller (menerima request), dan provider (logika bisnis, akses data). Proyek Nest yang berbeda terlihat mirip, jadi orang baru cepat paham.</li>
+  <li><strong>Dependency injection (DI)</strong>: class tidak membuat dependency-nya sendiri dengan <code>new</code>; ia menyatakan kebutuhannya di constructor dan framework yang membuat serta menyuntikkan instance-nya. Dokumentasi Nest menyebut ini menyerahkan instansiasi ke <em>"the IoC container"</em> (Inversion of Control: framework, bukan kode Anda, yang memegang kendali pembuatan object). <sup class="cite"><a href="https://docs.nestjs.com/fundamentals/custom-providers">[1]</a></sup> Hasilnya: dependency mudah diganti mock saat test.</li>
+  <li><strong>Pipeline request yang eksplisit</strong>: guard, pipe, interceptor, dan exception filter (modul berikutnya) punya tempat yang jelas, bukan middleware Express yang urutannya diatur manual.</li>
+</ul>
+<p>
+  Nest tidak membuang Express. <em>"Nest is designed to be platform-agnostic"</em>; secara bawaan ia memakai paket <code>@nestjs/platform-express</code>, dan bisa diganti Fastify (lebih cepat) tanpa mengubah controller. <sup class="cite"><a href="https://docs.nestjs.com/first-steps">[2]</a></sup>
+  Sejak NestJS 12, dokumentasi juga menyebut platform ketiga, <code>@nestjs/platform-node</code>, yang berjalan langsung di modul <code>node:http</code>. <sup class="cite"><a href="https://docs.nestjs.com/first-steps">[2]</a></sup>
+</p>
+<pre><code>// main.ts: titik masuk aplikasi
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule); // Express secara default
+  await app.listen(process.env.PORT ?? 3000);
+}
+bootstrap();</code></pre>
+<p class="note">Jawaban "kenapa NestJS" yang baik juga menyebut biayanya: lebih banyak boilerplate (decorator, module), kurva belajar DI dan RxJS, dan overhead yang tidak perlu untuk script kecil atau satu-dua endpoint.</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Kenapa NestJS?</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0016" data-bank-topic="nest-kenapa" data-stack></div>
+</section>
+
+<!-- ============ 2 ============ -->
+<h2>2. @Module: empat properti</h2>
+<p>Setiap aplikasi Nest punya minimal satu module, yaitu root module (<code>AppModule</code>). Decorator <code>@Module()</code> menerima object dengan empat properti: <sup class="cite"><a href="https://docs.nestjs.com/modules">[3]</a></sup></p>
+<table>
+  <thead><tr><th>Properti</th><th>Isi</th></tr></thead>
+  <tbody>
+    <tr><td><code>providers</code></td><td>Provider yang dibuat oleh injector Nest dan bisa dipakai setidaknya di dalam module ini</td></tr>
+    <tr><td><code>controllers</code></td><td>Controller milik module ini yang harus diinstansiasi</td></tr>
+    <tr><td><code>imports</code></td><td>Module lain yang meng-export provider yang dibutuhkan module ini</td></tr>
+    <tr><td><code>exports</code></td><td>Bagian dari <code>providers</code> yang boleh dipakai module lain yang meng-import module ini</td></tr>
+  </tbody>
+</table>
+<pre><code>@Module({
+  imports: [PrismaModule],          // butuh PrismaService dari module lain
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService],          // module lain boleh meng-inject UsersService
+})
+export class UsersModule {}</code></pre>
+<p>
+  Aturan yang paling sering menjebak: provider bersifat <strong>privat</strong> untuk module-nya. Kalau <code>OrdersModule</code> ingin meng-inject <code>UsersService</code>,
+  <code>UsersModule</code> harus mencantumkannya di <code>exports</code> <em>dan</em> <code>OrdersModule</code> harus meng-import <code>UsersModule</code>. Kalau salah satunya lupa, Nest gagal start dengan error "Nest can't resolve dependencies of …".
+</p>
+
+<!-- ============ 3 ============ -->
+<h2>3. Feature module, shared module, dan re-export</h2>
+<div class="flow">
+  <span class="box">AppModule (root)</span><span class="arrow">imports →</span>
+  <span class="box">OrdersModule (feature)</span><span class="arrow">imports →</span>
+  <span class="box">UsersModule (exports UsersService)</span>
+</div>
+<ul>
+  <li><strong>Feature module</strong>: satu module per area bisnis (<code>UsersModule</code>, <code>OrdersModule</code>), berisi controller dan service-nya sendiri. Root module hanya meng-import feature module.</li>
+  <li><strong>Shared module</strong>: module adalah singleton secara default, dan <em>"every module is automatically a shared module"</em>. Kalau <code>UsersService</code> di-export dari satu module, semua module yang meng-import-nya mendapat <strong>instance yang sama</strong>. Kalau Anda malah mendaftarkan <code>UsersService</code> di <code>providers</code> dua module, Anda mendapat dua instance terpisah. <sup class="cite"><a href="https://docs.nestjs.com/modules">[3]</a></sup></li>
+  <li><strong>Re-export</strong>: module boleh meng-export module yang ia import, mis. <code>CoreModule</code> meng-import dan meng-export <code>CommonModule</code>, sehingga siapa pun yang meng-import <code>CoreModule</code> ikut mendapat isi <code>CommonModule</code>. <sup class="cite"><a href="https://docs.nestjs.com/modules">[3]</a></sup></li>
+</ul>
+
+<!-- ============ 4 ============ -->
+<h2>4. @Global: jalan pintas yang sebaiknya jarang dipakai</h2>
+<p>
+  Untuk provider yang dipakai hampir di mana-mana (config, koneksi database), <code>@Global()</code> membuat module itu global: provider yang ia export bisa di-inject tanpa module lain meng-import-nya.
+  Module global cukup didaftarkan sekali, biasanya oleh root module. Dokumentasi Nest memperingatkan bahwa membuat semuanya global <em>"is not a recommended design practice"</em>: dependency jadi tidak terlihat di <code>imports</code>. <sup class="cite"><a href="https://docs.nestjs.com/modules">[3]</a></sup>
+</p>
+<pre><code>@Global()
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}</code></pre>
+<p class="note">Banyak paket resmi memberi pilihan global lewat opsi, mis. <code>ConfigModule.forRoot({ isGlobal: true })</code>. Itu dynamic module, dibahas di lesson 0018.</p>
+
+<section class="exercise">
+  <h2>Latihan 2 — @Module, export, global</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0016" data-bank-topic="nest-module" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan lisan — Ucapkan dengan suara keras</h2>
+  <p>Pasang timer dan jawab dengan suara keras, seolah sedang interview. Jangan buka jawaban contoh sebelum selesai. Soal ini juga ada di bank soal dan bisa ditarik review 0029.</p>
+  <blockquote>"Kenapa tim Anda memilih NestJS dan bukan Express saja? Lalu jelaskan bagaimana module di Nest berbagi service." (60 detik)</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+    <p>"Express hanya memberi routing dan middleware; struktur dan cara service saling memanggil diserahkan ke tim. Nest menambahkan struktur seragam (module, controller, provider), dependency injection lewat IoC container sehingga dependency mudah diganti mock saat test, dan pipeline request yang jelas: guard, pipe, interceptor, filter. Di bawahnya tetap Express secara default, atau Fastify kalau butuh performa, tanpa mengubah controller. Biayanya boilerplate dan kurva belajar. Setiap module mendeklarasikan providers, controllers, imports, dan exports. Provider privat untuk module-nya; supaya module lain bisa memakai UsersService, UsersModule harus meng-export-nya dan module pemakai meng-import UsersModule. Module singleton, jadi semua pemakai mendapat instance yang sama. @Global hanya untuk hal seperti config atau database, karena dependency jadi tidak terlihat."</p>
+    <p><strong>Checklist:</strong> apakah Anda menyebut…</p>
+    <ul>
+      <li>struktur seragam (module, controller, provider) sebagai alasan utama?</li>
+      <li>dependency injection / IoC container dan manfaatnya untuk test?</li>
+      <li>Nest berjalan di atas Express (default) atau Fastify, bukan menggantikannya?</li>
+      <li>empat properti @Module: imports, providers, controllers, exports?</li>
+      <li>provider harus di-export dan module-nya di-import supaya bisa di-inject di module lain?</li>
+      <li>@Global hanya untuk sedikit hal (config, database), bukan default?</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/modules">NestJS docs: Modules</a>, ±15 menit. Contoh lengkap feature module, shared module, dan global module.
+</div>
+
+<p>Berikutnya, <a href="0017-provider-dan-dependency-injection.html">lesson 0017</a>: apa sebenarnya provider itu, bagaimana DI container mencocokkan dependency, dan bentuk-bentuk custom provider.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "NestJS inti") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan saya butuh Fastify?", "Kenapa error 'can't resolve dependencies' muncul?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/fundamentals/custom-providers">[1] NestJS docs: Custom providers (DI fundamentals)</a> ·
+  <a href="https://docs.nestjs.com/first-steps">[2] NestJS docs: First steps (platform)</a> ·
+  <a href="https://docs.nestjs.com/modules">[3] NestJS docs: Modules</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0015-typescript-dan-config.html">← 0015 · TypeScript di Node, env var, dan config</a>
+  <a href="0017-provider-dan-dependency-injection.html">0017 · Provider dan dependency injection →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0016.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
