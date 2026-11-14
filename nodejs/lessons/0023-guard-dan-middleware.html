@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0023 · Guard vs middleware; latihan tulis guard</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0023 · Node.js · Modul Pipeline request · ±20 menit</div>
+  <h1>Guard vs middleware; latihan tulis guard</h1>
+  <p class="subtitle">CanActivate, ExecutionContext, Reflector dengan custom decorator, dan kenapa otorisasi ditaruh di guard</p>
+</header>
+
+<p>
+  Di <a href="0021-urutan-pipeline-request.html">lesson 0021</a>, middleware dan guard sama-sama jalan sebelum handler. Pertanyaan interview yang muncul hampir selalu:
+  "Kalau keduanya bisa menolak request, kenapa otorisasi ditaruh di guard?" Lesson ini menjawabnya, lalu Anda menulis guard berbasis role di kertas.
+</p>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis guard yang membaca metadata role dari custom decorator lewat <code>Reflector</code> tanpa melihat dokumentasi,
+  menjelaskan apa yang terjadi saat <code>canActivate</code> mengembalikan <code>false</code>, dan menjelaskan dalam 30 detik kenapa otorisasi adalah tugas guard, bukan middleware.
+</div>
+
+<!-- ============ 1 ============ -->
+<h2>1. Middleware: Express-style, tidak tahu handler</h2>
+<p>
+  Middleware Nest sama dengan middleware Express: fungsi <code>(req, res, next)</code> yang bisa menjalankan kode apa pun, mengubah <code>req</code>/<code>res</code>, mengakhiri request, atau memanggil <code>next()</code>.
+  <sup class="cite"><a href="https://docs.nestjs.com/middleware">[1]</a></sup> Versi class mengimplementasikan <code>NestMiddleware</code> dan boleh meng-inject dependency.
+</p>
+<pre><code>@Injectable()
+export class CorrelationIdMiddleware implements NestMiddleware {
+  use(req: Request, res: Response, next: NextFunction) {
+    req.headers['x-correlation-id'] ??= randomUUID();
+    next();
+  }
+}
+
+@Module({ /* ... */ })
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*splat');
+  }
+}</code></pre>
+<p>
+  Middleware tidak dipasang di <code>@Module()</code>, melainkan di method <code>configure()</code>; <code>exclude()</code> mengecualikan route tertentu. Kalau middleware tidak butuh dependency, cukup tulis fungsi biasa
+  (<em>functional middleware</em>). Middleware global lewat <code>app.use()</code> <em>"cannot access the DI container"</em>. <sup class="cite"><a href="https://docs.nestjs.com/middleware">[1]</a></sup>
+  Pola wildcard <code>*splat</code> di atas adalah wildcard bernama yang cocok dengan path apa pun.
+</p>
+<p>
+  Batasnya: middleware <em>"is context-blind by nature: it doesn't know which handler will be executed after it calls <code>next()</code>."</em> <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup>
+  Middleware hanya melihat URL dan header, tidak melihat method controller atau decorator yang menempel padanya.
+</p>
+
+<!-- ============ 2 ============ -->
+<h2>2. Guard: satu tugas, dan tahu konteksnya</h2>
+<p>
+  <em>"Guards have a single responsibility: they determine whether a given request will be handled by the route handler."</em> Guard adalah class yang mengimplementasikan <code>CanActivate</code>;
+  method <code>canActivate</code> mengembalikan <code>boolean</code>, <code>Promise&lt;boolean&gt;</code>, atau <code>Observable&lt;boolean&gt;</code>. <sup class="cite"><a href="https://docs.nestjs.com/guards">[2]</a></sup>
+</p>
+<p>
+  Argumennya adalah <code>ExecutionContext</code>, turunan <code>ArgumentsHost</code> yang menambahkan detail eksekusi saat ini: <code>context.switchToHttp().getRequest()</code> untuk objek request,
+  <code>context.getHandler()</code> untuk method yang akan dipanggil, dan <code>context.getClass()</code> untuk class controller-nya. <sup class="cite"><a href="https://docs.nestjs.com/guards#execution-context">[2]</a></sup>
+  Karena tahu handler-nya, guard bisa membaca metadata yang ditempel decorator di method itu. Inilah alasan otorisasi ditaruh di guard.
+</p>
+<p>
+  Saat <code>canActivate</code> mengembalikan <code>false</code>, Nest melempar <code>ForbiddenException</code>, dan client menerima
+  <code>{ "statusCode": 403, "message": "Forbidden resource", "error": "Forbidden" }</code>. Untuk respons lain (mis. 401 saat token tidak ada), lempar exception sendiri, mis. <code>UnauthorizedException</code>.
+  <sup class="cite"><a href="https://docs.nestjs.com/guards#putting-it-all-together">[2]</a></sup>
+</p>
+
+<section class="exercise">
+  <h2>Latihan 1 — Middleware vs guard</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <p class="note">Kuis di lesson ini adalah feedback cepat, bukan bukti penguasaan; yang dicatat hanya hasil review 0029.</p>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="pipeline-middleware" data-stack></div>
+</section>
+
+<!-- ============ 3 ============ -->
+<h2>3. Reflector dan custom decorator</h2>
+<p>
+  <strong>Metadata</strong> di sini berarti data tambahan yang ditempel decorator ke sebuah class atau method saat aplikasi dimuat, lalu dibaca lagi saat request berjalan.
+  <code>Reflector.createDecorator()</code> membuat decorator bertipe sekaligus kunci untuk membacanya; alternatif lamanya adalah <code>@SetMetadata()</code>. <sup class="cite"><a href="https://docs.nestjs.com/guards#setting-roles-per-handler">[2]</a></sup>
+</p>
+<pre><code>// roles.decorator.ts
+export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+
+// roles.guard.ts
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const roles = this.reflector.get(Roles, context.getHandler());
+    if (!roles) return true;                         // route tanpa @Roles: bebas
+    const { user } = context.switchToHttp().getRequest();
+    return roles.some(r =&gt; user?.roles?.includes(r));
+  }
+}
+
+// cats.controller.ts
+@Post() @Roles(['admin']) create(@Body() dto: CreateCatDto) { /* ... */ }</code></pre>
+<p>
+  <code>request.user</code> biasanya diisi guard autentikasi yang jalan lebih dulu (mis. guard JWT, dibahas di modul Data &amp; auth). Karena <code>RolesGuard</code> meng-inject <code>Reflector</code>,
+  pasang ia secara global lewat provider <code>APP_GUARD</code>, bukan <code>useGlobalGuards()</code>. <sup class="cite"><a href="https://docs.nestjs.com/guards#binding-guards">[2]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th>Middleware</th><th>Guard</th></tr></thead>
+  <tbody>
+    <tr><td>Tahu handler dan metadata-nya</td><td>Tidak</td><td>Ya, lewat <code>ExecutionContext</code></td></tr>
+    <tr><td>Dipasang</td><td><code>configure(consumer)</code> atau <code>app.use()</code></td><td><code>@UseGuards()</code> atau <code>APP_GUARD</code></td></tr>
+    <tr><td>Kegagalan</td><td>Anda sendiri yang mengirim response</td><td><code>false</code> → 403 otomatis lewat exception filter</td></tr>
+    <tr><td>Cocok untuk</td><td>Correlation id, logging akses, header</td><td>Autentikasi, otorisasi role</td></tr>
+  </tbody>
+</table>
+
+<section class="exercise">
+  <h2>Latihan 2 — Guard, ExecutionContext, Reflector</h2>
+  <p>Jawab tanpa scroll ke atas. Soal yang sama akan muncul lagi, diacak, di review 0029.</p>
+  <div class="quiz" data-bank-lesson="0023" data-bank-topic="pipeline-guard" data-stack></div>
+</section>
+
+<!-- ============ ORAL ============ -->
+<section class="exercise">
+  <h2>Latihan tulis kode — Guard di kertas</h2>
+  <p>Tutup editor. Tulis di kertas, lalu bacakan alasannya dengan suara keras seolah sedang live coding. Batas waktu 5 menit.</p>
+  <blockquote>"Tulis guard yang hanya mengizinkan request kalau header <code>x-api-key</code> sama dengan nilai dari <code>ConfigService</code>, kecuali route ditandai decorator <code>@Public()</code>. Tunjukkan decorator-nya dan cara memasang guard secara global."</blockquote>
+  <details>
+    <summary>Bandingkan dengan jawaban contoh dan checklist-nya</summary>
+<pre><code>export const Public = Reflector.createDecorator&lt;boolean&gt;();
+
+@Injectable()
+export class ApiKeyGuard implements CanActivate {
+  constructor(private reflector: Reflector, private config: ConfigService) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const isPublic = this.reflector.getAllAndOverride(Public, [context.getHandler(), context.getClass()]);
+    if (isPublic) return true;
+    const req = context.switchToHttp().getRequest();
+    if (req.headers['x-api-key'] !== this.config.get('API_KEY')) {
+      throw new UnauthorizedException('API key tidak valid');
+    }
+    return true;
+  }
+}
+
+// app.module.ts
+providers: [{ provide: APP_GUARD, useClass: ApiKeyGuard }]
+
+// pemakaian
+@Public() @Get('health') health() { return 'ok'; }</code></pre>
+    <p><strong>Checklist:</strong> apakah Anda…</p>
+    <ul>
+      <li>Menulis class <code>@Injectable()</code> yang mengimplementasikan <code>CanActivate</code></li>
+      <li>Mengambil request lewat <code>context.switchToHttp().getRequest()</code></li>
+      <li>Membuat decorator dengan <code>Reflector.createDecorator()</code> (atau <code>SetMetadata</code>) dan membacanya dengan <code>Reflector</code></li>
+      <li>Membaca metadata dari handler (dan idealnya class) lewat <code>context.getHandler()</code>/<code>getClass()</code></li>
+      <li>Melempar <code>UnauthorizedException</code> (401) alih-alih mengembalikan <code>false</code> (403) untuk kredensial yang salah</li>
+      <li>Memasang guard global lewat <code>APP_GUARD</code> agar DI (<code>Reflector</code>, <code>ConfigService</code>) berjalan</li>
+    </ul>
+    <p class="note">Lulus jika minimal 4 dari 6.</p>
+  </details>
+</section>
+
+<div class="source">
+  <span class="kicker">Bacaan lanjutan (opsional, tidak dihitung dalam durasi)</span>
+  <a href="https://docs.nestjs.com/fundamentals/execution-context">NestJS docs: Execution context</a>, ±10 menit. Isi lengkap <code>ArgumentsHost</code>, <code>ExecutionContext</code>, dan method <code>Reflector</code> seperti <code>getAllAndOverride</code> dan <code>getAllAndMerge</code>.
+</div>
+
+<p>Berikutnya, <a href="0024-interceptor-dan-exception-filter.html">lesson 0024</a>: interceptor yang membungkus handler, dan exception filter untuk format error yang konsisten.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Pipeline request") · Indeks: <a href="../index.html">semua lesson Node.js</a></p>
+
+<p class="ask">Ada yang belum jelas? Tanyakan ke saya (agent) di terminal, misalnya: "Kapan guard sebaiknya melempar 401, kapan mengembalikan false?", "Apa beda getAllAndOverride dan getAllAndMerge?"</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://docs.nestjs.com/middleware">[1] NestJS docs: Middleware</a> ·
+  <a href="https://docs.nestjs.com/guards">[2] NestJS docs: Guards</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0022-pipe-dan-validation.html">← 0022 · Pipe dan ValidationPipe</a>
+  <a href="0024-interceptor-dan-exception-filter.html">0024 · Interceptor dan exception filter →</a>
+</nav>
+
+</main>
+<script src="../../assets/bank.js"></script>
+<script src="../assets/questions/0023.js"></script>
+<script src="../../assets/bank-quiz.js"></script>
+<script src="../../assets/quiz.js"></script>
+</body>
+</html>
