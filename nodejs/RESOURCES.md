@@ -49,6 +49,33 @@ Sumber untuk `<sup class="cite">` harus primer (ADR 0003): dokumentasi resmi, RF
 
 ### Runtime
 
+- [Node.js Learn: Introduction to Node.js](https://nodejs.org/en/learn/getting-started/introduction-to-nodejs)
+  Use for: V8 di luar browser, satu proses tanpa thread per request, ribuan koneksi bersamaan (lesson 0001).
+- [Node.js Learn: Overview of Blocking vs Non-Blocking](https://nodejs.org/en/learn/asynchronous-work/overview-of-blocking-vs-non-blocking)
+  Use for: definisi blocking, eksekusi JS single-threaded, contoh 50 ms request dengan 45 ms I/O (lesson 0001).
+- [V8 (v8.dev)](https://v8.dev/)
+  Use for: V8 adalah engine JS/WebAssembly open source buatan Google, ditulis dalam C++ (lesson 0001).
+- [libuv: Design overview](https://docs.libuv.org/en/v1.x/design.html)
+  Use for: libuv ditulis untuk Node, I/O jaringan lewat epoll/kqueue/IOCP, I/O file lewat thread pool, langkah satu putaran loop (lesson 0001, 0002).
+- [Node.js Learn: The Node.js Event Loop](https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick)
+  Use for: fase event loop, setTimeout vs setImmediate (main module vs callback I/O), process.nextTick dan starvation (lesson 0002, 0003).
+- [Node.js v24 API: Timers, setTimeout()](https://nodejs.org/docs/latest-v24.x/api/timers.html#settimeoutcallback-delay-args)
+  Use for: delay < 1 menjadi 1, tidak ada jaminan waktu persis maupun urutan (lesson 0002).
+- [Node.js v24 API: process.nextTick() dan "When to use queueMicrotask() vs. process.nextTick()"](https://nodejs.org/docs/latest-v24.x/api/process.html#when-to-use-queuemicrotask-vs-processnexttick)
+  Use for: next tick queue vs microtask queue, urutan CommonJS vs ESM, rekomendasi queueMicrotask (lesson 0003).
+- [ECMAScript: Jobs and Host Operations to Enqueue Jobs](https://tc39.es/ecma262/#sec-jobs)
+  Use for: Promise job dijalankan saat execution context stack kosong (lesson 0003).
+- [Node.js v24 API: CLI, UV_THREADPOOL_SIZE](https://nodejs.org/docs/latest-v24.x/api/cli.html#uv_threadpool_sizesize)
+  Use for: API yang memakai thread pool, default 4, set sebelum proses mulai (lesson 0004).
+- [libuv: Thread pool work scheduling](https://docs.libuv.org/en/v1.x/threadpool.html)
+  Use for: ukuran default 4, maksimum absolut 1024 (lesson 0004).
+- [Node.js v24 API: DNS, Implementation considerations](https://nodejs.org/docs/latest-v24.x/api/dns.html#implementation-considerations)
+  Use for: dns.lookup memakai getaddrinfo di thread pool, dns.resolve tidak (lesson 0004).
+- [Node.js Learn: Don't Block the Event Loop (or the Worker Pool)](https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop)
+  Use for: sync API yang dihindari di server, JSON DOS (parse 50 MB ±1,3 detik), ReDoS (lesson 0004).
+- [Node.js v24 API: perf_hooks.monitorEventLoopDelay()](https://nodejs.org/docs/latest-v24.x/api/perf_hooks.html#perf_hooksmonitoreventloopdelayoptions)
+  Use for: histogram event loop delay (nanodetik, resolution default 10 ms, samplePerIteration sejak v24.19.0) (lesson 0004).
+
 ### Async & error
 
 ### I/O & skala
