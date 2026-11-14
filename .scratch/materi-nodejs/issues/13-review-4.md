@@ -1,6 +1,6 @@
 # 13: Review 4 (0035)
 
-Status: ready-for-agent
+Status: resolved
 
 **Blocked by:** 05, 08, 10, 11, 12
 

@@ -22,6 +22,7 @@ const REVIEWS = [
 
   { num: "0029", sources: [...lessonRange(16, 19), ...lessonRange(21, 24)], prefixes: ["nest-", "pipeline-"] },
 
+  { num: "0035", sources: [...lessonRange(25, 28), ...lessonRange(30, 34)], prefixes: ["data-", "prod-"], allBanks: true },
 ];
 
 REVIEWS.forEach(({ num, sources, prefixes, allBanks }) => {
