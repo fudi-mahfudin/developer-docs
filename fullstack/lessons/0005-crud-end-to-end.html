@@ -186,12 +186,16 @@ import { cookies } from 'next/headers';
 
 export async function api(path, init = {}) {
   const sid = (await cookies()).get('sid')?.value;
-  const res = await fetch(`${process.env.API_URL}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', Cookie: `sid=${sid}`, ...init.headers },
-  });
+  const headers = { 'Content-Type': 'application/json', ...init.headers };
+  if (sid) headers.Cookie = `sid=${sid}`;          // belum login: tanpa cookie
+  const res = await fetch(`${process.env.API_URL}${path}`, { ...init, headers });
   if (!res.ok) throw new ApiError(res.status, await res.json());
   return res.status === 204 ? null : res.json();
+}
+
+export async function sesiSaatIni() {      // user yang login, atau null bila 401
+  try { return await api('/auth/me'); }
+  catch (err) { if (err instanceof ApiError &amp;&amp; err.status === 401) return null; throw err; }
 }</code></pre>
 <p><strong>List</strong> (Server Component). Data yang tergantung request dibungkus <code>&lt;Suspense&gt;</code> supaya judul dan form cari tampil dulu dan tabel di-stream; tanpa Cache Components, file <code>loading.js</code> di folder route memberi efek serupa untuk satu halaman penuh. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/caching">[16]</a></sup></p>
 <pre><code>// app/aset/page.jsx
@@ -212,18 +216,20 @@ async function TabelAset({ searchParams }) {
   const { data, total } = await api(`/aset?${new URLSearchParams({ q, page })}`);
   return &lt;Tabel baris={data} total={total} /&gt;;
 }</code></pre>
-<p><strong>Create</strong> lewat Server Action. Setelah sukses, <code>revalidatePath</code> menyegarkan daftar lalu <code>redirect</code> kembali ke daftar. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/mutating-data">[17]</a></sup> Error validasi dari API dikembalikan sebagai state, bukan dilempar, supaya form bisa menampilkannya.</p>
+<p><strong>Create</strong> lewat Server Action. Server Action adalah endpoint POST publik yang bisa dipanggil langsung tanpa form, jadi docs Next.js meminta setiap Server Action memeriksa auth sendiri. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/mutating-data">[17]</a></sup> Urutannya: cek session, validasi input dengan skema Zod yang sama dengan API (lesson 0002), baru panggil API. Express tetap memeriksa session dan role lagi; cek di sini memberi pesan cepat dan menolak request tanpa login sebelum sampai ke API. Setelah sukses, <code>revalidatePath</code> menyegarkan daftar lalu <code>redirect</code> kembali ke daftar. Error validasi dikembalikan sebagai state, bukan dilempar, supaya form bisa menampilkannya.</p>
 <pre><code>// app/aset/actions.js
 'use server';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-
+import { api, ApiError, sesiSaatIni } from '@/lib/api';
+import { asetCreateSchema } from '@/lib/skema-aset';    // skema Zod lesson 0002
 export async function simpanAset(prevState, formData) {
-  const body = Object.fromEntries(formData);
-  body.kategoriId = Number(body.kategoriId);
-  body.harga = Number(body.harga);
+  if (!(await sesiSaatIni())) redirect('/login');
+  const form = Object.fromEntries(formData);
+  const parsed = asetCreateSchema.safeParse({ ...form, kategoriId: Number(form.kategoriId), harga: Number(form.harga) });
+  if (!parsed.success) return { error: 'Validasi gagal', details: parsed.error.issues };
   try {
-    await api('/aset', { method: 'POST', body: JSON.stringify(body) });
+    await api('/aset', { method: 'POST', body: JSON.stringify(parsed.data) });
   } catch (err) {
     if (err instanceof ApiError &amp;&amp; err.status &lt; 500) return { error: err.body.error, details: err.body.details };
     throw err;
@@ -253,7 +259,7 @@ export function FormAset() {
 <p><strong>Edit dan hapus</strong> memakai pola yang sama: halaman <code>app/aset/[id]/edit/page.jsx</code> memuat detail lewat <code>api(`/aset/${id}`)</code> lalu mengisi form dengan <code>defaultValue</code>; tombol hapus adalah form kecil dengan <code>action={hapusAset.bind(null, aset.id)}</code>. Argumen yang di-<code>bind</code> tidak dienkripsi, jadi id tetap divalidasi di server. <sup class="cite"><a href="https://nextjs.org/blog/security-nextjs-server-components-actions">[18]</a></sup></p>
 <pre><code>// app/aset/error.js: error boundary per route, wajib Client Component
 'use client';
-export default function Error({ error, retry }) {
+export default function Error({ error, retry }) {   // Next.js ≥ 16.3; versi lama: reset
   return (
     &lt;div role="alert"&gt;
       &lt;p&gt;Gagal memuat data aset. Coba lagi, atau hubungi tim IT bila berulang.&lt;/p&gt;
@@ -261,7 +267,7 @@ export default function Error({ error, retry }) {
     &lt;/div&gt;
   );
 }</code></pre>
-<p><strong>Loading/error state:</strong> <code>&lt;Suspense&gt;</code> atau <code>loading.js</code> untuk loading, <code>pending</code> dari <code>useActionState</code> untuk tombol submit, <code>error.js</code> untuk error tak terduga, dan state dari Server Action untuk error validasi. Di production, pesan error dari Server Component disamarkan dan hanya membawa <code>digest</code> untuk dicocokkan dengan log server. Prop <code>retry</code> stabil sejak Next.js 16.3. <sup class="cite"><a href="https://nextjs.org/docs/app/api-reference/file-conventions/error">[19]</a></sup></p>
+<p><strong>Loading/error state:</strong> <code>&lt;Suspense&gt;</code> atau <code>loading.js</code> untuk loading, <code>pending</code> dari <code>useActionState</code> untuk tombol submit, <code>error.js</code> untuk error tak terduga, dan state dari Server Action untuk error validasi. Di production, pesan error dari Server Component disamarkan dan hanya membawa <code>digest</code> untuk dicocokkan dengan log server. Prop <code>retry</code> stabil sejak Next.js 16.3 (16.2: <code>unstable_retry</code>); di versi sebelumnya pakai <code>reset</code>, yang masih ada tapi tidak lagi disarankan docs. <sup class="cite"><a href="https://nextjs.org/docs/app/api-reference/file-conventions/error">[19]</a></sup></p>
 
 <div class="note"><strong>Keamanan: CSRF dan XSS di UI.</strong>
   <strong>CSRF</strong> (Cross-Site Request Forgery) = situs lain membuat browser korban mengirim request yang membawa cookie korban. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">[20]</a></sup>
@@ -280,7 +286,7 @@ import { app } from '../src/app.js';
 
 test('POST /aset menolak harga negatif dengan 400', async () =&gt; {
   const res = await request(app).post('/aset').set('Cookie', sesiAdmin)
-    .send({ kode: 'LTP-099', nama: 'Laptop uji', kategoriId: 1, harga: -5 });
+    .send({ kode: 'LTP-099', nama: 'Laptop uji', kategoriId: 1, harga: -5, tanggalBeli: '2026-03-01' });
   assert.equal(res.status, 400);
 });
 
@@ -305,7 +311,7 @@ test('staf tidak boleh menghapus aset (403)', async () =&gt; {
   Keamanan saya pasang di sini juga. Login memakai session dengan cookie httpOnly, Secure, dan SameSite, password di-hash. Ada RBAC sederhana: hanya admin yang boleh ubah dan hapus, dan itu dicek di server, bukan hanya menyembunyikan tombol. SQL injection tertangani karena Prisma memakai query berparameter, dan saya tidak menyambung string ke raw query.
 </p>
 <p>
-  Langkah ketiga UI di Next.js. Halaman daftar adalah Server Component yang memanggil API, dengan Suspense untuk loading state. Form tambah dan edit memakai Server Action yang meneruskan cookie session ke API, menampilkan pesan validasi, lalu revalidatePath dan redirect setelah sukses. Ada error.js untuk error tak terduga. React meng-escape output, jadi XSS tertutup selama saya tidak memakai dangerouslySetInnerHTML, dan Server Action hanya menerima POST dengan pengecekan Origin, jadi CSRF juga tertangani. CORS baru saya atur kalau browser memanggil API langsung, dengan allowlist origin.
+  Langkah ketiga UI di Next.js. Halaman daftar adalah Server Component yang memanggil API, dengan Suspense untuk loading state. Form tambah dan edit memakai Server Action yang mengecek session, memvalidasi input dengan skema Zod yang sama, lalu meneruskan cookie session ke API, menampilkan pesan validasi, lalu revalidatePath dan redirect setelah sukses. Ada error.js untuk error tak terduga. React meng-escape output, jadi XSS tertutup selama saya tidak memakai dangerouslySetInnerHTML, dan Server Action hanya menerima POST dengan pengecekan Origin, jadi CSRF juga tertangani. CORS baru saya atur kalau browser memanggil API langsung, dengan allowlist origin.
 </p>
 <p>
   Langkah terakhir test. Saya tulis integration test dengan supertest terhadap database test untuk kasus utama dan kasus gagal: validasi, duplikat, tidak login, dan role salah. Setelah itu deploy, lalu saya catat perubahan di dokumentasi dan changelog supaya tim operasional tahu fitur barunya."

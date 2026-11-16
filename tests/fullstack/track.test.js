@@ -1,7 +1,7 @@
 // Run from repo root: node --test
 // Track fullstack (fullstack/): track baca-saja (spec .scratch/materi-fullstack/spec.md). Daftar lesson diturunkan
 // dari fullstack/index.html; setiap lesson yang tersedia ada, memakai kicker "Lesson NNNN · Fullstack · ",
-// tanpa elemen interaktif, bernavigasi ke lesson sebelum/sesudahnya, dan tidak merujuk track lain.
+// punya tepat satu target (.win), tanpa elemen interaktif, bernavigasi ke lesson sebelum/sesudahnya, dan tidak merujuk track lain.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -9,8 +9,8 @@ const path = require("node:path");
 const { ROOT, forTrack } = require("../helpers.js");
 
 const TRACK = "fullstack";
-const fs_ = forTrack(TRACK);
-const read = fs_.read;
+const track = forTrack(TRACK);
+const read = track.read;
 const exists = (...p) => fs.existsSync(path.join(ROOT, TRACK, ...p));
 const index = read("index.html");
 const nums = [...index.matchAll(/<span class="num">(\d{4})<\/span>/g)].map(m => m[1]);
@@ -81,13 +81,14 @@ test("fullstack is linked from the root index, the glossary map, and CLAUDE.md",
 });
 
 lessons.forEach(({ num, href }) => {
-  test(`fullstack ${num}: lesson page exists, uses the kicker, links its neighbours`, () => {
+  test(`fullstack ${num}: lesson page exists, uses the kicker, links its neighbours, has one win`, () => {
     const html = read(href);
     assert.match(html, /href="\.\.\/\.\.\/assets\/style\.css"/);
     const kicker = (html.match(/<div class="kicker">([^<]*)</) || [])[1] || "";
     assert.match(kicker, /^Lesson \d{4} · Fullstack · ±\d+ menit/, `${href}: format kicker`);
     assert.ok(kicker.startsWith(`Lesson ${num} `), `${href}: nomor di kicker`);
     assert.doesNotMatch(html, /<script\b/, `${href}: track baca-saja tanpa <script>`);
+    assert.equal((html.match(/<div class="win">/g) || []).length, 1, `${href}: harus tepat satu target (.win)`);
     const nav = (html.match(/<nav class="lesson-nav">([\s\S]*?)<\/nav>/) || [])[1] || "";
     const prev = String(Number(num) - 1).padStart(4, "0");
     const next = String(Number(num) + 1).padStart(4, "0");

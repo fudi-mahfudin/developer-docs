@@ -1,9 +1,26 @@
 // Run from repo root: node --test
 // Track fullstack: isi lesson (spec .scratch/materi-fullstack/spec.md, "Urutan lesson" dan "Testing").
-// Aturan umum (kicker, nav, tanpa elemen interaktif, blok kode <= 20 baris) diuji track.test.js.
+// Aturan umum (kicker, nav, tepat satu .win, tanpa elemen interaktif, blok kode <= 20 baris) diuji track.test.js.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { forTrack, assertCitesNumbered } = require("../helpers.js");
+
+const track = forTrack("fullstack");
+
+const LESSON_FILES = {
+  "0001": "0001-fondasi-web-dan-nextjs.html",
+  "0002": "0002-express-dan-rest-api.html",
+  "0003": "0003-sql-desain-skema-dan-query.html",
+  "0004": "0004-sql-index-transaksi-performa.html",
+  "0005": "0005-crud-end-to-end.html",
+  "0006": "0006-sole-developer-aplikasi-internal.html",
+  "0007": "0007-peran-it-di-luar-development.html",
+  "0008": "0008-coding-angka-dan-string.html",
+  "0009": "0009-coding-array-dan-pencarian.html",
+  "0010": "0010-simulasi-interview.html",
+};
+const TEKNIS = ["0001", "0002", "0003", "0004", "0005"];
+const SKEMA = ["aset", "kategori", "karyawan", "peminjaman"];
 
 // Prisma: sintaks Prisma 7 dipakai; docs default prisma.io sudah menampilkan Prisma 8 RC,
 // jadi sitasi Prisma harus menunjuk halaman versi 7 (atau panduan upgrade ke v7).
@@ -11,85 +28,21 @@ const assertPrismaCitesV7 = (html, label) => {
   [...html.matchAll(/href="(https:\/\/www\.prisma\.io\/docs\/[^"]+)"/g)].forEach(m =>
     assert.match(m[1], /\/docs\/orm\/v7\/|\/upgrades\/to-v7$/, `${label}: sitasi Prisma harus ke docs v7 (${m[1]})`));
 };
+// Isi <pre><code> pertama yang memuat `marker` (mis. nama file di komentar baris pertama).
+const codeBlock = (html, marker) =>
+  [...html.matchAll(/<pre><code>([\s\S]*?)<\/code><\/pre>/g)].map(m => m[1]).find(c => c.includes(marker)) || "";
+// Semua kotak "Beda di MySQL" di satu halaman, digabung.
+const mysqlBoxes = html => [...html.matchAll(/<div class="note"><strong>Beda di MySQL[\s\S]*?<\/div>/g)].map(m => m[0]).join("\n");
+// Isi bagian <h2> yang judulnya diawali `heading`, sampai <h2> berikutnya.
+const h2Section = (html, heading) => (html.split(new RegExp(`<h2>${heading}[^<]*</h2>`))[1] || "").split("<h2>")[0];
 
-const fs_ = forTrack("fullstack");
+test("fullstack 0001–0010 are listed as tersedia in the index", () => {
+  track.assertListedAsTersedia(Object.fromEntries(Object.entries(LESSON_FILES).map(([n, file]) => [n, { file }])));
+});
 
 // ---------------------------------------------------------------------------
-// 0006–0007: peran sole developer dan IT di luar development (ticket 03)
+// 0001–0005: teknis (aturan bersama)
 // ---------------------------------------------------------------------------
-const PERAN = {
-  "0006": {
-    file: "0006-sole-developer-aplikasi-internal.html",
-    keywords: [/requirement/i, /MVP/, /testing/i, /deploy/i, /backup/i, /monitoring/i, /preventive maintenance/i,
-      /SOP/, /maintenance record/i, /dokumentasi/i, /inventaris aset/i],
-  },
-  "0007": {
-    file: "0007-peran-it-di-luar-development.html",
-    keywords: [/subnet/i, /DHCP/, /DNS/, /gateway/i, /\bping\b/, /tracert/, /nslookup/, /printer/i, /3-2-1/,
-      /hak akses/i, /resolusi/i, /kompresi/i, /aspect ratio/i, /portofolio/i, /troubleshooting/i],
-  },
-};
-
-test("fullstack 0006–0007 are listed as tersedia in the index", () => {
-  fs_.assertListedAsTersedia(PERAN);
-});
-
-Object.entries(PERAN).forEach(([num, { keywords }]) => {
-  test(`fullstack ${num}: covers the spec topics, cites primary sources, and shows a diagram or code`, () => {
-    const html = fs_.readLesson(num);
-    keywords.forEach(re => assert.match(html, re, `${num}: belum membahas ${re}`));
-    assertCitesNumbered(html, num);
-    assert.match(html, /class="flow"|<svg class="diagram"|<pre><code>/, `${num}: butuh diagram atau blok kode`);
-  });
-});
-
-test("fullstack 0006: sole-dev flow in order, filled SOP and maintenance record", () => {
-  const html = fs_.readLesson("0006");
-  const flow = (html.match(/<div class="flow">([\s\S]*?)<\/div>/) || [])[1] || "";
-  [/[Rr]equirement/, /MVP/, /[Ss]tack/, /[Tt]esting/, /[Dd]eploy/, /[Bb]ackup/, /[Mm]onitoring/, /[Dd]okumentasi/]
-    .reduce((from, re) => {
-      const at = flow.slice(from).search(re);
-      assert.ok(at >= 0, `alur .flow: ${re} tidak ada atau tidak berurutan`);
-      return from + at;
-    }, 0);
-  assert.match(html, /<h3[^>]*>[^<]*SOP/, "butuh contoh SOP terisi");
-  assert.match(html, /<h3[^>]*>[^<]*[Mm]aintenance record/, "butuh contoh maintenance record terisi");
-});
-
-test("fullstack 0006: one full STAR story with numbers in the Result", () => {
-  const html = fs_.readLesson("0006");
-  const stars = [...html.matchAll(/<div class="note" id="star">([\s\S]*?)<\/div>/g)];
-  assert.equal(stars.length, 1, "butuh tepat satu cerita STAR");
-  const star = stars[0][1];
-  ["Situation", "Task", "Action", "Result"].reduce((from, k) => {
-    const at = star.indexOf(`<strong>${k}`, from);
-    assert.ok(at >= 0, `STAR: ${k} tidak ada atau tidak berurutan`);
-    return at;
-  }, 0);
-  assert.match(star.split("<strong>Result")[1], /\d/, "Result STAR harus memuat angka");
-});
-
-test("fullstack 0007: troubleshooting flow and honest example answers", () => {
-  const html = fs_.readLesson("0007");
-  assert.match(html, /class="flow"|<svg class="diagram"/, "0007: butuh alur troubleshooting");
-  assert.match(html, /[Cc]ontoh jawaban/, "0007: butuh contoh jawaban");
-});
-
-// ===== Lesson 0001–0005 (teknis) + reference/pertanyaan-sql.html (ticket 02) =====
-
-const TEKNIS = {
-  "0001": { file: "0001-fondasi-web-dan-nextjs.html" },
-  "0002": { file: "0002-express-dan-rest-api.html" },
-  "0003": { file: "0003-sql-desain-skema-dan-query.html" },
-  "0004": { file: "0004-sql-index-transaksi-performa.html" },
-  "0005": { file: "0005-crud-end-to-end.html" },
-};
-const TEKNIS_NUMS = Object.keys(TEKNIS);
-const SKEMA = ["aset", "kategori", "karyawan", "peminjaman"];
-
-test("teknis 0001–0005 are listed as tersedia in the index", () => {
-  fs_.assertListedAsTersedia(TEKNIS);
-});
 
 test("teknis 0001–0005 cover the spec keywords", () => {
   const per = {
@@ -104,16 +57,15 @@ test("teknis 0001–0005 cover the spec keywords", () => {
     "0005": ["schema.prisma", "migrate", "pagination", "search", "filter", "soft delete", "deletedAt", "loading", "error",
       "session", "JWT", "httpOnly", "CORS", "CSRF", "XSS", "SQL injection", "RBAC", "supertest"],
   };
-  TEKNIS_NUMS.forEach(n => {
-    const html = fs_.readLesson(n);
+  TEKNIS.forEach(n => {
+    const html = track.readLesson(n);
     per[n].forEach(k => assert.ok(html.includes(k), `${n} belum membahas ${k}`));
   });
 });
 
-test("teknis 0001–0005: one win, cite numbering, diagram or code, Prisma cites at v7", () => {
-  TEKNIS_NUMS.forEach(n => {
-    const html = fs_.readLesson(n);
-    assert.equal((html.match(/<div class="win">/g) || []).length, 1, `${n}: harus tepat satu target`);
+test("teknis 0001–0005: cite numbering, diagram or code, Prisma cites at v7", () => {
+  TEKNIS.forEach(n => {
+    const html = track.readLesson(n);
     assertCitesNumbered(html, n);
     assert.match(html, /<svg class="diagram"|<div class="flow">|<pre><code>/, `${n}: butuh diagram atau blok kode`);
     assertPrismaCitesV7(html, n);
@@ -121,23 +73,23 @@ test("teknis 0001–0005: one win, cite numbering, diagram or code, Prisma cites
 });
 
 test("teknis: version-dependent behaviour is labelled with the version", () => {
-  assert.match(fs_.readLesson("0001"), /Next\.js ≥ 16/, "0001: caching diberi label Next.js ≥ 16");
-  assert.match(fs_.readLesson("0002"), /Express 5/, "0002: async error diberi label Express 5");
-  assert.match(fs_.readLesson("0004"), /MySQL ≥ 8/, "0004: fitur MySQL diberi label versi");
+  assert.match(track.readLesson("0001"), /Next\.js ≥ 16/, "0001: caching diberi label Next.js ≥ 16");
+  assert.match(track.readLesson("0002"), /Express 5/, "0002: async error diberi label Express 5");
+  assert.match(track.readLesson("0004"), /MySQL ≥ 8/, "0004: fitur MySQL diberi label versi");
 });
 
 test("teknis: 0003 defines the inventaris aset schema and 0004/0005 reuse it", () => {
-  const ddl = fs_.readLesson("0003");
+  const ddl = track.readLesson("0003");
   SKEMA.forEach(t => assert.match(ddl, new RegExp(`CREATE TABLE ${t} \\(`), `0003: belum mendefinisikan tabel ${t}`));
   ["0004", "0005"].forEach(n => {
-    const html = fs_.readLesson(n);
+    const html = track.readLesson(n);
     ["aset", "peminjaman"].forEach(t => assert.match(html, new RegExp(`\\b${t}\\b`), `${n}: belum memakai tabel ${t}`));
   });
 });
 
 test("teknis: 0003 and 0004 end with interview Q&A and written query answers", () => {
   ["0003", "0004"].forEach(n => {
-    const html = fs_.readLesson(n);
+    const html = track.readLesson(n);
     assert.match(html, /<h2>[^<]*Pertanyaan interview[^<]*<\/h2>/, `${n}: blok Pertanyaan interview`);
     const qa = (html.split(/<h2>[^<]*Pertanyaan interview[^<]*<\/h2>/)[1] || "").split("<h2>")[0];
     assert.ok((qa.match(/<dt>/g) || []).length >= 4, `${n}: butuh >= 4 tanya-jawab (<dt>/<dd>)`);
@@ -149,14 +101,55 @@ test("teknis: 0003 and 0004 end with interview Q&A and written query answers", (
   });
 });
 
-test("teknis: 0004 has a Beda di MySQL box", () => {
-  const html = fs_.readLesson("0004");
-  assert.match(html, /<div class="note"><strong>Beda di MySQL/);
-  ["AUTO_INCREMENT", "ON DUPLICATE KEY UPDATE", "REPEATABLE READ"].forEach(k => assert.ok(html.includes(k), `0004: Beda di MySQL belum menyebut ${k}`));
+// ---------------------------------------------------------------------------
+// 0002: Express dan REST API
+// ---------------------------------------------------------------------------
+
+test("fullstack 0002: asetCreateSchema covers every required column of the Prisma model", () => {
+  const schema = codeBlock(track.readLesson("0002"), "asetCreateSchema = z.object(");
+  ["kode", "nama", "kategoriId", "harga", "status"].forEach(f => assert.match(schema, new RegExp(`\\b${f}:`), `asetCreateSchema: ${f}`));
+  assert.match(schema, /tanggalBeli: z\.coerce\.date\(\)/, "asetCreateSchema: tanggalBeli wajib (kolom NOT NULL di Prisma)");
 });
 
-test("teknis: 0005 walks schema → migration → API → UI → test with code and a 3-minute spoken answer", () => {
-  const html = fs_.readLesson("0005");
+test("fullstack 0002: the status-code table matches the code (negative price → 400)", () => {
+  const html = track.readLesson("0002");
+  const row = (html.match(/<tr><td>(\d{3})[^<]*<\/td><td>[^<]*harga negatif/) || [])[1];
+  assert.equal(row, "400", "0002: tabel status code harus memetakan harga negatif ke 400 seperti kode validate()");
+  assert.match(html, /422/, "0002: tetap menyebut bahwa sebagian tim memakai 422");
+});
+
+// ---------------------------------------------------------------------------
+// 0003: SQL, desain skema, dan query
+// ---------------------------------------------------------------------------
+
+test("fullstack 0003: Beda di MySQL covers every PostgreSQL-only construct used", () => {
+  const box = mysqlBoxes(track.readLesson("0003"));
+  assert.ok(box, "0003: butuh kotak Beda di MySQL");
+  ["AUTO_INCREMENT", "TIMESTAMP", "DATETIME", "DATEDIFF", "DISTINCT ON", "ROW_NUMBER", "NULL", "UNIQUE", "FOREIGN KEY"]
+    .forEach(k => assert.ok(box.includes(k), `0003: Beda di MySQL belum menyebut ${k}`));
+});
+
+test("fullstack 0003: the LEFT JOIN trap uses a filter that really drops NULL rows", () => {
+  const join = h2Section(track.readLesson("0003"), "3\\. JOIN");
+  assert.doesNotMatch(join, /WHERE p\.tanggal_kembali IS NULL/, "IS NULL di WHERE tidak membuang baris NULL hasil LEFT JOIN");
+  assert.match(join, /WHERE p\.tanggal_pinjam &gt;=/, "contoh jebakan: filter >= pada tabel kanan di WHERE");
+});
+
+// ---------------------------------------------------------------------------
+// 0004: index, transaksi, performa
+// ---------------------------------------------------------------------------
+
+test("fullstack 0004: Beda di MySQL box", () => {
+  const box = mysqlBoxes(track.readLesson("0004"));
+  ["AUTO_INCREMENT", "ON DUPLICATE KEY UPDATE", "REPEATABLE READ"].forEach(k => assert.ok(box.includes(k), `0004: Beda di MySQL belum menyebut ${k}`));
+});
+
+// ---------------------------------------------------------------------------
+// 0005: CRUD end-to-end
+// ---------------------------------------------------------------------------
+
+test("fullstack 0005: walks schema → migration → API → UI → test with code and a 3-minute spoken answer", () => {
+  const html = track.readLesson("0005");
   const flow = (html.match(/<div class="flow">([\s\S]*?)<\/div>/) || [])[1] || "";
   ["Skema", "Migrasi", "API", "UI", "Test"].forEach(k => assert.match(flow, new RegExp(k), `0005: .flow belum memuat ${k}`));
   const steps = [/model Aset \{/, /prisma migrate dev/, /Router\.get\(/, /'use server'|"use server"/, /request\(app\)/];
@@ -168,22 +161,97 @@ test("teknis: 0005 walks schema → migration → API → UI → test with code 
   assert.ok(words >= 300, `0005: jawaban lisan ±3 menit butuh >= 300 kata, ada ${words}`);
 });
 
-test("reference pertanyaan-sql: ±30 questions with visible answers on the inventaris aset schema", () => {
-  const html = fs_.read("reference/pertanyaan-sql.html");
-  assert.match(html, /<div class="kicker">Reference · Fullstack · /);
-  const qs = (html.match(/<dt>/g) || []).length;
-  assert.ok(qs >= 28 && qs <= 35, `reference: ±30 pertanyaan, ada ${qs}`);
-  assert.equal(qs, (html.match(/<dd>/g) || []).length, "reference: setiap pertanyaan punya jawaban");
-  SKEMA.forEach(t => assert.match(html, new RegExp(`\\b${t}\\b`), `reference: belum memakai tabel ${t}`));
-  assert.match(html, /Beda di MySQL/);
-  assert.match(html, /href="\.\.\/index\.html"/);
-  assertCitesNumbered(html, "reference/pertanyaan-sql");
-  assertPrismaCitesV7(html, "reference/pertanyaan-sql");
+test("fullstack 0005: the API helper sends no session cookie when logged out", () => {
+  const api = codeBlock(track.readLesson("0005"), "// lib/api.js");
+  assert.ok(api, "0005: blok lib/api.js");
+  assert.doesNotMatch(api, /Cookie: `sid=\$\{sid\}`, \.\.\.init\.headers/, "lib/api.js: jangan kirim sid=undefined");
+  assert.match(api, /sid &amp;&amp;|sid \?|if \(sid\)/, "lib/api.js: Cookie hanya dikirim bila sid ada");
 });
 
-// ===== akhir bagian ticket 02 =====
+test("fullstack 0005: the Server Action checks the session and validates input before calling the API", () => {
+  const action = codeBlock(track.readLesson("0005"), "// app/aset/actions.js");
+  assert.match(action, /'use server'/);
+  const at = re => action.search(re);
+  [/redirect\('\/login'\)/, /\.safeParse\(/, /api\('\/aset'/].reduce((from, re) => {
+    assert.ok(at(re) > from, `simpanAset: ${re} tidak ada atau tidak berurutan (session → Zod → API)`);
+    return at(re);
+  }, -1);
+});
 
-// ===== Lesson 0008–0010 + reference/soal-coding-tambahan.html (ticket 04) =====
+test("fullstack 0005: error.js retry is labelled with its Next.js version and mentions reset", () => {
+  const html = track.readLesson("0005");
+  assert.match(codeBlock(html, "// app/aset/error.js"), /retry/);
+  assert.match(html, /<code>retry<\/code>[^.]*Next\.js 16\.3/, "0005: retry diberi label Next.js 16.3");
+  assert.match(html, /<code>reset<\/code>/, "0005: sebut reset untuk versi lama");
+});
+
+test("fullstack 0005: example request bodies include tanggalBeli", () => {
+  const html = track.readLesson("0005");
+  [...html.matchAll(/\.send\(\{([^}]*)\}\)/g)].forEach(m => assert.match(m[1], /tanggalBeli/, `0005: body test tanpa tanggalBeli: ${m[1]}`));
+});
+
+// ---------------------------------------------------------------------------
+// 0006–0007: sole developer dan IT di luar development
+// ---------------------------------------------------------------------------
+
+const PERAN = {
+  "0006": [/requirement/i, /MVP/, /testing/i, /deploy/i, /backup/i, /monitoring/i, /preventive maintenance/i,
+    /SOP/, /maintenance record/i, /dokumentasi/i, /inventaris aset/i],
+  "0007": [/subnet/i, /DHCP/, /DNS/, /gateway/i, /\bping\b/, /tracert/, /nslookup/, /printer/i, /3-2-1/,
+    /hak akses/i, /resolusi/i, /kompresi/i, /aspect ratio/i, /portofolio/i, /troubleshooting/i],
+};
+
+Object.entries(PERAN).forEach(([num, keywords]) => {
+  test(`fullstack ${num}: covers the spec topics, cites primary sources, and shows a diagram or code`, () => {
+    const html = track.readLesson(num);
+    keywords.forEach(re => assert.match(html, re, `${num}: belum membahas ${re}`));
+    assertCitesNumbered(html, num);
+    assert.match(html, /class="flow"|<svg class="diagram"|<pre><code>/, `${num}: butuh diagram atau blok kode`);
+  });
+});
+
+test("fullstack 0006: sole-dev flow in order, filled SOP and maintenance record", () => {
+  const html = track.readLesson("0006");
+  const flow = (html.match(/<div class="flow">([\s\S]*?)<\/div>/) || [])[1] || "";
+  [/[Rr]equirement/, /MVP/, /[Ss]tack/, /[Tt]esting/, /[Dd]eploy/, /[Bb]ackup/, /[Mm]onitoring/, /[Dd]okumentasi/]
+    .reduce((from, re) => {
+      const at = flow.slice(from).search(re);
+      assert.ok(at >= 0, `alur .flow: ${re} tidak ada atau tidak berurutan`);
+      return from + at;
+    }, 0);
+  assert.match(html, /<h3[^>]*>[^<]*SOP/, "butuh contoh SOP terisi");
+  assert.match(html, /<h3[^>]*>[^<]*[Mm]aintenance record/, "butuh contoh maintenance record terisi");
+});
+
+test("fullstack 0006: maintenance record only names columns of the 0003 schema", () => {
+  const html = track.readLesson("0006");
+  const columns = [...track.readLesson("0003").matchAll(/^\s+([a-z_]+)\s+(?:INT|TEXT|NUMERIC|DATE|TIMESTAMPTZ)\b/gm)].map(m => m[1]);
+  [...html.matchAll(/<code>aset\(([^)]*)\)<\/code>/g)].forEach(m => m[1].split(/,\s*/).forEach(c =>
+    assert.ok(columns.includes(c), `0006: index aset(${m[1]}) memakai kolom ${c} yang tidak ada di skema 0003`)));
+});
+
+test("fullstack 0006: one full STAR story with numbers in the Result", () => {
+  const html = track.readLesson("0006");
+  const stars = [...html.matchAll(/<div class="note" id="star">([\s\S]*?)<\/div>/g)];
+  assert.equal(stars.length, 1, "butuh tepat satu cerita STAR");
+  const star = stars[0][1];
+  ["Situation", "Task", "Action", "Result"].reduce((from, k) => {
+    const at = star.indexOf(`<strong>${k}`, from);
+    assert.ok(at >= 0, `STAR: ${k} tidak ada atau tidak berurutan`);
+    return at;
+  }, 0);
+  assert.match(star.split("<strong>Result")[1], /\d/, "Result STAR harus memuat angka");
+});
+
+test("fullstack 0007: troubleshooting flow and honest example answers", () => {
+  const html = track.readLesson("0007");
+  assert.match(html, /class="flow"|<svg class="diagram"/, "0007: butuh alur troubleshooting");
+  assert.match(html, /[Cc]ontoh jawaban/, "0007: butuh contoh jawaban");
+});
+
+// ---------------------------------------------------------------------------
+// 0008–0009: coding (format tujuh langkah)
+// ---------------------------------------------------------------------------
 
 // Format soal coding (spec "Soal coding"): satu <h2>Soal N: ...</h2> per soal, berisi tujuh <h3> berurutan.
 // Pseudocode (jawaban utama) dan implementasi JS langsung tampil di <pre><code>.
@@ -209,18 +277,13 @@ function assertCodingFormat(html, label) {
 }
 
 const CODING = {
-  "0008": { file: "0008-coding-angka-dan-string.html", soal: [/[Pp]alindrome integer/, /[Rr]everse integer/, /[Aa]nagram/, /[Vv]alid parentheses/] },
-  "0009": { file: "0009-coding-array-dan-pencarian.html", soal: [/[Tt]wo sum/, /[Tt]wo pointers/, /[Ss]liding window/, /[Bb]inary search/] },
+  "0008": [/[Pp]alindrome integer/, /[Rr]everse integer/, /[Aa]nagram/, /[Vv]alid parentheses/],
+  "0009": [/[Tt]wo sum/, /[Tt]wo pointers/, /[Ss]liding window/, /[Bb]inary search/],
 };
 
-test("coding lessons are listed as tersedia in the index", () => {
-  fs_.assertListedAsTersedia(CODING);
-});
-
-Object.entries(CODING).forEach(([num, { soal: expected }]) => {
+Object.entries(CODING).forEach(([num, expected]) => {
   test(`fullstack ${num}: every soal follows the 7-step format with pseudocode and JS shown`, () => {
-    const html = fs_.readLesson(num);
-    assert.equal((html.match(/<div class="win">/g) || []).length, 1, `${num}: harus tepat satu target`);
+    const html = track.readLesson(num);
     assertCitesNumbered(html, num);
     const soal = assertCodingFormat(html, num);
     assert.equal(soal.length, expected.length, `${num}: jumlah soal`);
@@ -229,7 +292,7 @@ Object.entries(CODING).forEach(([num, { soal: expected }]) => {
 });
 
 test("fullstack 0008: palindrome integer without strings, half reversal, and its edge cases", () => {
-  const [pal, rev] = soalSections(fs_.readLesson("0008"));
+  const [pal, rev] = soalSections(track.readLesson("0008"));
   const impl = step(pal.body, "Implementasi JavaScript");
   assert.doesNotMatch(impl, /String\(|toString|\.split\(|`/, "palindrome: implementasi tanpa konversi ke string");
   assert.match(pal.body, /separuh/, "palindrome: teknik membalik separuh angka");
@@ -240,7 +303,7 @@ test("fullstack 0008: palindrome integer without strings, half reversal, and its
 });
 
 test("fullstack 0009: each pattern names its data structure or invariant", () => {
-  const [twoSum, pointers, window, search] = soalSections(fs_.readLesson("0009"));
+  const [twoSum, pointers, window, search] = soalSections(track.readLesson("0009"));
   assert.match(step(twoSum.body, "Ide"), /hash map/i, "two sum: hash map");
   assert.match(pointers.body, /terurut/, "two pointers: array terurut");
   assert.match(pointers.body, /duplikat/, "two pointers: hapus duplikat sebagai variasi");
@@ -248,23 +311,12 @@ test("fullstack 0009: each pattern names its data structure or invariant", () =>
   assert.match(step(search.body, "Edge case"), /overflow/i, "binary search: overflow saat menghitung mid");
 });
 
-test("reference soal-coding-tambahan: ±8 extra soal in the same 7-step format", () => {
-  const html = fs_.read("reference/soal-coding-tambahan.html");
-  assert.match(html, /<div class="kicker">Reference · Fullstack · /);
-  const soal = assertCodingFormat(html, "reference/soal-coding-tambahan");
-  assert.ok(soal.length >= 7 && soal.length <= 10, `reference: ±8 soal, ada ${soal.length}`);
-  const titles = soal.map(s => s.title).join(" | ");
-  [/FizzBuzz/, /Armstrong/, /prima/, /[Mm]erge dua array terurut/, /tidak berulang/, /[Rr]otate array/, /Kadane/, /[Aa]nagram/]
-    .forEach(re => assert.match(titles, re, `reference: belum ada soal ${re}`));
-  ["href=\"../index.html\"", "href=\"../lessons/0008-coding-angka-dan-string.html\"", "href=\"../lessons/0009-coding-array-dan-pencarian.html\""]
-    .forEach(link => assert.ok(html.includes(link), `reference: belum menautkan ${link}`));
-  assertCitesNumbered(html, "reference/soal-coding-tambahan");
-});
+// ---------------------------------------------------------------------------
+// 0010: simulasi interview
+// ---------------------------------------------------------------------------
 
 test("fullstack 0010: three interview rounds of JD-based questions with visible answers linked to lessons", () => {
-  fs_.assertListedAsTersedia({ "0010": { file: "0010-simulasi-interview.html" } });
-  const html = fs_.readLesson("0010");
-  assert.equal((html.match(/<div class="win">/g) || []).length, 1, "0010: harus tepat satu target");
+  const html = track.readLesson("0010");
   const BABAK = [/Babak 1: Fundamental &amp; SQL/, /Babak 2: CRUD &amp; sole dev/, /Babak 3: Live coding/];
   const heads = [...html.matchAll(/<h2>([^<]*)<\/h2>/g)].map(m => m[1]).filter(h => h.startsWith("Babak"));
   assert.equal(heads.length, 3, "0010: tepat tiga babak");
@@ -286,4 +338,34 @@ test("fullstack 0010: three interview rounds of JD-based questions with visible 
   }
   ["../reference/pertanyaan-sql.html", "../reference/soal-coding-tambahan.html", "../index.html"]
     .forEach(link => assert.ok(html.includes(`href="${link}"`), `0010 belum menautkan ${link}`));
+});
+
+// ---------------------------------------------------------------------------
+// Reference
+// ---------------------------------------------------------------------------
+
+test("reference pertanyaan-sql: ±30 questions with visible answers on the inventaris aset schema", () => {
+  const html = track.read("reference/pertanyaan-sql.html");
+  assert.match(html, /<div class="kicker">Reference · Fullstack · /);
+  const qs = (html.match(/<dt>/g) || []).length;
+  assert.ok(qs >= 28 && qs <= 35, `reference: ±30 pertanyaan, ada ${qs}`);
+  assert.equal(qs, (html.match(/<dd>/g) || []).length, "reference: setiap pertanyaan punya jawaban");
+  SKEMA.forEach(t => assert.match(html, new RegExp(`\\b${t}\\b`), `reference: belum memakai tabel ${t}`));
+  assert.match(html, /Beda di MySQL/);
+  assert.match(html, /href="\.\.\/index\.html"/);
+  assertCitesNumbered(html, "reference/pertanyaan-sql");
+  assertPrismaCitesV7(html, "reference/pertanyaan-sql");
+});
+
+test("reference soal-coding-tambahan: ±8 extra soal in the same 7-step format", () => {
+  const html = track.read("reference/soal-coding-tambahan.html");
+  assert.match(html, /<div class="kicker">Reference · Fullstack · /);
+  const soal = assertCodingFormat(html, "reference/soal-coding-tambahan");
+  assert.ok(soal.length >= 7 && soal.length <= 10, `reference: ±8 soal, ada ${soal.length}`);
+  const titles = soal.map(s => s.title).join(" | ");
+  [/FizzBuzz/, /Armstrong/, /prima/, /[Mm]erge dua array terurut/, /tidak berulang/, /[Rr]otate array/, /Kadane/, /[Aa]nagram/]
+    .forEach(re => assert.match(titles, re, `reference: belum ada soal ${re}`));
+  ["href=\"../index.html\"", "href=\"../lessons/0008-coding-angka-dan-string.html\"", "href=\"../lessons/0009-coding-array-dan-pencarian.html\""]
+    .forEach(link => assert.ok(html.includes(link), `reference: belum menautkan ${link}`));
+  assertCitesNumbered(html, "reference/soal-coding-tambahan");
 });

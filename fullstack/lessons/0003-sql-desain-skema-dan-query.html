@@ -79,6 +79,15 @@ CREATE TABLE peminjaman (
     <tr><td><code>GENERATED ALWAYS AS IDENTITY</code></td><td>Id otomatis versi standar SQL; <code>SERIAL</code> adalah cara lama di PostgreSQL <sup class="cite"><a href="https://www.postgresql.org/docs/18/ddl-identity-columns.html">[2]</a></sup></td></tr>
   </tbody>
 </table>
+<div class="note"><strong>Beda di MySQL</strong> (MySQL 8.4 LTS), untuk skema yang sama:
+  <ul>
+    <li>Id otomatis memakai <code>id INT AUTO_INCREMENT PRIMARY KEY</code>, bukan <code>GENERATED ALWAYS AS IDENTITY</code>. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/example-auto-increment.html">[9]</a></sup></li>
+    <li>Foreign key wajib ditulis sebagai klausa terpisah: <code>FOREIGN KEY (kategori_id) REFERENCES kategori (id)</code>. <code>REFERENCES</code> yang ditempel di definisi kolom seperti di atas diterima parser tapi diabaikan, jadi constraint-nya tidak ada. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/create-table.html">[10]</a></sup></li>
+    <li>Kolom <code>TEXT</code> hanya bisa di-index dengan prefix, jadi kolom <code>UNIQUE</code> seperti <code>kode</code> dan <code>nik</code> ditulis <code>VARCHAR(20)</code>. Kolom unique yang boleh NULL menerima banyak NULL, sama dengan default PostgreSQL; opsi PostgreSQL ≥ 15 <code>UNIQUE NULLS NOT DISTINCT</code> tidak ada di MySQL. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/create-index.html">[11]</a></sup></li>
+    <li><code>TIMESTAMPTZ</code> tidak ada. <code>TIMESTAMP</code> dikonversi dari zona waktu koneksi ke UTC saat disimpan dan kembali saat dibaca, dengan rentang hanya sampai 2038-01-19; <code>DATETIME</code> disimpan apa adanya tanpa konversi. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/datetime.html">[12]</a></sup></li>
+    <li>Default berupa ekspresi wajib diberi kurung: <code>DEFAULT (CURRENT_DATE)</code>. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/data-type-defaults.html">[13]</a></sup></li>
+  </ul>
+</div>
 <p class="note">Constraint di database adalah pertahanan terakhir. Validasi Zod di API (lesson 0002) memberi pesan error yang ramah, constraint menjamin data tetap benar walaupun ada bug atau skrip impor yang melewati API.</p>
 
 <h2>3. JOIN: INNER vs LEFT</h2>
@@ -94,7 +103,7 @@ SELECT kr.nama, COUNT(p.id) AS jumlah_pinjam
 FROM karyawan kr
 LEFT JOIN peminjaman p ON p.karyawan_id = kr.id
 GROUP BY kr.id, kr.nama;</code></pre>
-<p>Dua jebakan klasik: <code>COUNT(p.id)</code> menghitung 0 untuk karyawan tanpa peminjaman, sedangkan <code>COUNT(*)</code> menghitung 1 (baris NULL ikut terhitung). Dan filter tabel kanan di <code>WHERE</code> (misalnya <code>WHERE p.tanggal_kembali IS NULL</code>) membuang baris NULL sehingga LEFT JOIN berubah menjadi INNER JOIN; taruh filter itu di <code>ON</code>.</p>
+<p>Dua jebakan klasik: <code>COUNT(p.id)</code> menghitung 0 untuk karyawan tanpa peminjaman, sedangkan <code>COUNT(*)</code> menghitung 1 (baris NULL ikut terhitung). Dan filter tabel kanan di <code>WHERE</code>, misalnya <code>WHERE p.tanggal_pinjam &gt;= '2026-01-01'</code>, membuang karyawan tanpa peminjaman (kolom p-nya NULL, dan perbandingan dengan NULL tidak pernah benar), sehingga LEFT JOIN berperilaku seperti INNER JOIN. Taruh filter itu di <code>ON</code>: <code>LEFT JOIN peminjaman p ON p.karyawan_id = kr.id AND p.tanggal_pinjam &gt;= '2026-01-01'</code>. Sebaliknya, <code>WHERE p.id IS NULL</code> tidak membuang baris NULL; pola itu justru dipakai untuk mencari karyawan yang belum pernah meminjam.</p>
 
 <h2>4. GROUP BY dan HAVING</h2>
 <p><code>WHERE</code> menyaring baris <em>sebelum</em> dikelompokkan, <code>HAVING</code> menyaring kelompok <em>sesudah</em> agregasi. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-table-expressions.html#QUERIES-GROUP">[4]</a></sup></p>
@@ -185,6 +194,12 @@ JOIN karyawan kr ON kr.id = b.karyawan_id
 JOIN aset a      ON a.id = b.aset_id
 WHERE b.rn = 1;</code></pre>
 <p><strong>Penjelasan:</strong> ini pola "baris terbaru per kelompok". <code>ROW_NUMBER()</code> dengan <code>PARTITION BY karyawan_id</code> memberi nomor 1 pada peminjaman terbaru tiap karyawan; <code>p.id DESC</code> memecah seri bila ada dua pinjaman di tanggal yang sama. Alternatif khusus PostgreSQL: <code>SELECT DISTINCT ON (karyawan_id) ... ORDER BY karyawan_id, tanggal_pinjam DESC</code>.</p>
+<div class="note"><strong>Beda di MySQL</strong> (MySQL 8.4 LTS), untuk dua query di atas:
+  <ul>
+    <li>Soal 1: lama pinjam ditulis <code>DATEDIFF(CURRENT_DATE, p.tanggal_pinjam)</code>, yang mengembalikan selisih hari. Pengurangan <code>DATE - DATE</code> ala PostgreSQL tidak menghasilkan jumlah hari di MySQL. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/date-and-time-functions.html">[14]</a></sup></li>
+    <li>Soal 2: <code>DISTINCT ON</code> tidak ada; MySQL hanya punya <code>DISTINCT</code> untuk seluruh baris. Pola <code>ROW_NUMBER()</code> di atas berjalan di MySQL ≥ 8.0, jadi itulah jawaban yang portabel. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/select.html">[15]</a></sup></li>
+  </ul>
+</div>
 
 <p>Berikutnya, lesson 0004: query sudah benar, tapi apakah cepat? Index, <code>EXPLAIN</code>, transaksi, dan N+1.</p>
 
@@ -199,7 +214,14 @@ WHERE b.rn = 1;</code></pre>
   <a href="https://www.postgresql.org/docs/18/functions-subquery.html">[5] PostgreSQL 18: Subquery Expressions</a> ·
   <a href="https://www.postgresql.org/docs/18/queries-with.html">[6] PostgreSQL 18: WITH Queries (CTE)</a> ·
   <a href="https://www.postgresql.org/docs/18/tutorial-window.html">[7] PostgreSQL 18: Window Functions (tutorial)</a> ·
-  <a href="https://www.postgresql.org/docs/18/functions-window.html">[8] PostgreSQL 18: Window Functions (reference)</a>
+  <a href="https://www.postgresql.org/docs/18/functions-window.html">[8] PostgreSQL 18: Window Functions (reference)</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/example-auto-increment.html">[9] MySQL 8.4: Using AUTO_INCREMENT</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/create-table.html">[10] MySQL 8.4: CREATE TABLE Statement</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/create-index.html">[11] MySQL 8.4: CREATE INDEX Statement</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/datetime.html">[12] MySQL 8.4: The DATE, DATETIME, and TIMESTAMP Types</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/data-type-defaults.html">[13] MySQL 8.4: Data Type Default Values</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/date-and-time-functions.html">[14] MySQL 8.4: Date and Time Functions</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/select.html">[15] MySQL 8.4: SELECT Statement</a>
 </p>
 
 <nav class="lesson-nav">

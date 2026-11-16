@@ -207,7 +207,7 @@ find /backup -name 'inventaris-*.dump' -mtime +30 -delete</code></pre>
   <tbody>
     <tr><td>2026-10-01</td><td>Preventive</td><td>Uji restore bulanan backup 30 Sep; 862 aset, 1.204 peminjaman, cocok dengan laporan</td><td>Tidak ada</td><td>0 (database terpisah)</td><td>Selesai</td></tr>
     <tr><td>2026-10-08</td><td>Preventive</td><td>Disk server 83%, folder backup lama tidak terhapus karena cron error</td><td>Perbaiki path di <code>backup.sh</code>, hapus file &gt; 30 hari; disk turun ke 41%</td><td>0</td><td>Selesai</td></tr>
-    <tr><td>2026-10-15</td><td>Corrective</td><td>User melapor daftar aset lambat (±6 detik); <code>EXPLAIN ANALYZE</code> menunjukkan sequential scan pada filter lokasi</td><td>Tambah index <code>aset(lokasi_id, status)</code> lewat migrasi; jadi ±120 ms</td><td>0</td><td>Selesai</td></tr>
+    <tr><td>2026-10-15</td><td>Corrective</td><td>User melapor daftar aset lambat (±6 detik); <code>EXPLAIN ANALYZE</code> menunjukkan sequential scan pada filter kategori dan status</td><td>Tambah index <code>aset(kategori_id, status)</code> lewat migrasi; jadi ±120 ms</td><td>0</td><td>Selesai</td></tr>
     <tr><td>2026-11-03</td><td>Preventive</td><td>Patch OS bulanan dan update dependency minor; 1 advisory severity high di library upload</td><td>Update ke versi patch, test hijau, rilis v1.6.2</td><td>4 menit</td><td>Selesai</td></tr>
   </tbody>
 </table>

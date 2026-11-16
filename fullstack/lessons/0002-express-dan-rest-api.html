@@ -46,16 +46,16 @@
     <tr><td>200 OK</td><td>GET berhasil, PATCH berhasil dan mengembalikan data</td></tr>
     <tr><td>201 Created</td><td>POST membuat resource; header <code>Location</code> menunjuk resource baru <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-201-created">[2]</a></sup></td></tr>
     <tr><td>204 No Content</td><td>DELETE berhasil, tidak ada body</td></tr>
-    <tr><td>400 Bad Request</td><td>Request rusak: JSON tidak valid, query param bukan angka</td></tr>
+    <tr><td>400 Bad Request</td><td>Request rusak atau gagal validasi Zod: JSON tidak valid, query param bukan angka, field wajib kosong, harga negatif</td></tr>
     <tr><td>401 Unauthorized</td><td>Belum login atau token tidak valid (sebenarnya berarti "unauthenticated") <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-401-unauthorized">[3]</a></sup></td></tr>
     <tr><td>403 Forbidden</td><td>Sudah login, tapi tidak berhak (staf biasa mencoba menghapus aset) <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-403-forbidden">[4]</a></sup></td></tr>
     <tr><td>404 Not Found</td><td>Aset dengan id itu tidak ada</td></tr>
     <tr><td>409 Conflict</td><td>Bentrok dengan state saat ini: kode aset sudah dipakai, aset sedang dipinjam <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-409-conflict">[5]</a></sup></td></tr>
-    <tr><td>422 Unprocessable Content</td><td>JSON-nya valid tapi isinya melanggar aturan (harga negatif) <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-422-unprocessable-content">[6]</a></sup></td></tr>
+    <tr><td>422 Unprocessable Content</td><td>Alternatif untuk JSON yang valid tapi isinya melanggar aturan; API kita tidak memakainya (lihat catatan di bawah) <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-422-unprocessable-content">[6]</a></sup></td></tr>
     <tr><td>500 Internal Server Error</td><td>Bug atau kegagalan tak terduga; detailnya hanya di log, tidak dikirim ke klien</td></tr>
   </tbody>
 </table>
-<p class="note">Banyak tim memakai 400 untuk semua error validasi. Itu juga wajar. Yang penting konsisten dan terdokumentasi, misalnya: "validasi Zod gagal → 400 dengan daftar field yang salah".</p>
+<p class="note">API aset di track ini memakai 400 untuk semua error validasi, seperti middleware <code>validate()</code> di bagian 5. Sebagian tim memilih 422 untuk isi yang melanggar aturan (harga negatif) dan menyisakan 400 untuk request yang rusak; keduanya wajar. Yang penting konsisten dan terdokumentasi, misalnya: "validasi Zod gagal → 400 dengan daftar field yang salah".</p>
 
 <h2>3. Routing dan middleware Express 5</h2>
 <p>
@@ -101,7 +101,7 @@ export function errorHandler(err, req, res, next) {
 <h2>5. Validasi dengan Zod</h2>
 <p>
   <strong>Zod</strong> adalah library validasi skema untuk TypeScript/JavaScript (versi 4). <code>schema.safeParse(data)</code> tidak melempar error, tapi mengembalikan objek dengan <code>success</code>; bila gagal, daftar masalahnya ada di <code>error.issues</code>. <sup class="cite"><a href="https://zod.dev/basics">[11]</a></sup>
-  <code>z.coerce.number()</code> mengubah string query param menjadi angka, dan <code>.partial()</code> membuat semua field opsional, cocok untuk PATCH. <sup class="cite"><a href="https://zod.dev/api">[12]</a></sup>
+  <code>z.coerce.number()</code> mengubah string query param menjadi angka, <code>z.coerce.date()</code> mengubah string tanggal dari JSON (JSON tidak punya tipe tanggal) menjadi <code>Date</code>, dan <code>.partial()</code> membuat semua field opsional, cocok untuk PATCH. <sup class="cite"><a href="https://zod.dev/api">[12]</a></sup>
 </p>
 <pre><code>import { z } from 'zod';
 
@@ -111,6 +111,7 @@ export const asetCreateSchema = z.object({
   kategoriId: z.number().int().positive(),
   harga: z.number().nonnegative(),
   status: z.enum(['TERSEDIA', 'DIPINJAM', 'RUSAK']).default('TERSEDIA'),
+  tanggalBeli: z.coerce.date(),                   // "2026-03-01" → Date
 });
 export const asetUpdateSchema = asetCreateSchema.partial();
 
