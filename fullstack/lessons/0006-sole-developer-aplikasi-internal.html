@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0006 · Sole developer aplikasi internal: dari requirement sampai maintenance record</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0006 · Fullstack · ±25 menit</div>
+  <h1>Sole developer aplikasi internal: dari requirement sampai maintenance record</h1>
+  <p class="subtitle">Cara bekerja sendirian dari permintaan user non-teknis sampai aplikasi yang terawat: MVP, stack, testing, deploy, backup, monitoring, preventive maintenance, dan dokumentasi, lengkap dengan contoh dokumen dan cerita STAR</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menceritakan alur kerja sole developer dalam delapan langkah tanpa melompat,
+  menunjukkan contoh SOP dan maintenance record yang konkret,
+  menjawab pertanyaan "bagaimana kalau kamu satu-satunya developer?" dengan contoh nyata,
+  dan membawakan satu cerita STAR yang punya angka di bagian Result.
+</div>
+
+<p>
+  JD posisi ini meminta lebih dari menulis kode: menerjemahkan kebutuhan tim operasional dan administrasi, deploy, maintenance, monitoring, dan dokumentasi.
+  Interviewer ingin tahu satu hal: <em>kalau aplikasi ini hanya dipegang Anda, apakah ia tetap jalan, datanya aman, dan orang lain bisa melanjutkan?</em>
+  Lesson ini memakai contoh berjalan aplikasi <strong>inventaris aset</strong> kantor (aset, kategori, karyawan, peminjaman).
+</p>
+
+<h2>1. Alur kerja dalam satu baris</h2>
+<div class="flow">
+  <span class="box">Requirement dari user</span><span class="arrow">→</span>
+  <span class="box">Scoping MVP</span><span class="arrow">→</span>
+  <span class="box">Stack yang bisa dirawat sendiri</span><span class="arrow">→</span>
+  <span class="box">Testing</span><span class="arrow">→</span>
+  <span class="box">Deploy</span><span class="arrow">→</span>
+  <span class="box">Backup</span><span class="arrow">→</span>
+  <span class="box">Monitoring + preventive maintenance</span><span class="arrow">→</span>
+  <span class="box">Dokumentasi: teknis, SOP, maintenance record</span>
+</div>
+<p>
+  Hafalkan urutan ini sebagai kerangka jawaban. Saat ditanya "ceritakan cara kerja Anda", sebut kedelapan langkahnya dulu dalam satu kalimat,
+  lalu perdalam dua atau tiga langkah yang paling relevan dengan pertanyaan.
+  Langkahnya berulang: setelah rilis pertama, permintaan baru masuk lagi ke langkah requirement.
+</p>
+
+<h2>2. Requirement dari user non-teknis</h2>
+<p>
+  User bagian umum jarang berkata "saya butuh tabel peminjaman dengan foreign key ke karyawan". Mereka berkata "saya capek mencari laptop yang dipinjam siapa".
+  Tugas Anda menerjemahkan keluhan itu menjadi kebutuhan yang bisa diuji.
+</p>
+<ul>
+  <li><strong>Lihat proses yang sekarang berjalan.</strong> Minta file Excel, formulir kertas, atau chat yang dipakai saat ini. Data nyata menunjukkan kolom yang benar-benar dipakai.</li>
+  <li><strong>Tanya kejadian terakhir, bukan keinginan umum.</strong> "Kapan terakhir kali aset sulit ditemukan? Apa yang Anda lakukan waktu itu?"</li>
+  <li><strong>Tulis sebagai user story + kriteria terima.</strong> Satu kalimat "sebagai ... saya ingin ... supaya ...", ditambah kondisi yang bisa dicek.</li>
+  <li><strong>Konfirmasi dengan mockup sederhana</strong> (sketsa kertas atau wireframe) sebelum menulis kode. Lebih murah mengubah gambar daripada mengubah skema database.</li>
+</ul>
+<table>
+  <thead><tr><th>Catatan requirement (contoh terisi)</th><th>Isi</th></tr></thead>
+  <tbody>
+    <tr><td>Keluhan awal</td><td>"Kami tidak tahu laptop mana yang sedang dipinjam dan oleh siapa."</td></tr>
+    <tr><td>User story</td><td>Sebagai staf bagian umum, saya ingin mencatat peminjaman aset dan melihat siapa yang memegangnya, supaya aset bisa ditagih kembali.</td></tr>
+    <tr><td>Kriteria terima</td><td>Aset yang sedang dipinjam tidak bisa dipinjam lagi; daftar peminjaman yang lewat tanggal kembali tampil di dashboard; riwayat tidak bisa dihapus.</td></tr>
+    <tr><td>Data awal</td><td>File Excel 850 baris, kolom kode aset, nama, kategori, lokasi, pemegang.</td></tr>
+    <tr><td>Pengguna</td><td>3 staf bagian umum (admin), kepala bagian (lihat laporan), karyawan lain tidak login.</td></tr>
+  </tbody>
+</table>
+
+<h2>3. Scoping MVP</h2>
+<p>
+  <strong>MVP</strong> (minimum viable product) adalah versi terkecil yang sudah menyelesaikan masalah utama dan bisa dipakai sungguhan.
+  Bagi sole developer, MVP adalah alat untuk berkata "belum sekarang" tanpa berkata "tidak".
+</p>
+<table>
+  <thead><tr><th>Must (rilis 1)</th><th>Should (rilis 2)</th><th>Could (nanti)</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>CRUD aset dan kategori, import dari Excel, pinjam dan kembalikan aset, daftar peminjaman terlambat, login admin</td>
+      <td>Laporan per lokasi, ekspor ke Excel, riwayat perubahan aset</td>
+      <td>Label QR code, notifikasi email otomatis, foto aset</td>
+    </tr>
+  </tbody>
+</table>
+<p>Tulis daftar ini dan minta user menyetujuinya. Saat ada permintaan baru di tengah jalan, tunjukkan daftar dan tanya: "masuk Must, berarti apa yang kita geser?"</p>
+
+<h2>4. Stack yang bisa dirawat sendiri</h2>
+<p>Kriteria memilih stack untuk aplikasi internal yang dipegang satu orang:</p>
+<ul>
+  <li><strong>Satu bahasa di frontend dan backend</strong> (JavaScript/TypeScript) supaya konteks tidak berpindah-pindah.</li>
+  <li><strong>Teknologi yang dokumentasinya panjang umur dan mudah dicari orang berikutnya</strong>: Next.js untuk UI, Express untuk API, PostgreSQL untuk data, Prisma untuk akses database dan migrasi.</li>
+  <li><strong>Sesedikit mungkin komponen yang harus dijaga.</strong> Satu server aplikasi dan satu database lebih mudah dirawat daripada microservices. Tambah komponen hanya bila ada masalah nyata.</li>
+  <li><strong>Semua perubahan skema lewat migrasi</strong> yang tersimpan di Git, bukan diubah manual di database produksi.</li>
+</ul>
+
+<h2>5. Testing</h2>
+<p>Sebagai sole developer, tidak ada QA yang menangkap kesalahan Anda. Prioritaskan test pada aturan bisnis yang mahal jika salah:</p>
+<ul>
+  <li><strong>Unit test di service layer</strong> untuk aturan seperti "aset yang sedang dipinjam tidak bisa dipinjam lagi".</li>
+  <li><strong>Integration test endpoint</strong> (request HTTP ke API Express dengan database test) untuk status code dan validasi.</li>
+  <li><strong>User acceptance test (UAT)</strong>: user bagian umum mencoba skenario nyata di server staging sebelum rilis, berpegang pada kriteria terima di langkah 2.</li>
+</ul>
+<pre><code>// test/peminjaman.service.test.js (node:test)
+test('aset yang sedang dipinjam tidak bisa dipinjam lagi', async () =&gt; {
+  const aset = await buatAset({ status: 'DIPINJAM' });
+  await assert.rejects(
+    () =&gt; pinjamAset({ asetId: aset.id, karyawanId: 7 }),
+    /sedang dipinjam/
+  );
+});</code></pre>
+
+<h2>6. Deploy</h2>
+<p>
+  Untuk aplikasi internal, satu server (VM kantor atau cloud) sudah cukup. Next.js bisa di-deploy sebagai server Node.js dengan <code>next build</code> lalu <code>next start</code>, dan mode ini mendukung semua fitur Next.js. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/deploying">[1]</a></sup>
+  Migrasi database di produksi dijalankan dengan <code>prisma migrate deploy</code>, yang hanya menerapkan migrasi yang belum jalan dan tidak me-reset database; <code>prisma migrate dev</code> adalah perintah development dan tidak boleh dipakai di produksi. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-migrate/workflows/development-and-production">[2]</a></sup>
+</p>
+<pre><code># Checklist rilis (ditulis di SOP rilis)
+1. Semua test hijau di branch main
+2. Backup database manual sebelum migrasi
+3. git pull di server, npm ci
+4. npx prisma migrate deploy
+5. npm run build, restart service (API dan web)
+6. Smoke test: login, list aset, pinjam lalu kembalikan 1 aset
+7. Catat versi dan waktu rilis di maintenance record</code></pre>
+<p>Rencana rollback juga ditulis sebelum rilis: kembali ke tag Git sebelumnya, dan restore backup bila migrasi merusak data.</p>
+
+<h2>7. Backup</h2>
+<p>
+  PostgreSQL punya tiga pendekatan backup yang berbeda: SQL dump, backup di level file system, dan continuous archiving. <sup class="cite"><a href="https://www.postgresql.org/docs/18/backup.html">[3]</a></sup>
+  <code>pg_dump</code> menghasilkan export yang konsisten walaupun database sedang dipakai, dan tidak memblokir user lain (baca maupun tulis). Format custom (<code>-Fc</code>) dikompresi dan di-restore dengan <code>pg_restore</code>. <sup class="cite"><a href="https://www.postgresql.org/docs/18/app-pgdump.html">[4]</a></sup>
+</p>
+<pre><code>#!/bin/sh
+# /opt/inventaris/backup.sh, dijalankan cron setiap hari 01.00
+set -e
+TGL=$(date +%F)
+pg_dump -Fc -d inventaris -f /backup/inventaris-$TGL.dump
+# salinan kedua ke NAS kantor, salinan ketiga ke cloud storage
+cp /backup/inventaris-$TGL.dump /mnt/nas/inventaris/
+rclone copy /backup/inventaris-$TGL.dump offsite:inventaris/
+# simpan 30 hari terakhir di server
+find /backup -name 'inventaris-*.dump' -mtime +30 -delete</code></pre>
+<ul>
+  <li><strong>Aturan 3-2-1</strong>: simpan 3 salinan (1 utama + 2 backup), di 2 jenis media berbeda, dengan 1 salinan di luar lokasi kantor. <sup class="cite"><a href="https://www.cisa.gov/sites/default/files/publications/data_backup_options.pdf">[5]</a></sup> Script di atas menerapkannya: server, NAS, dan cloud.</li>
+  <li><strong>Backup yang belum pernah di-restore belum terbukti.</strong> Uji restore sebulan sekali ke database terpisah dan catat hasilnya di maintenance record.</li>
+  <li>
+    Dokumentasi PostgreSQL mengingatkan bahwa, kecuali untuk kasus sederhana, <code>pg_dump</code> umumnya bukan pilihan tepat untuk backup rutin database produksi. <sup class="cite"><a href="https://www.postgresql.org/docs/18/app-pgdump.html">[4]</a></sup>
+    Database inventaris kecil termasuk kasus sederhana. Bila data makin kritis, tambahkan continuous archiving: base backup dengan <code>pg_basebackup</code> plus arsip WAL, yang memungkinkan <em>point-in-time recovery</em> ke titik waktu mana pun sejak base backup. <sup class="cite"><a href="https://www.postgresql.org/docs/18/continuous-archiving.html">[6]</a></sup>
+  </li>
+</ul>
+
+<h2>8. Monitoring dan preventive maintenance</h2>
+<p><strong>Monitoring</strong> menjawab "apakah sistem sehat sekarang?". <strong>Preventive maintenance</strong> adalah pekerjaan terjadwal supaya masalah tidak muncul.</p>
+<ul>
+  <li><strong>Health check</strong>: endpoint <code>GET /health</code> yang mengecek koneksi database, dipantau uptime checker setiap 5 menit dan mengirim notifikasi bila gagal.</li>
+  <li>
+    <strong>Log aplikasi</strong>: catat kegagalan validasi input, login berhasil dan gagal, serta kegagalan otorisasi.
+    Jangan pernah mencatat password, session ID, access token, atau connection string database. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">[7]</a></sup>
+  </li>
+  <li><strong>Database</strong>: view <code>pg_stat_activity</code> berisi satu baris per proses server beserta query yang sedang berjalan, berguna saat aplikasi terasa lambat. <sup class="cite"><a href="https://www.postgresql.org/docs/18/monitoring-stats.html">[8]</a></sup></li>
+  <li>
+    <strong>VACUUM</strong> wajib berjalan rutin, antara lain untuk memakai ulang ruang disk dari baris yang di-update/dihapus dan memperbarui statistik query planner.
+    Autovacuum aktif secara default dan sangat disarankan tetap aktif; tugas Anda memastikan ia tidak dimatikan dan memeriksa tabel yang jarang ter-vacuum. <sup class="cite"><a href="https://www.postgresql.org/docs/18/routine-vacuuming.html">[9]</a></sup>
+  </li>
+</ul>
+<table>
+  <thead><tr><th>Frekuensi</th><th>Preventive maintenance aplikasi inventaris aset</th></tr></thead>
+  <tbody>
+    <tr><td>Harian (otomatis)</td><td>Backup database, cek hasil job backup, health check</td></tr>
+    <tr><td>Mingguan</td><td>Baca log error, cek sisa disk server (alarm di 80%)</td></tr>
+    <tr><td>Bulanan</td><td>Uji restore backup, update patch OS, <code>npm audit</code> dan update dependency minor, cek masa berlaku sertifikat TLS</td></tr>
+    <tr><td>Per kuartal</td><td>Review akun admin (hapus yang sudah keluar), review query lambat, update dokumentasi</td></tr>
+  </tbody>
+</table>
+
+<h2>9. Dokumentasi: teknis, SOP, dan maintenance record</h2>
+<ul>
+  <li><strong>Dokumentasi teknis</strong> (README di repo): arsitektur singkat, cara menjalankan lokal, variabel environment, cara deploy, lokasi backup. Ukurannya: developer pengganti bisa deploy tanpa menelepon Anda.</li>
+  <li><strong>SOP sistem</strong>: prosedur langkah demi langkah untuk kegiatan berulang (rilis, backup dan restore, membuat akun). Ditulis supaya orang lain bisa mengikutinya saat Anda cuti.</li>
+  <li><strong>Maintenance record</strong>: log semua kegiatan maintenance, preventive maupun corrective, sebagai bukti dan bahan analisis masalah berulang.</li>
+</ul>
+
+<h3>Contoh SOP terisi: restore database inventaris aset</h3>
+<table>
+  <tbody>
+    <tr><td>Nomor / versi</td><td>SOP-INV-03 / v1.2, berlaku 1 Agustus</td></tr>
+    <tr><td>Tujuan</td><td>Mengembalikan database aplikasi inventaris aset dari backup harian bila data rusak atau server diganti</td></tr>
+    <tr><td>Penanggung jawab</td><td>Developer aplikasi; cadangan: staf IT support</td></tr>
+    <tr><td>Prasyarat</td><td>Akses SSH ke server, file backup terbaru di <code>/backup</code> atau NAS, persetujuan kepala bagian umum (aplikasi akan offline ±15 menit)</td></tr>
+    <tr><td>Langkah</td><td>
+      1. Umumkan di grup kantor bahwa aplikasi offline.<br>
+      2. Hentikan service API: <code>systemctl stop inventaris-api</code>.<br>
+      3. Pilih file backup terakhir yang valid, mis. <code>inventaris-2026-11-14.dump</code>.<br>
+      4. Restore ke database baru: <code>createdb inventaris_restore</code> lalu <code>pg_restore -d inventaris_restore &lt;file&gt;</code>.<br>
+      5. Cek jumlah baris tabel <code>aset</code> dan <code>peminjaman</code> dibandingkan laporan terakhir.<br>
+      6. Arahkan <code>DATABASE_URL</code> ke <code>inventaris_restore</code>, jalankan service API.<br>
+      7. Smoke test: login, buka daftar aset, buka 3 peminjaman terakhir.
+    </td></tr>
+    <tr><td>Verifikasi</td><td>Jumlah aset sama dengan laporan terakhir; tidak ada error di log selama 10 menit</td></tr>
+    <tr><td>Eskalasi</td><td>Bila restore gagal: pakai backup dari NAS, lalu dari cloud; laporkan ke kepala bagian umum</td></tr>
+    <tr><td>Pencatatan</td><td>Isi maintenance record: waktu mulai/selesai, file backup yang dipakai, hasil verifikasi</td></tr>
+  </tbody>
+</table>
+
+<h3>Contoh maintenance record terisi</h3>
+<table>
+  <thead><tr><th>Tanggal</th><th>Jenis</th><th>Kegiatan dan temuan</th><th>Tindakan</th><th>Downtime</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>2026-10-01</td><td>Preventive</td><td>Uji restore bulanan backup 30 Sep; 862 aset, 1.204 peminjaman, cocok dengan laporan</td><td>Tidak ada</td><td>0 (database terpisah)</td><td>Selesai</td></tr>
+    <tr><td>2026-10-08</td><td>Preventive</td><td>Disk server 83%, folder backup lama tidak terhapus karena cron error</td><td>Perbaiki path di <code>backup.sh</code>, hapus file &gt; 30 hari; disk turun ke 41%</td><td>0</td><td>Selesai</td></tr>
+    <tr><td>2026-10-15</td><td>Corrective</td><td>User melapor daftar aset lambat (±6 detik); <code>EXPLAIN ANALYZE</code> menunjukkan sequential scan pada filter lokasi</td><td>Tambah index <code>aset(lokasi_id, status)</code> lewat migrasi; jadi ±120 ms</td><td>0</td><td>Selesai</td></tr>
+    <tr><td>2026-11-03</td><td>Preventive</td><td>Patch OS bulanan dan update dependency minor; 1 advisory severity high di library upload</td><td>Update ke versi patch, test hijau, rilis v1.6.2</td><td>4 menit</td><td>Selesai</td></tr>
+  </tbody>
+</table>
+
+<h2>10. Pertanyaan sole developer tersering dan contoh jawaban</h2>
+<p><strong>"Bagaimana Anda menghadapi permintaan yang terus bertambah dari banyak bagian?"</strong><br>
+  Contoh jawaban: "Saya catat semua permintaan di satu backlog, lalu sepakati prioritasnya dengan atasan atau pemilik proses, bukan dengan siapa yang paling sering menghubungi saya. Setiap permintaan saya beri estimasi kasar. Kalau ada permintaan mendesak di tengah rilis, saya tunjukkan apa yang harus digeser supaya keputusannya jelas dan tercatat."</p>
+<p><strong>"Siapa yang me-review kode Anda kalau Anda satu-satunya developer?"</strong><br>
+  Contoh jawaban: "Saya mengganti review rekan dengan beberapa pengaman: test otomatis untuk aturan bisnis yang penting, linter dan format otomatis, pull request ke diri sendiri yang saya baca ulang keesokan harinya, dan UAT dengan user sebelum rilis. Untuk keputusan besar seperti skema database, saya tulis catatan keputusan singkat supaya alasannya bisa dicek orang lain."</p>
+<p><strong>"Bagaimana kalau Anda sakit atau keluar? Apa yang terjadi dengan aplikasinya?"</strong><br>
+  Contoh jawaban: "Saya merancang supaya aplikasi tidak bergantung pada ingatan saya. README menjelaskan cara menjalankan dan deploy, SOP mencakup rilis dan restore, kredensial disimpan di password manager kantor, dan staf IT support pernah mencoba SOP restore bersama saya. Ukurannya: orang lain bisa memulihkan aplikasi dari backup tanpa menelepon saya."</p>
+<p><strong>"Bagaimana Anda tahu aplikasi bermasalah sebelum user melapor?"</strong><br>
+  Contoh jawaban: "Ada health check yang dicek setiap 5 menit dan mengirim notifikasi, log error yang saya baca setiap minggu, dan cek hasil job backup setiap hari. Saya juga punya jadwal preventive maintenance bulanan, misalnya uji restore dan update patch, yang hasilnya dicatat di maintenance record."</p>
+<p><strong>"User tidak bisa menjelaskan apa yang mereka mau. Apa yang Anda lakukan?"</strong><br>
+  Contoh jawaban: "Saya minta ditunjukkan cara kerja mereka sekarang, misalnya file Excel atau formulir yang dipakai, dan menanyakan kejadian terakhir yang menyulitkan. Dari situ saya buat sketsa layar dan minta mereka mencoba alurnya di atas kertas. Biasanya kebutuhan sebenarnya muncul saat mereka melihat sketsa itu."</p>
+
+<h2>11. Contoh cerita STAR lengkap</h2>
+<p>
+  STAR (Situation, Task, Action, Result) adalah struktur cerita untuk pertanyaan perilaku seperti "ceritakan proyek yang Anda bangun sendiri".
+  Cerita di bawah adalah <strong>contoh skenario</strong> untuk menunjukkan bentuk dan takarannya. Ganti detail dan angkanya dengan pengalaman Anda sendiri; jangan membawakan angka yang tidak bisa Anda pertanggungjawabkan.
+</p>
+<div class="note" id="star">
+  <p><strong>Situation.</strong> Kantor dengan ±120 karyawan mencatat ±850 aset (laptop, printer, proyektor) di satu file Excel bersama, dan peminjaman dicatat lewat chat. Saat stock opname tahunan, 37 aset tidak jelas lokasinya, dan stock opname memakan 5 hari kerja tiga staf bagian umum.</p>
+  <p><strong>Task.</strong> Saya satu-satunya developer di kantor itu dan diminta membuat aplikasi inventaris aset internal dalam ±2 bulan, termasuk memindahkan data lama, tanpa mengganggu pekerjaan bagian umum.</p>
+  <p><strong>Action.</strong> Saya mengamati proses mereka dan mengumpulkan file Excel serta riwayat chat, lalu menyepakati MVP: CRUD aset, pinjam/kembali, daftar peminjaman terlambat, dan import Excel. Saya memilih Next.js, Express, dan PostgreSQL dengan Prisma supaya satu bahasa dan mudah dirawat sendiri. Saya menulis script import yang membersihkan 140 baris duplikat atau kode aset tidak konsisten dan mengonfirmasi hasilnya dengan staf. Aturan bisnis peminjaman saya lindungi dengan unit test, lalu dua minggu UAT di server staging. Setelah rilis, saya menyiapkan backup harian dengan aturan 3-2-1, health check, dan tiga SOP (rilis, restore, akun), lalu melatih staf IT support menjalankan SOP restore.</p>
+  <p><strong>Result.</strong> Aplikasi dipakai sejak minggu ke-9. Pada stock opname berikutnya, waktu stock opname turun dari 5 hari menjadi 2 hari, dan aset yang tidak jelas lokasinya turun dari 37 menjadi 4. Peminjaman terlambat lebih dari 7 hari turun ±60% dalam 3 bulan karena muncul di dashboard. Uji restore bulanan selalu berhasil, dan selama 6 bulan pertama tidak ada data yang hilang.</p>
+</div>
+<p class="note">
+  Kunci cerita ini: Action memakai kata "saya" dan menyebut keputusan, bukan sekadar daftar teknologi; Result punya angka sebelum dan sesudah.
+  Bawakan dalam ±2 menit, lalu siapkan jawaban lanjutan untuk pertanyaan "apa yang akan Anda lakukan berbeda?" (mis. "melibatkan kepala bagian sejak hari pertama supaya prioritas tidak berubah di tengah jalan").
+</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Peran · sole developer dan IT") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://nextjs.org/docs/app/getting-started/deploying">[1] Next.js Docs: Deploying</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-migrate/workflows/development-and-production">[2] Prisma ORM v7 Docs: Development and production (Prisma Migrate)</a> ·
+  <a href="https://www.postgresql.org/docs/18/backup.html">[3] PostgreSQL 18 Docs: Backup and Restore</a> ·
+  <a href="https://www.postgresql.org/docs/18/app-pgdump.html">[4] PostgreSQL 18 Docs: pg_dump</a> ·
+  <a href="https://www.cisa.gov/sites/default/files/publications/data_backup_options.pdf">[5] CISA (US-CERT): Data Backup Options</a> ·
+  <a href="https://www.postgresql.org/docs/18/continuous-archiving.html">[6] PostgreSQL 18 Docs: Continuous Archiving and Point-in-Time Recovery (PITR)</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html">[7] OWASP Cheat Sheet Series: Logging</a> ·
+  <a href="https://www.postgresql.org/docs/18/monitoring-stats.html">[8] PostgreSQL 18 Docs: The Cumulative Statistics System</a> ·
+  <a href="https://www.postgresql.org/docs/18/routine-vacuuming.html">[9] PostgreSQL 18 Docs: Routine Vacuuming</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0005-crud-end-to-end.html">← 0005 · CRUD end-to-end</a>
+  <a href="0007-peran-it-di-luar-development.html">0007 · Peran IT di luar development →</a>
+</nav>
+
+</main>
+</body>
+</html>
