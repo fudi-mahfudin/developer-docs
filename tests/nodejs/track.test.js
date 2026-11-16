@@ -67,7 +67,7 @@ test("nodejs is linked from the root index, the glossary map, and CLAUDE.md", ()
   assert.match(fs.readFileSync(path.join(ROOT, "GLOSSARY-MAP.md"), "utf8"), /nodejs\/GLOSSARY\.md/);
   const claude = fs.readFileSync(path.join(ROOT, "CLAUDE.md"), "utf8");
   assert.match(claude, /nodejs\/GLOSSARY\.md/);
-  assert.match(claude, /tests\/\{shared,dotnet,fhir,sysdesign,nodejs\}\//);
+  assert.match(claude, /tests\/\{shared,dotnet,fhir,sysdesign,nodejs[,}]/);
 });
 
 test("all nodejs question files run together as browser scripts", () => {
