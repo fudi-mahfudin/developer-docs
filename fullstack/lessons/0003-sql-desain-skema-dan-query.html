@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0003 · SQL: desain skema dan query</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0003 · Fullstack · ±30 menit</div>
+  <h1>SQL: desain skema dan query</h1>
+  <p class="subtitle">Skema inventaris aset yang dipakai di seluruh track, normalisasi 1NF–3NF, constraint, relasi 1-N dan N-N, lalu query yang paling sering diminta di interview: JOIN, GROUP BY/HAVING, subquery vs CTE, dan window function</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menggambar skema empat tabel inventaris aset dari spreadsheet berantakan, menjelaskan alasannya dengan istilah 1NF–3NF,
+  dan menulis di kertas query INNER/LEFT JOIN, GROUP BY + HAVING, CTE, dan top-N per kategori dengan <code>ROW_NUMBER()</code>.
+</div>
+
+<h2>1. Dari spreadsheet ke skema: normalisasi 1NF–3NF</h2>
+<p>Tim administrasi biasanya datang dengan satu sheet Excel seperti ini:</p>
+<table>
+  <thead><tr><th>kode_aset</th><th>nama_aset</th><th>kategori</th><th>nik</th><th>nama_karyawan</th><th>divisi</th><th>tgl_pinjam</th></tr></thead>
+  <tbody>
+    <tr><td>LTP-001</td><td>Dell Latitude</td><td>Laptop</td><td>K-017</td><td>Rina</td><td>Keuangan</td><td>2026-09-01</td></tr>
+    <tr><td>LTP-001, PRJ-002</td><td>…</td><td>…</td><td>K-021</td><td>Budi</td><td>HR</td><td>2026-10-03</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li><strong>1NF</strong>: setiap sel berisi satu nilai atomik, tanpa kelompok berulang. Sel "LTP-001, PRJ-002" melanggar; pecah menjadi dua baris peminjaman.</li>
+  <li><strong>2NF</strong>: 1NF, dan setiap kolom non-key bergantung pada <em>seluruh</em> primary key. Bila key-nya (kode_aset, nik, tgl_pinjam), maka nama_aset hanya bergantung pada kode_aset (partial dependency). Pindahkan ke tabel <code>aset</code>.</li>
+  <li><strong>3NF</strong>: 2NF, dan tidak ada transitive dependency: kolom non-key tidak bergantung pada kolom non-key lain. divisi bergantung pada nik, bukan pada peminjaman. Pindahkan ke tabel <code>karyawan</code>.</li>
+</ul>
+<p>Hasilnya empat tabel. <strong>kategori → aset</strong> adalah relasi <strong>1-N</strong> (satu kategori punya banyak aset). <strong>aset ↔ karyawan</strong> adalah <strong>N-N</strong> (satu aset dipinjam banyak karyawan dari waktu ke waktu, satu karyawan meminjam banyak aset), dipecah lewat tabel penghubung <code>peminjaman</code> yang juga menyimpan atribut relasinya (tanggal pinjam dan kembali).</p>
+
+<h2>2. Skema inventaris aset (PostgreSQL 18)</h2>
+<pre><code>CREATE TABLE kategori (
+  id   INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nama TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE karyawan (
+  id     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  nik    TEXT NOT NULL UNIQUE,
+  nama   TEXT NOT NULL,
+  divisi TEXT NOT NULL,
+  role   TEXT NOT NULL DEFAULT 'STAF' CHECK (role IN ('STAF', 'ADMIN'))
+);</code></pre>
+<pre><code>CREATE TABLE aset (
+  id           INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  kode         TEXT NOT NULL UNIQUE,                 -- LTP-001
+  nama         TEXT NOT NULL,
+  kategori_id  INT NOT NULL REFERENCES kategori (id),
+  harga        NUMERIC(12, 2) NOT NULL CHECK (harga &gt;= 0),
+  status       TEXT NOT NULL DEFAULT 'TERSEDIA'
+               CHECK (status IN ('TERSEDIA', 'DIPINJAM', 'RUSAK')),
+  tanggal_beli DATE NOT NULL,
+  deleted_at   TIMESTAMPTZ                           -- soft delete (lesson 0005)
+);
+
+CREATE TABLE peminjaman (
+  id              INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  aset_id         INT NOT NULL REFERENCES aset (id),
+  karyawan_id     INT NOT NULL REFERENCES karyawan (id),
+  tanggal_pinjam  DATE NOT NULL DEFAULT CURRENT_DATE,
+  tanggal_kembali DATE,                              -- NULL = masih dipinjam
+  CHECK (tanggal_kembali IS NULL OR tanggal_kembali &gt;= tanggal_pinjam)
+);</code></pre>
+<table>
+  <thead><tr><th>Constraint</th><th>Menjamin</th></tr></thead>
+  <tbody>
+    <tr><td><code>PRIMARY KEY</code></td><td>Identitas baris: unik dan tidak NULL <sup class="cite"><a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[1]</a></sup></td></tr>
+    <tr><td><code>FOREIGN KEY</code> (<code>REFERENCES</code>)</td><td>Nilai kolom harus ada di tabel yang dirujuk (referential integrity): tidak ada peminjaman untuk aset fiktif <sup class="cite"><a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[1]</a></sup></td></tr>
+    <tr><td><code>UNIQUE</code></td><td>Tidak ada dua aset dengan kode sama, tidak ada dua karyawan dengan NIK sama</td></tr>
+    <tr><td><code>CHECK</code></td><td>Aturan per baris: harga tidak negatif, status hanya tiga nilai, tanggal kembali tidak sebelum tanggal pinjam</td></tr>
+    <tr><td><code>GENERATED ALWAYS AS IDENTITY</code></td><td>Id otomatis versi standar SQL; <code>SERIAL</code> adalah cara lama di PostgreSQL <sup class="cite"><a href="https://www.postgresql.org/docs/18/ddl-identity-columns.html">[2]</a></sup></td></tr>
+  </tbody>
+</table>
+<p class="note">Constraint di database adalah pertahanan terakhir. Validasi Zod di API (lesson 0002) memberi pesan error yang ramah, constraint menjamin data tetap benar walaupun ada bug atau skrip impor yang melewati API.</p>
+
+<h2>3. JOIN: INNER vs LEFT</h2>
+<p><code>INNER JOIN</code> hanya mengembalikan baris yang punya pasangan di kedua tabel. <code>LEFT JOIN</code> mengembalikan semua baris tabel kiri; kolom tabel kanan diisi NULL bila tidak ada pasangan. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-table-expressions.html">[3]</a></sup></p>
+<pre><code>-- Aset beserta nama kategorinya (setiap aset pasti punya kategori)
+SELECT a.kode, a.nama, k.nama AS kategori
+FROM aset a
+INNER JOIN kategori k ON k.id = a.kategori_id
+WHERE a.deleted_at IS NULL;
+
+-- Semua karyawan, termasuk yang belum pernah meminjam (jumlah = 0)
+SELECT kr.nama, COUNT(p.id) AS jumlah_pinjam
+FROM karyawan kr
+LEFT JOIN peminjaman p ON p.karyawan_id = kr.id
+GROUP BY kr.id, kr.nama;</code></pre>
+<p>Dua jebakan klasik: <code>COUNT(p.id)</code> menghitung 0 untuk karyawan tanpa peminjaman, sedangkan <code>COUNT(*)</code> menghitung 1 (baris NULL ikut terhitung). Dan filter tabel kanan di <code>WHERE</code> (misalnya <code>WHERE p.tanggal_kembali IS NULL</code>) membuang baris NULL sehingga LEFT JOIN berubah menjadi INNER JOIN; taruh filter itu di <code>ON</code>.</p>
+
+<h2>4. GROUP BY dan HAVING</h2>
+<p><code>WHERE</code> menyaring baris <em>sebelum</em> dikelompokkan, <code>HAVING</code> menyaring kelompok <em>sesudah</em> agregasi. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-table-expressions.html#QUERIES-GROUP">[4]</a></sup></p>
+<pre><code>-- Kategori yang punya lebih dari 5 aset aktif, dengan total nilainya
+SELECT k.nama, COUNT(*) AS jumlah, SUM(a.harga) AS total_nilai
+FROM aset a
+JOIN kategori k ON k.id = a.kategori_id
+WHERE a.deleted_at IS NULL          -- saring baris
+GROUP BY k.nama
+HAVING COUNT(*) &gt; 5                 -- saring kelompok
+ORDER BY total_nilai DESC;</code></pre>
+
+<h2>5. Subquery vs CTE</h2>
+<p>
+  Subquery adalah query di dalam query. <code>EXISTS</code>/<code>NOT EXISTS</code> mengecek ada-tidaknya baris yang cocok. <sup class="cite"><a href="https://www.postgresql.org/docs/18/functions-subquery.html">[5]</a></sup>
+  <strong>CTE</strong> (Common Table Expression, <code>WITH nama AS (...)</code>) memberi nama pada query bantu sehingga query panjang terbaca dari atas ke bawah; <code>WITH RECURSIVE</code> dipakai untuk data hierarki. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-with.html">[6]</a></sup>
+</p>
+<pre><code>-- Subquery: aset yang belum pernah dipinjam
+SELECT a.kode, a.nama
+FROM aset a
+WHERE NOT EXISTS (SELECT 1 FROM peminjaman p WHERE p.aset_id = a.id);
+
+-- CTE: peminjaman aktif per divisi, lalu ambil divisi di atas rata-rata
+WITH aktif AS (
+  SELECT kr.divisi, COUNT(*) AS jumlah
+  FROM peminjaman p JOIN karyawan kr ON kr.id = p.karyawan_id
+  WHERE p.tanggal_kembali IS NULL
+  GROUP BY kr.divisi
+)
+SELECT divisi, jumlah FROM aktif
+WHERE jumlah &gt; (SELECT AVG(jumlah) FROM aktif);</code></pre>
+<p>Kapan CTE: bila query bantu dipakai lebih dari sekali atau query bertingkat sulit dibaca. Hasilnya biasanya sama dengan subquery; sejak PostgreSQL 12, CTE non-rekursif yang dipakai sekali di-inline oleh planner, jadi CTE bukan lagi "selalu lebih lambat". <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-with.html">[6]</a></sup></p>
+
+<h2>6. Window function: top-N per kategori</h2>
+<p>
+  Window function menghitung nilai dari sekumpulan baris yang berkaitan dengan baris saat ini <strong>tanpa</strong> meleburnya menjadi satu baris seperti <code>GROUP BY</code>. <code>PARTITION BY</code> membagi baris ke dalam kelompok, <code>ORDER BY</code> di dalam <code>OVER</code> menentukan urutan di tiap kelompok. <sup class="cite"><a href="https://www.postgresql.org/docs/18/tutorial-window.html">[7]</a></sup>
+</p>
+<pre><code>-- 3 aset termahal di setiap kategori
+SELECT kategori_id, kode, nama, harga
+FROM (
+  SELECT a.*,
+         ROW_NUMBER() OVER (PARTITION BY kategori_id ORDER BY harga DESC) AS urutan
+  FROM aset a
+  WHERE a.deleted_at IS NULL
+) t
+WHERE urutan &lt;= 3;</code></pre>
+<p>Window function tidak boleh dipakai langsung di <code>WHERE</code> karena dievaluasi setelahnya, jadi dibungkus subquery atau CTE. Bedanya: <code>ROW_NUMBER()</code> selalu 1, 2, 3; <code>RANK()</code> memberi nilai sama untuk harga sama lalu melompat (1, 1, 3); <code>DENSE_RANK()</code> tidak melompat (1, 1, 2). <sup class="cite"><a href="https://www.postgresql.org/docs/18/functions-window.html">[8]</a></sup></p>
+
+<h2>Pertanyaan interview</h2>
+<dl>
+  <dt>Apa beda primary key dan unique key?</dt>
+  <dd>Keduanya menjamin nilai unik. Primary key satu per tabel, tidak boleh NULL, dan menjadi identitas baris yang dirujuk foreign key. Unique boleh lebih dari satu per tabel dan kolomnya boleh NULL (di PostgreSQL, beberapa NULL dianggap berbeda secara default). Contoh: <code>aset.id</code> primary key, <code>aset.kode</code> unique.</dd>
+  <dt>Apa beda INNER JOIN dan LEFT JOIN?</dt>
+  <dd>INNER JOIN hanya baris yang punya pasangan di kedua sisi. LEFT JOIN semua baris kiri, sisi kanan NULL bila tidak ada pasangan. Untuk "semua karyawan termasuk yang belum pernah meminjam", pakai LEFT JOIN dan <code>COUNT(p.id)</code>.</dd>
+  <dt>Apa beda WHERE dan HAVING?</dt>
+  <dd>WHERE menyaring baris sebelum GROUP BY dan tidak bisa memakai agregat. HAVING menyaring kelompok sesudah agregasi, misalnya <code>HAVING COUNT(*) &gt; 5</code>.</dd>
+  <dt>Bagaimana memodelkan relasi many-to-many?</dt>
+  <dd>Dengan tabel penghubung berisi dua foreign key. Di skema kita, <code>peminjaman</code> menghubungkan aset dan karyawan sekaligus menyimpan atribut relasi (tanggal pinjam dan kembali).</dd>
+  <dt>Apa itu normalisasi, dan kapan denormalisasi?</dt>
+  <dd>Normalisasi memecah tabel supaya setiap fakta disimpan sekali (1NF atomik, 2NF tanpa partial dependency, 3NF tanpa transitive dependency), sehingga tidak ada anomali update. Denormalisasi sengaja menduplikasi data demi kecepatan baca, misalnya tabel ringkasan laporan bulanan, dan dilakukan setelah ada bukti masalah performa.</dd>
+  <dt>Subquery atau CTE, mana yang lebih baik?</dt>
+  <dd>Untuk hasil, biasanya setara. CTE lebih mudah dibaca dan bisa dirujuk beberapa kali; <code>WITH RECURSIVE</code> untuk hierarki. Di PostgreSQL ≥ 12 CTE sederhana di-inline, jadi pilih yang paling jelas lalu cek dengan <code>EXPLAIN</code> (lesson 0004).</dd>
+  <dt>Apa beda ROW_NUMBER, RANK, dan DENSE_RANK?</dt>
+  <dd>Untuk nilai yang sama: ROW_NUMBER tetap memberi nomor berbeda (1, 2, 3), RANK memberi nomor sama lalu melompat (1, 1, 3), DENSE_RANK memberi nomor sama tanpa lompatan (1, 1, 2).</dd>
+</dl>
+
+<h2>Tulis query</h2>
+<p><strong>Soal 1.</strong> Tampilkan aset yang sedang dipinjam beserta nama peminjam dan lama pinjam (hari), urut dari yang paling lama.</p>
+<pre><code>SELECT a.kode, a.nama AS aset, kr.nama AS peminjam, kr.divisi,
+       CURRENT_DATE - p.tanggal_pinjam AS lama_hari
+FROM peminjaman p
+JOIN aset a      ON a.id = p.aset_id
+JOIN karyawan kr ON kr.id = p.karyawan_id
+WHERE p.tanggal_kembali IS NULL
+ORDER BY lama_hari DESC;</code></pre>
+<p><strong>Penjelasan:</strong> mulai dari <code>peminjaman</code> karena faktanya ada di sana, lalu INNER JOIN ke aset dan karyawan (setiap peminjaman pasti punya keduanya karena foreign key). "Sedang dipinjam" = <code>tanggal_kembali IS NULL</code> (bukan <code>= NULL</code>, yang selalu menghasilkan NULL). Di PostgreSQL, <code>DATE - DATE</code> menghasilkan jumlah hari berupa integer.</p>
+
+<p><strong>Soal 2.</strong> Untuk setiap karyawan, tampilkan peminjaman terakhirnya (aset dan tanggal). Karyawan yang belum pernah meminjam tidak perlu ditampilkan.</p>
+<pre><code>WITH berurut AS (
+  SELECT p.karyawan_id, p.aset_id, p.tanggal_pinjam,
+         ROW_NUMBER() OVER (PARTITION BY p.karyawan_id
+                            ORDER BY p.tanggal_pinjam DESC, p.id DESC) AS rn
+  FROM peminjaman p
+)
+SELECT kr.nama, a.kode, b.tanggal_pinjam
+FROM berurut b
+JOIN karyawan kr ON kr.id = b.karyawan_id
+JOIN aset a      ON a.id = b.aset_id
+WHERE b.rn = 1;</code></pre>
+<p><strong>Penjelasan:</strong> ini pola "baris terbaru per kelompok". <code>ROW_NUMBER()</code> dengan <code>PARTITION BY karyawan_id</code> memberi nomor 1 pada peminjaman terbaru tiap karyawan; <code>p.id DESC</code> memecah seri bila ada dua pinjaman di tanggal yang sama. Alternatif khusus PostgreSQL: <code>SELECT DISTINCT ON (karyawan_id) ... ORDER BY karyawan_id, tanggal_pinjam DESC</code>.</p>
+
+<p>Berikutnya, lesson 0004: query sudah benar, tapi apakah cepat? Index, <code>EXPLAIN</code>, transaksi, dan N+1.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Teknis") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[1] PostgreSQL 18: Constraints</a> ·
+  <a href="https://www.postgresql.org/docs/18/ddl-identity-columns.html">[2] PostgreSQL 18: Identity Columns</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-table-expressions.html">[3] PostgreSQL 18: Table Expressions (joins)</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-table-expressions.html#QUERIES-GROUP">[4] PostgreSQL 18: GROUP BY and HAVING Clauses</a> ·
+  <a href="https://www.postgresql.org/docs/18/functions-subquery.html">[5] PostgreSQL 18: Subquery Expressions</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-with.html">[6] PostgreSQL 18: WITH Queries (CTE)</a> ·
+  <a href="https://www.postgresql.org/docs/18/tutorial-window.html">[7] PostgreSQL 18: Window Functions (tutorial)</a> ·
+  <a href="https://www.postgresql.org/docs/18/functions-window.html">[8] PostgreSQL 18: Window Functions (reference)</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0002-express-dan-rest-api.html">← 0002 · Express dan REST API</a>
+  <a href="0004-sql-index-transaksi-performa.html">0004 · SQL: index, transaksi, performa →</a>
+</nav>
+
+</main>
+</body>
+</html>

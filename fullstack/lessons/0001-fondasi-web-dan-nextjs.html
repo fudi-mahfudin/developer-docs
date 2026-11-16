@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0001 · Fondasi web dan Next.js App Router</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0001 · Fullstack · ±30 menit</div>
+  <h1>Fondasi web dan Next.js App Router</h1>
+  <p class="subtitle">HTML, CSS, dan JavaScript yang paling sering ditanya, lalu cara Next.js App Router membagi kerja antara server dan browser, kapan data di-cache, dan kenapa halaman kita memanggil API Express alih-alih langsung ke database</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab pertanyaan fondasi front-end (semantic HTML, a11y, box model, Flexbox vs Grid, responsive, event delegation, closure, <code>async/await</code>)
+  dalam 2–3 kalimat masing-masing, lalu menjelaskan Server Component vs Client Component, perilaku caching di Next.js ≥ 16, dan alasan memisahkan API Express dari aplikasi Next.js.
+</div>
+
+<p>Contoh di seluruh track adalah aplikasi internal <strong>Inventaris aset kantor</strong>: daftar aset (laptop, printer, proyektor), kategorinya, karyawan, dan peminjaman. Lesson ini memakai halaman "Daftar aset" sebagai contoh.</p>
+
+<h2>1. Semantic HTML dan a11y dasar</h2>
+<p>
+  <strong>Semantic HTML</strong> berarti memakai elemen sesuai maknanya, bukan sesuai tampilannya: <code>&lt;button&gt;</code> untuk aksi, <code>&lt;nav&gt;</code> untuk navigasi, <code>&lt;main&gt;</code> untuk isi utama, <code>&lt;table&gt;</code> untuk data tabular.
+  Makna ini dipakai browser, mesin pencari, dan screen reader. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Glossary/Semantics">[1]</a></sup>
+  <strong>a11y</strong> (accessibility) adalah membuat halaman bisa dipakai semua orang, termasuk pengguna keyboard dan screen reader.
+</p>
+<pre><code>&lt;main&gt;
+  &lt;h1&gt;Daftar aset&lt;/h1&gt;
+  &lt;form role="search"&gt;
+    &lt;label for="q"&gt;Cari kode atau nama&lt;/label&gt;
+    &lt;input id="q" name="q" type="search"&gt;
+    &lt;button type="submit"&gt;Cari&lt;/button&gt;
+  &lt;/form&gt;
+  &lt;table&gt;
+    &lt;caption&gt;Aset kantor&lt;/caption&gt;
+    &lt;thead&gt;&lt;tr&gt;&lt;th scope="col"&gt;Kode&lt;/th&gt;&lt;th scope="col"&gt;Nama&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;
+  &lt;/table&gt;
+  &lt;img src="/foto/LTP-001.jpg" alt="Laptop Dell Latitude, kode LTP-001"&gt;
+&lt;/main&gt;</code></pre>
+<ul>
+  <li><code>&lt;label for&gt;</code> menghubungkan teks dengan field: screen reader membacakannya dan klik pada label memfokuskan field.</li>
+  <li><code>alt</code> pada gambar adalah teks pengganti. Gambar dekoratif diberi <code>alt=""</code> supaya dilewati.</li>
+  <li><code>&lt;button&gt;</code> otomatis bisa difokus dan ditekan dengan Enter/Space. <code>&lt;div onclick&gt;</code> tidak.</li>
+</ul>
+
+<h2>2. Box model, Flexbox vs Grid, responsive</h2>
+<p>
+  Setiap elemen adalah kotak: <strong>content → padding → border → margin</strong>. Secara default <code>width</code> hanya mengukur content, jadi padding dan border menambah lebar.
+  Dengan <code>box-sizing: border-box</code>, <code>width</code> sudah termasuk padding dan border. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Styling_basics/Box_model">[2]</a></sup>
+</p>
+<table>
+  <thead><tr><th></th><th>Flexbox</th><th>Grid</th></tr></thead>
+  <tbody>
+    <tr><td>Dimensi</td><td>Satu dimensi: baris <em>atau</em> kolom</td><td>Dua dimensi: baris <em>dan</em> kolom sekaligus <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Relationship_of_grid_layout_with_other_layout_methods">[3]</a></sup></td></tr>
+    <tr><td>Contoh</td><td>Toolbar: tombol "Tambah aset" di kanan, kolom cari di kiri</td><td>Layout halaman (sidebar + header + konten), galeri kartu aset</td></tr>
+  </tbody>
+</table>
+<pre><code>* { box-sizing: border-box; }
+.toolbar { display: flex; justify-content: space-between; gap: 1rem; }
+.kartu-aset { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+
+/* Mobile-first: mulai satu kolom, tambah kolom saat layar lebih lebar */
+@media (min-width: 768px) {
+  .kartu-aset { grid-template-columns: repeat(3, 1fr); }
+}</code></pre>
+<p>
+  <strong>Responsive</strong> berarti layout menyesuaikan lebar layar. Alatnya: <code>&lt;meta name="viewport"&gt;</code>, unit relatif, Flexbox/Grid, dan <strong>media query</strong> yang menerapkan CSS hanya bila kondisi seperti lebar viewport terpenuhi. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_media_queries/Using_media_queries">[4]</a></sup>
+</p>
+
+<h2>3. JavaScript: event bubbling dan delegation, closure, async/await</h2>
+<p>
+  <strong>Event bubbling:</strong> event yang terjadi di elemen anak juga dijalankan di elemen induknya, naik sampai <code>document</code>. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting/Event_bubbling">[5]</a></sup>
+  <strong>Event delegation</strong> memanfaatkannya: pasang satu listener di induk, lalu cek <code>event.target</code>. Cocok untuk tabel yang barisnya berubah-ubah.
+</p>
+<pre><code>// Satu listener untuk semua tombol "Hapus", termasuk baris yang ditambah belakangan
+document.querySelector('#tabel-aset').addEventListener('click', (event) =&gt; {
+  const tombol = event.target.closest('button[data-hapus]');
+  if (!tombol) return;
+  hapusAset(tombol.dataset.hapus);
+});</code></pre>
+<p>
+  <strong>Closure</strong> adalah fungsi beserta referensi ke scope tempat ia dibuat. Fungsi dalam tetap bisa membaca variabel fungsi luar setelah fungsi luar selesai. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Closures">[6]</a></sup>
+  <code>let</code>/<code>const</code> ber-scope blok, <code>var</code> ber-scope fungsi.
+</p>
+<pre><code>function buatPenghitung() {
+  let jumlah = 0;              // "disimpan" oleh closure
+  return () =&gt; ++jumlah;
+}
+const hitung = buatPenghitung();
+hitung(); hitung();            // 2: jumlah tidak bisa diakses dari luar selain lewat fungsi ini</code></pre>
+<p>
+  <strong><code>async/await</code></strong> adalah cara menulis kode Promise seperti kode berurutan. Jebakan <code>fetch</code>: Promise-nya <strong>tidak</strong> reject untuk status HTTP error seperti 404 atau 500, hanya untuk kegagalan jaringan. Cek <code>response.ok</code> sendiri. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch">[7]</a></sup>
+</p>
+<pre><code>async function ambilAset(id) {
+  const res = await fetch(`${API_URL}/aset/${id}`);
+  if (!res.ok) throw new Error(`Gagal memuat aset: ${res.status}`);
+  return res.json();
+}</code></pre>
+
+<h2>4. Next.js App Router: Server Component vs Client Component</h2>
+<p>
+  Di App Router (folder <code>app/</code>), setiap layout dan page secara default adalah <strong>Server Component</strong>: dirender di server, bisa <code>await</code> data langsung, dan kodenya tidak dikirim ke browser.
+  Komponen yang butuh state, event handler, atau API browser ditandai <code>'use client'</code> dan menjadi <strong>Client Component</strong>. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/server-and-client-components">[8]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Server Component</th><th>Client Component (<code>'use client'</code>)</th></tr></thead>
+  <tbody>
+    <tr><td>Ambil data, akses secret (token API), kurangi JavaScript di browser</td><td><code>useState</code>, <code>onClick</code>, <code>localStorage</code>, form interaktif</td></tr>
+    <tr><td>Halaman daftar aset (tabel)</td><td>Kolom cari dengan debounce, tombol hapus dengan konfirmasi</td></tr>
+  </tbody>
+</table>
+<pre><code>// app/aset/page.jsx: Server Component (default)
+import { TombolHapus } from './tombol-hapus';
+
+export default async function HalamanAset() {
+  const res = await fetch(`${process.env.API_URL}/aset`);
+  const { data } = await res.json();
+  return (
+    &lt;ul&gt;
+      {data.map((a) =&gt; (
+        &lt;li key={a.id}&gt;{a.kode} · {a.nama} &lt;TombolHapus id={a.id} /&gt;&lt;/li&gt;
+      ))}
+    &lt;/ul&gt;
+  );
+}</code></pre>
+<p>Tips interview: dorong <code>'use client'</code> sejauh mungkin ke daun pohon komponen. Hanya tombolnya yang menjadi Client Component, bukan seluruh halaman.</p>
+<p class="note"><strong>Pages Router</strong> (folder <code>pages/</code>) adalah router lama: semua komponen adalah komponen client yang juga di-render di server, dan data diambil lewat <code>getServerSideProps</code>/<code>getStaticProps</code>. Masih didukung, tapi proyek baru memakai App Router.</p>
+
+<h2>5. Data fetching dan caching (Next.js ≥ 16)</h2>
+<p>Ada dua model, tergantung konfigurasi. Label versi penting di sini karena perilakunya berubah antar-versi:</p>
+<ul>
+  <li>
+    <strong>Cache Components</strong> (<code>cacheComponents: true</code> di <code>next.config</code>, diperkenalkan di Next.js 16.0 dan sudah aktif di default <code>create-next-app</code> terbaru): hasil fungsi atau komponen hanya di-cache bila diberi directive <code>'use cache'</code>, sebaiknya bersama <code>cacheLife()</code>.
+    Data yang harus selalu segar tidak diberi <code>'use cache'</code>, melainkan dibungkus <code>&lt;Suspense&gt;</code> sehingga di-stream saat request. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/caching">[9]</a></sup>
+  </li>
+  <li>
+    <strong>Model lama</strong> (tanpa Cache Components): sejak Next.js 15, <code>fetch</code> tidak di-cache secara default; caching opt-in lewat <code>{ cache: 'force-cache' }</code> atau <code>next: { revalidate: 60 }</code>. <sup class="cite"><a href="https://nextjs.org/docs/app/guides/caching-without-cache-components">[10]</a></sup>
+  </li>
+</ul>
+<pre><code>import { cacheLife, cacheTag } from 'next/cache';
+
+// Daftar kategori jarang berubah: boleh di-cache (Next.js ≥ 16, Cache Components)
+export async function ambilKategori() {
+  'use cache';
+  cacheLife('hours');
+  cacheTag('kategori');
+  const res = await fetch(`${process.env.API_URL}/kategori`);
+  return res.json();
+}</code></pre>
+<p>Jawaban singkat untuk "apakah fetch di Next.js di-cache?": "Di Next.js ≥ 15 tidak, kecuali saya opt-in. Di Next.js 16 dengan Cache Components saya menandai yang boleh di-cache dengan <code>'use cache'</code>, dan setelah mutasi memanggil <code>revalidatePath</code> atau <code>revalidateTag</code>."</p>
+
+<h2>6. Server Actions vs memanggil API Express</h2>
+<p>
+  <strong>Server Action</strong> adalah fungsi async bertanda <code>'use server'</code> yang berjalan di server dan bisa dipanggil dari <code>&lt;form action&gt;</code>. Di balik layar ia memakai <code>POST</code>.
+  Server Action bisa dipanggil lewat request POST langsung, bukan hanya dari UI, jadi autentikasi dan otorisasi harus dicek di dalam setiap Server Action. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/mutating-data">[11]</a></sup> <sup class="cite"><a href="https://nextjs.org/blog/security-nextjs-server-components-actions">[12]</a></sup>
+</p>
+<div class="flow">
+  <span class="box">Browser: form</span><span class="arrow">→</span>
+  <span class="box">Next.js: Server Action</span><span class="arrow">→</span>
+  <span class="box">Express: REST API + Zod</span><span class="arrow">→</span>
+  <span class="box">Prisma</span><span class="arrow">→</span>
+  <span class="box">PostgreSQL</span>
+</div>
+<p>Di track ini Server Action <strong>tidak</strong> langsung ke database, tapi meneruskan ke API Express. Pertanyaan "kenapa tidak langsung ke DB?" dijawab begini:</p>
+<ul>
+  <li><strong>Satu pintu untuk aturan bisnis.</strong> Validasi, otorisasi, dan audit log ada di API. Klien lain (aplikasi mobile, skrip impor Excel, integrasi dengan sistem lain) memakai aturan yang sama.</li>
+  <li><strong>Pemisahan deploy dan tanggung jawab.</strong> API bisa di-deploy, di-scale, dan di-test sendiri. Kredensial database hanya ada di server API.</li>
+  <li><strong>Trade-off yang jujur:</strong> ada satu hop jaringan tambahan dan dua codebase. Untuk aplikasi kecil yang hanya punya satu klien, Server Action langsung ke Prisma juga sah. Sebutkan bahwa ini keputusan sadar, bukan aturan mutlak.</li>
+</ul>
+
+<p class="note">Latihan: tutup bagian jawaban, lalu jelaskan dengan suara keras "Server Component vs Client Component" dan "kenapa fetch tidak di-cache" masing-masing dalam 30 detik.</p>
+
+<p>Berikutnya, lesson 0002: API Express yang dipanggil halaman ini. Bagaimana mendesain resource REST, memilih status code, dan menangani error di Express 5?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Teknis") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://developer.mozilla.org/en-US/docs/Glossary/Semantics">[1] MDN: Semantics</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Styling_basics/Box_model">[2] MDN: The box model</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_grid_layout/Relationship_of_grid_layout_with_other_layout_methods">[3] MDN: Relationship of grid layout to other layout methods</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_media_queries/Using_media_queries">[4] MDN: Using media queries</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting/Event_bubbling">[5] MDN: Event bubbling</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Closures">[6] MDN: Closures</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch">[7] MDN: Using the Fetch API</a> ·
+  <a href="https://nextjs.org/docs/app/getting-started/server-and-client-components">[8] Next.js docs: Server and Client Components</a> ·
+  <a href="https://nextjs.org/docs/app/getting-started/caching">[9] Next.js docs: Caching (Cache Components)</a> ·
+  <a href="https://nextjs.org/docs/app/guides/caching-without-cache-components">[10] Next.js docs: Caching and Revalidating (Previous Model)</a> ·
+  <a href="https://nextjs.org/docs/app/getting-started/mutating-data">[11] Next.js docs: Mutating Data</a> ·
+  <a href="https://nextjs.org/blog/security-nextjs-server-components-actions">[12] Next.js blog: How to Think About Security in Next.js</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="../index.html">← Indeks Fullstack</a>
+  <a href="0002-express-dan-rest-api.html">0002 · Express dan REST API →</a>
+</nav>
+
+</main>
+</body>
+</html>

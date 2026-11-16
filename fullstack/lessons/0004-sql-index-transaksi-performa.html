@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0004 · SQL: index, transaksi, dan performa</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0004 · Fullstack · ±30 menit</div>
+  <h1>SQL: index, transaksi, dan performa</h1>
+  <p class="subtitle">Kapan index membantu dan kapan merugikan, cara membaca <code>EXPLAIN</code>, transaksi dan isolation level untuk kasus "pinjam aset", masalah N+1 di Prisma, dan pagination OFFSET vs keyset, dengan catatan perbedaan PostgreSQL dan MySQL</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa memilih index (termasuk urutan kolom composite index) untuk query di skema inventaris aset, membuktikannya dengan <code>EXPLAIN ANALYZE</code>,
+  menulis transaksi "pinjam aset" yang aman dari race condition, mengenali dan memperbaiki N+1, dan menjelaskan kenapa keyset pagination lebih stabil daripada OFFSET.
+</div>
+
+<p>Semua contoh memakai skema lesson 0003: <code>kategori</code>, <code>karyawan</code>, <code>aset</code>, <code>peminjaman</code>.</p>
+
+<h2>1. Index B-tree dan composite index</h2>
+<p>
+  Index adalah struktur data terpisah yang membuat pencarian baris tidak perlu membaca seluruh tabel. Jenis default di PostgreSQL adalah <strong>B-tree</strong>, yang menangani perbandingan <code>=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>BETWEEN</code>, <code>IN</code>, <code>IS NULL</code>, dan pengurutan. <sup class="cite"><a href="https://www.postgresql.org/docs/18/indexes-types.html">[1]</a></sup>
+  <code>PRIMARY KEY</code> dan <code>UNIQUE</code> otomatis membuat index. <strong>Foreign key tidak</strong>: PostgreSQL tidak otomatis mengindex kolom yang merujuk, padahal JOIN dan <code>DELETE</code> di tabel induk membutuhkannya. <sup class="cite"><a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[2]</a></sup>
+</p>
+<pre><code>-- JOIN dan "riwayat pinjam aset X" butuh index di kolom foreign key
+CREATE INDEX idx_peminjaman_aset ON peminjaman (aset_id);
+CREATE INDEX idx_peminjaman_karyawan ON peminjaman (karyawan_id);
+
+-- Halaman daftar aset: filter kategori, lalu status
+CREATE INDEX idx_aset_kategori_status ON aset (kategori_id, status);
+
+-- Partial unique index: satu aset hanya boleh punya SATU peminjaman aktif
+CREATE UNIQUE INDEX uq_peminjaman_aktif ON peminjaman (aset_id)
+  WHERE tanggal_kembali IS NULL;</code></pre>
+<p>
+  <strong>Urutan kolom composite</strong> penting. Index <code>(kategori_id, status)</code> paling efisien bila ada kondisi pada kolom paling kiri. <sup class="cite"><a href="https://www.postgresql.org/docs/18/indexes-multicolumn.html">[3]</a></sup>
+  Ia membantu <code>WHERE kategori_id = 2</code> dan <code>WHERE kategori_id = 2 AND status = 'TERSEDIA'</code>, tapi hampir tidak membantu <code>WHERE status = 'TERSEDIA'</code> saja.
+  Aturan praktis: kolom dengan kondisi kesamaan (<code>=</code>) dulu, kolom range atau <code>ORDER BY</code> di belakang.
+</p>
+<p>
+  <strong>Partial index</strong> hanya mengindex baris yang memenuhi <code>WHERE</code>-nya. Index <code>uq_peminjaman_aktif</code> di atas sekaligus menjadi aturan bisnis: database menolak peminjaman aktif kedua untuk aset yang sama. <sup class="cite"><a href="https://www.postgresql.org/docs/18/indexes-partial.html">[4]</a></sup>
+</p>
+<p><strong>Kapan index merugikan:</strong></p>
+<ul>
+  <li>Setiap <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> juga harus memperbarui semua index tabel itu, jadi index yang tidak dipakai hanya menambah biaya tulis dan ruang disk. <sup class="cite"><a href="https://www.postgresql.org/docs/18/indexes-intro.html">[5]</a></sup></li>
+  <li>Kolom dengan sedikit nilai berbeda (status dengan 3 nilai) atau tabel kecil: planner sering memilih membaca seluruh tabel (sequential scan) karena lebih murah.</li>
+  <li><code>WHERE nama ILIKE '%laptop%'</code> tidak bisa memakai B-tree karena pola diawali wildcard. Untuk pencarian teks seperti ini dibutuhkan jenis index lain (misalnya GIN dengan ekstensi trigram) atau full-text search.</li>
+</ul>
+
+<h2>2. EXPLAIN dan EXPLAIN ANALYZE</h2>
+<p>
+  <code>EXPLAIN</code> menampilkan rencana eksekusi yang dipilih planner beserta estimasi biaya dan jumlah baris. <code>EXPLAIN ANALYZE</code> <strong>benar-benar menjalankan</strong> query lalu menambahkan waktu dan jumlah baris aktual.
+  Karena dijalankan, bungkus <code>EXPLAIN ANALYZE</code> untuk <code>UPDATE</code>/<code>DELETE</code> di dalam <code>BEGIN ... ROLLBACK</code>. <sup class="cite"><a href="https://www.postgresql.org/docs/18/sql-explain.html">[6]</a></sup>
+</p>
+<pre><code>EXPLAIN ANALYZE
+SELECT * FROM peminjaman WHERE aset_id = 42;
+
+-- Sebelum index (ilustrasi):
+--   Seq Scan on peminjaman  (actual time=0.02..18.4 rows=7 loops=1)
+--     Filter: (aset_id = 42)
+--     Rows Removed by Filter: 199993
+-- Sesudah CREATE INDEX idx_peminjaman_aset:
+--   Index Scan using idx_peminjaman_aset on peminjaman  (actual time=0.03..0.05 rows=7 loops=1)</code></pre>
+<p>Yang dibaca saat interview: jenis scan (<code>Seq Scan</code> vs <code>Index Scan</code>/<code>Index Only Scan</code>/<code>Bitmap Heap Scan</code>), selisih besar antara baris estimasi dan aktual (statistik usang, jalankan <code>ANALYZE</code>), dan "Rows Removed by Filter" yang besar (tanda index yang hilang). <sup class="cite"><a href="https://www.postgresql.org/docs/18/using-explain.html">[7]</a></sup></p>
+
+<h2>3. Transaksi, ACID, dan isolation level</h2>
+<p>
+  Transaksi menggabungkan beberapa langkah menjadi satu operasi semua-atau-tidak-sama-sekali. <sup class="cite"><a href="https://www.postgresql.org/docs/18/tutorial-transactions.html">[8]</a></sup>
+  <strong>ACID</strong>: <em>Atomicity</em> (semua langkah sukses atau semua dibatalkan), <em>Consistency</em> (constraint tetap terpenuhi), <em>Isolation</em> (transaksi bersamaan tidak saling mengganggu sesuai level isolasinya), <em>Durability</em> (setelah <code>COMMIT</code>, data bertahan walau server mati).
+</p>
+<pre><code>-- Pinjam aset 42 untuk karyawan 7: dua perubahan, satu transaksi
+BEGIN;
+UPDATE aset SET status = 'DIPINJAM'
+WHERE id = 42 AND status = 'TERSEDIA';       -- 0 baris berubah = sudah dipinjam orang lain
+INSERT INTO peminjaman (aset_id, karyawan_id) VALUES (42, 7);
+COMMIT;                                      -- atau ROLLBACK bila UPDATE mengubah 0 baris</code></pre>
+<p>Race condition klasik: dua admin meminjamkan aset yang sama pada detik yang sama. Pertahanannya berlapis: <code>UPDATE ... WHERE status = 'TERSEDIA'</code> (atomik per baris; transaksi kedua menunggu lalu mengubah 0 baris), atau <code>SELECT ... FOR UPDATE</code> untuk mengunci baris dulu, ditambah partial unique index di bagian 1 sebagai jaring pengaman terakhir.</p>
+<table>
+  <thead><tr><th>Isolation level</th><th>Dirty read</th><th>Non-repeatable read</th><th>Phantom read</th></tr></thead>
+  <tbody>
+    <tr><td>READ UNCOMMITTED</td><td>Diizinkan standar, tidak terjadi di PostgreSQL</td><td>Mungkin</td><td>Mungkin</td></tr>
+    <tr><td><strong>READ COMMITTED</strong> (default PostgreSQL)</td><td>Tidak</td><td>Mungkin</td><td>Mungkin</td></tr>
+    <tr><td>REPEATABLE READ</td><td>Tidak</td><td>Tidak</td><td>Diizinkan standar, tidak terjadi di PostgreSQL</td></tr>
+    <tr><td>SERIALIZABLE</td><td>Tidak</td><td>Tidak</td><td>Tidak</td></tr>
+  </tbody>
+</table>
+<p>Sumber tabel: dokumentasi PostgreSQL 18. <sup class="cite"><a href="https://www.postgresql.org/docs/18/transaction-iso.html">[9]</a></sup> <em>Dirty read</em> = membaca data transaksi lain yang belum di-commit; <em>non-repeatable read</em> = membaca baris yang sama dua kali dan hasilnya berubah; <em>phantom read</em> = menjalankan query yang sama dua kali dan himpunan barisnya berubah. Level lebih tinggi lebih aman tapi transaksi bisa gagal dengan serialization error dan harus diulang.</p>
+<p>Di Prisma 7, transaksi interaktif memakai <code>$transaction</code> dengan callback; error yang dilempar di dalamnya membatalkan seluruh transaksi. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions">[10]</a></sup></p>
+<pre><code>await prisma.$transaction(async (tx) =&gt; {
+  const { count } = await tx.aset.updateMany({
+    where: { id: asetId, status: 'TERSEDIA' },
+    data: { status: 'DIPINJAM' },
+  });
+  if (count === 0) throw new HttpError(409, 'Aset sedang dipinjam');
+  await tx.peminjaman.create({ data: { asetId, karyawanId } });
+});</code></pre>
+
+<h2>4. N+1 dan cara Prisma menghindarinya</h2>
+<p><strong>N+1</strong> adalah pola satu query untuk daftar (1), lalu satu query tambahan untuk setiap baris (N). 50 peminjaman = 51 round-trip ke database.</p>
+<pre><code>// N+1: satu query per peminjaman
+const daftar = await prisma.peminjaman.findMany({ where: { tanggalKembali: null } });
+for (const p of daftar) {
+  p.aset = await prisma.aset.findUnique({ where: { id: p.asetId } });
+}
+
+// Perbaikan: muat relasi sekaligus dengan include
+const daftar2 = await prisma.peminjaman.findMany({
+  where: { tanggalKembali: null },
+  include: { aset: true, karyawan: true },
+});</code></pre>
+<p>
+  Dengan <code>include</code>, Prisma memuat relasi tanpa query per baris. Strateginya diatur <code>relationLoadStrategy</code>: <code>"join"</code> mengambil semua data dalam satu query (LATERAL JOIN di PostgreSQL), <code>"query"</code> mengirim satu query per tabel lalu menggabungkannya di aplikasi; opsi ini masih Preview (<code>relationJoins</code>) di Prisma 7. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/relation-queries">[11]</a></sup>
+  Dua-duanya bukan N+1: jumlah query tetap, tidak tumbuh dengan jumlah baris. Bila datanya sudah berupa daftar id, pakai <code>findMany({ where: { id: { in: ids } } })</code>.
+</p>
+
+<h2>5. Pagination: OFFSET vs keyset</h2>
+<p>Baris yang dilewati <code>OFFSET</code> tetap harus dihitung di server, jadi <code>OFFSET</code> besar lambat. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-limit.html">[12]</a></sup> Selain itu, bila ada baris baru disisipkan di antara dua permintaan, halaman berikutnya bisa menampilkan baris ganda atau melewatkan baris.</p>
+<pre><code>-- OFFSET: mudah, bisa lompat ke halaman 37, makin lambat di halaman jauh
+SELECT id, kode, nama FROM aset ORDER BY id LIMIT 20 OFFSET 720;
+
+-- Keyset: "lanjutkan setelah id terakhir yang sudah dilihat", memakai index PK
+SELECT id, kode, nama FROM aset WHERE id &gt; 740 ORDER BY id LIMIT 20;</code></pre>
+<p>
+  Di Prisma 7, OFFSET = <code>skip</code>/<code>take</code>, keyset = <code>cursor</code> + <code>skip: 1</code> + <code>take</code>; dokumentasinya juga menyebut offset makin mahal saat offset membesar. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/pagination">[13]</a></sup>
+  Untuk tabel admin internal dengan ribuan baris, OFFSET dengan nomor halaman biasanya cukup. Keyset dipilih untuk data besar, infinite scroll, atau ekspor.
+</p>
+
+<div class="note"><strong>Beda di MySQL</strong> (MySQL 8.4 LTS):
+  <ul>
+    <li>Id otomatis memakai <code>AUTO_INCREMENT</code>, bukan <code>GENERATED ALWAYS AS IDENTITY</code>/<code>SERIAL</code>. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/example-auto-increment.html">[14]</a></sup></li>
+    <li>Upsert: PostgreSQL <code>INSERT ... ON CONFLICT (kode) DO UPDATE SET ...</code> <sup class="cite"><a href="https://www.postgresql.org/docs/18/sql-insert.html">[15]</a></sup>; MySQL <code>INSERT ... ON DUPLICATE KEY UPDATE ...</code>. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html">[16]</a></sup></li>
+    <li>Isolation level default InnoDB adalah <code>REPEATABLE READ</code>, bukan <code>READ COMMITTED</code>. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html">[17]</a></sup></li>
+    <li>InnoDB mewajibkan index di kolom foreign key dan membuatnya otomatis bila belum ada. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/create-table-foreign-keys.html">[18]</a></sup></li>
+    <li>Partial index (<code>CREATE INDEX ... WHERE</code>) tidak ada; aturan "satu peminjaman aktif per aset" dijaga di transaksi aplikasi.</li>
+    <li>Window function dan CTE baru ada di MySQL ≥ 8.0; <code>EXPLAIN ANALYZE</code> ada dan selalu memakai format <code>TREE</code>. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/explain.html">[19]</a></sup></li>
+  </ul>
+</div>
+
+<h2>Pertanyaan interview</h2>
+<dl>
+  <dt>Query lambat di production. Apa langkah Anda?</dt>
+  <dd>Temukan query-nya dulu (log slow query atau monitoring), jalankan <code>EXPLAIN ANALYZE</code> di data yang mirip production, cari Seq Scan pada tabel besar atau estimasi baris yang meleset jauh, lalu perbaiki: tambah index yang sesuai, tulis ulang query, atau jalankan <code>ANALYZE</code>. Ukur ulang setelah perubahan.</dd>
+  <dt>Kenapa tidak mengindex semua kolom?</dt>
+  <dd>Setiap index memperlambat tulis dan memakan disk, dan index pada kolom dengan sedikit nilai berbeda jarang dipakai planner. Index dibuat untuk pola query nyata, misalnya kolom foreign key dan kolom filter halaman daftar.</dd>
+  <dt>Index composite (a, b): apakah membantu query <code>WHERE b = ?</code>?</dt>
+  <dd>Hampir tidak. Composite index paling efisien bila ada kondisi pada kolom paling kiri. Untuk <code>WHERE b = ?</code> saja, buat index terpisah di <code>b</code> atau balik urutannya bila pola query utamanya memang dimulai dari <code>b</code>.</dd>
+  <dt>Jelaskan ACID dengan contoh.</dt>
+  <dd>Meminjamkan aset = ubah status aset + buat baris peminjaman. Atomicity: keduanya jadi atau tidak sama sekali. Consistency: constraint seperti foreign key dan unique tetap terpenuhi. Isolation: dua admin yang meminjamkan aset yang sama tidak menghasilkan dua peminjaman. Durability: setelah COMMIT, data tidak hilang walau server restart.</dd>
+  <dt>Apa isolation level default PostgreSQL dan MySQL?</dt>
+  <dd>PostgreSQL <code>READ COMMITTED</code>, MySQL InnoDB <code>REPEATABLE READ</code>. Di READ COMMITTED, setiap statement melihat data yang sudah di-commit saat statement itu mulai, jadi dua SELECT di satu transaksi bisa memberi hasil berbeda.</dd>
+  <dt>Apa itu N+1 dan bagaimana mendeteksinya?</dt>
+  <dd>Satu query untuk daftar lalu satu query per baris. Terdeteksi dari log query yang menampilkan puluhan query serupa untuk satu request, atau dari <code>await</code> query di dalam loop. Perbaikannya JOIN, <code>include</code> di Prisma, atau satu query dengan <code>IN (...)</code>.</dd>
+  <dt>OFFSET atau keyset pagination?</dt>
+  <dd>OFFSET sederhana dan mendukung lompat ke halaman tertentu, tapi lambat di halaman jauh dan bisa menggandakan atau melewatkan baris saat data berubah. Keyset (<code>WHERE id &gt; last_id</code>) cepat dan stabil, tapi hanya maju/mundur berurutan. Untuk tabel admin kecil OFFSET cukup.</dd>
+</dl>
+
+<h2>Tulis query</h2>
+<p><strong>Soal 1.</strong> Halaman daftar aset sering memanggil query di bawah dan lambat. Index apa yang Anda buat?</p>
+<pre><code>SELECT id, kode, nama, harga
+FROM aset
+WHERE kategori_id = $1 AND status = 'TERSEDIA' AND deleted_at IS NULL
+ORDER BY tanggal_beli DESC
+LIMIT 20;
+
+-- Jawaban:
+CREATE INDEX idx_aset_daftar ON aset (kategori_id, status, tanggal_beli DESC)
+  WHERE deleted_at IS NULL;</code></pre>
+<p><strong>Penjelasan:</strong> dua kolom dengan kondisi kesamaan (<code>kategori_id</code>, <code>status</code>) di depan, lalu kolom <code>ORDER BY</code>, sehingga PostgreSQL bisa membaca 20 baris pertama langsung berurutan dari index tanpa sort. Bagian <code>WHERE deleted_at IS NULL</code> membuat partial index yang lebih kecil karena aset terhapus tidak pernah ditampilkan. Buktikan dengan <code>EXPLAIN ANALYZE</code> sebelum dan sesudah.</p>
+
+<p><strong>Soal 2.</strong> Tampilkan halaman berikutnya dari riwayat peminjaman (terbaru dulu, 20 per halaman) dengan keyset pagination. Baris terakhir halaman sebelumnya: <code>tanggal_pinjam = '2026-10-03'</code>, <code>id = 812</code>.</p>
+<pre><code>SELECT p.id, p.tanggal_pinjam, a.kode, kr.nama
+FROM peminjaman p
+JOIN aset a      ON a.id = p.aset_id
+JOIN karyawan kr ON kr.id = p.karyawan_id
+WHERE (p.tanggal_pinjam, p.id) &lt; ('2026-10-03', 812)
+ORDER BY p.tanggal_pinjam DESC, p.id DESC
+LIMIT 20;</code></pre>
+<p><strong>Penjelasan:</strong> <code>tanggal_pinjam</code> tidak unik, jadi kunci keyset ditambah <code>id</code> sebagai pemecah seri. Perbandingan row value <code>(a, b) &lt; (x, y)</code> berarti <code>a &lt; x OR (a = x AND b &lt; y)</code>, sama persis dengan urutan <code>ORDER BY</code>. Index pendukungnya <code>(tanggal_pinjam DESC, id DESC)</code>.</p>
+
+<p>Berikutnya, lesson 0005: semua potongan sudah ada. Saatnya menyusun fitur "Aset" dari skema Prisma sampai halaman Next.js, lengkap dengan auth dan keamanan.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Teknis") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.postgresql.org/docs/18/indexes-types.html">[1] PostgreSQL 18: Index Types</a> ·
+  <a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[2] PostgreSQL 18: Constraints (Foreign Keys)</a> ·
+  <a href="https://www.postgresql.org/docs/18/indexes-multicolumn.html">[3] PostgreSQL 18: Multicolumn Indexes</a> ·
+  <a href="https://www.postgresql.org/docs/18/indexes-partial.html">[4] PostgreSQL 18: Partial Indexes</a> ·
+  <a href="https://www.postgresql.org/docs/18/indexes-intro.html">[5] PostgreSQL 18: Indexes, Introduction</a> ·
+  <a href="https://www.postgresql.org/docs/18/sql-explain.html">[6] PostgreSQL 18: EXPLAIN</a> ·
+  <a href="https://www.postgresql.org/docs/18/using-explain.html">[7] PostgreSQL 18: Using EXPLAIN</a> ·
+  <a href="https://www.postgresql.org/docs/18/tutorial-transactions.html">[8] PostgreSQL 18: Transactions (tutorial)</a> ·
+  <a href="https://www.postgresql.org/docs/18/transaction-iso.html">[9] PostgreSQL 18: Transaction Isolation</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/transactions">[10] Prisma ORM v7: Transactions</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/relation-queries">[11] Prisma ORM v7: Relation queries</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-limit.html">[12] PostgreSQL 18: LIMIT and OFFSET</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/pagination">[13] Prisma ORM v7: Pagination</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/example-auto-increment.html">[14] MySQL 8.4: Using AUTO_INCREMENT</a> ·
+  <a href="https://www.postgresql.org/docs/18/sql-insert.html">[15] PostgreSQL 18: INSERT (ON CONFLICT)</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html">[16] MySQL 8.4: INSERT ... ON DUPLICATE KEY UPDATE</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html">[17] MySQL 8.4: InnoDB Transaction Isolation Levels</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/create-table-foreign-keys.html">[18] MySQL 8.4: FOREIGN KEY Constraints</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/explain.html">[19] MySQL 8.4: EXPLAIN Statement</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0003-sql-desain-skema-dan-query.html">← 0003 · SQL: desain skema dan query</a>
+  <a href="0005-crud-end-to-end.html">0005 · CRUD end-to-end →</a>
+</nav>
+
+</main>
+</body>
+</html>

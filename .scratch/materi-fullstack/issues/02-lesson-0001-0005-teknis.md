@@ -1,6 +1,6 @@
 # 02: Lesson 0001–0005: fondasi web, Next.js, Express, SQL, CRUD end-to-end
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 01
 
 **What to build:** Lesson 0001–0005 sesuai tabel "Urutan lesson" dan "Format lesson" di `../spec.md`, serta reference `fullstack/reference/pertanyaan-sql.html` (±30 pertanyaan dengan jawaban langsung tampil). Tanpa kuis atau `<details>`.
@@ -10,6 +10,6 @@ Blocked by: 01
 - Perilaku yang bergantung versi (caching Next.js, async error Express 5, dan sejenisnya) diverifikasi di dokumentasi resmi, bukan dari ingatan.
 - Tambahkan bagian 0001–0005 di `tests/fullstack/lessons.test.js`.
 
-- [ ] 0001, 0002, 0003, 0004, 0005
-- [ ] `reference/pertanyaan-sql.html`
-- [ ] Test hijau
+- [x] 0001, 0002, 0003, 0004, 0005
+- [x] `reference/pertanyaan-sql.html`
+- [x] Test hijau

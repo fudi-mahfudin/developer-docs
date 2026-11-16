@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · ±30 pertanyaan SQL tersering</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Fullstack · ±30 pertanyaan SQL tersering</div>
+<h1>±30 pertanyaan SQL tersering</h1>
+<p class="subtitle">Jawaban satu paragraf untuk dibaca ulang menjelang interview. Semua contoh memakai skema inventaris aset dari Lesson <a href="../lessons/0003-sql-desain-skema-dan-query.html">0003</a> (<code>kategori</code>, <code>karyawan</code>, <code>aset</code>, <code>peminjaman</code>); index, transaksi, dan performa dibahas lengkap di Lesson <a href="../lessons/0004-sql-index-transaksi-performa.html">0004</a>. Dialek utama PostgreSQL 18, dengan catatan "Beda di MySQL" bila relevan.</p>
+
+<p class="note">Cara latihan: tutup jawaban dengan kertas, jawab dengan suara keras dalam 30–45 detik, lalu bandingkan.</p>
+
+<h2>Desain dan dasar</h2>
+<dl>
+  <dt>1. Apa beda DDL, DML, dan TCL?</dt>
+  <dd>DDL (Data Definition Language) mengubah struktur: <code>CREATE TABLE</code>, <code>ALTER TABLE</code>, <code>DROP</code>. DML (Data Manipulation Language) mengubah atau membaca isi: <code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>. TCL mengatur transaksi: <code>BEGIN</code>, <code>COMMIT</code>, <code>ROLLBACK</code>. Di PostgreSQL, DDL juga bisa di dalam transaksi dan di-rollback; di MySQL sebagian besar DDL melakukan commit implisit.</dd>
+
+  <dt>2. Apa beda primary key dan unique key?</dt>
+  <dd>Keduanya menjamin keunikan. Primary key hanya satu per tabel, tidak boleh NULL, dan menjadi identitas yang dirujuk foreign key (<code>aset.id</code>). Unique boleh beberapa per tabel dan kolomnya boleh NULL (<code>aset.kode</code>, <code>karyawan.nik</code>). <sup class="cite"><a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[1]</a></sup></dd>
+
+  <dt>3. Apa itu foreign key, dan apa pilihan ON DELETE-nya?</dt>
+  <dd>Foreign key memastikan nilai kolom ada di tabel yang dirujuk: <code>peminjaman.aset_id</code> harus ada di <code>aset.id</code>. Saat baris induk dihapus: <code>NO ACTION</code>/<code>RESTRICT</code> (default, tolak), <code>CASCADE</code> (ikut hapus anak), <code>SET NULL</code>, atau <code>SET DEFAULT</code>. <sup class="cite"><a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[1]</a></sup> Untuk riwayat peminjaman, CASCADE berbahaya karena menghapus jejak audit; itu salah satu alasan aset di-soft delete.</dd>
+
+  <dt>4. Jelaskan normalisasi 1NF, 2NF, 3NF.</dt>
+  <dd>1NF: setiap sel atomik, tanpa kelompok berulang (bukan "LTP-001, PRJ-002" dalam satu sel). 2NF: 1NF dan setiap kolom non-key bergantung pada seluruh key, bukan sebagian (nama aset tidak disimpan di tabel peminjaman). 3NF: 2NF dan tidak ada kolom non-key yang bergantung pada kolom non-key lain (divisi bergantung pada karyawan, jadi disimpan di <code>karyawan</code>). Tujuannya setiap fakta disimpan sekali sehingga tidak ada anomali update.</dd>
+
+  <dt>5. Kapan denormalisasi dibenarkan?</dt>
+  <dd>Saat ada bukti query baca terlalu lambat dan JOIN-nya mahal, misalnya laporan bulanan nilai aset per divisi. Bentuknya bisa kolom turunan, tabel ringkasan, atau materialized view. Harganya: data duplikat yang harus dijaga tetap sinkron, jadi lakukan setelah mengukur, bukan di awal.</dd>
+
+  <dt>6. Bagaimana memodelkan relasi many-to-many?</dt>
+  <dd>Dengan tabel penghubung yang berisi dua foreign key. Aset dan karyawan berelasi N-N lewat <code>peminjaman (aset_id, karyawan_id, tanggal_pinjam, tanggal_kembali)</code>; tabel penghubung sekaligus menyimpan atribut relasi.</dd>
+
+  <dt>7. Kenapa <code>WHERE tanggal_kembali = NULL</code> tidak mengembalikan apa-apa?</dt>
+  <dd>NULL berarti "tidak diketahui", dan perbandingan apa pun dengan NULL menghasilkan NULL, bukan true. Pakai <code>IS NULL</code> / <code>IS NOT NULL</code>. <sup class="cite"><a href="https://www.postgresql.org/docs/18/functions-comparison.html">[2]</a></sup> Jebakan serupa: <code>NOT IN (subquery)</code> yang subquery-nya memuat NULL selalu kosong; pakai <code>NOT EXISTS</code>.</dd>
+
+  <dt>8. CHAR, VARCHAR, atau TEXT?</dt>
+  <dd>Di PostgreSQL ketiganya tidak berbeda performa; <code>CHAR(n)</code> malah menambah spasi padding. Pilih <code>TEXT</code> atau <code>VARCHAR(n)</code> bila memang perlu batas panjang. <sup class="cite"><a href="https://www.postgresql.org/docs/18/datatype-character.html">[3]</a></sup> Untuk uang pakai <code>NUMERIC(12,2)</code>, bukan <code>FLOAT</code>, karena float tidak presisi untuk desimal.</dd>
+
+  <dt>9. Apa beda DELETE, TRUNCATE, dan DROP?</dt>
+  <dd><code>DELETE</code> menghapus baris (bisa dengan <code>WHERE</code>), baris per baris, memicu trigger. <code>TRUNCATE</code> mengosongkan seluruh tabel jauh lebih cepat tanpa memindai baris; di PostgreSQL ia tetap transaksional dan bisa di-rollback. <sup class="cite"><a href="https://www.postgresql.org/docs/18/sql-truncate.html">[4]</a></sup> <code>DROP TABLE</code> menghapus tabel beserta strukturnya. Beda di MySQL: <code>TRUNCATE TABLE</code> melakukan commit implisit sehingga tidak bisa di-rollback. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/truncate-table.html">[5]</a></sup></dd>
+</dl>
+
+<h2>Menulis query</h2>
+<dl>
+  <dt>10. Apa urutan eksekusi logis sebuah SELECT?</dt>
+  <dd><code>FROM</code>/<code>JOIN</code> → <code>WHERE</code> → <code>GROUP BY</code> → <code>HAVING</code> → <code>SELECT</code> (termasuk window function) → <code>DISTINCT</code> → <code>ORDER BY</code> → <code>LIMIT</code>/<code>OFFSET</code>. <sup class="cite"><a href="https://www.postgresql.org/docs/18/sql-select.html">[6]</a></sup> Karena itu alias dari <code>SELECT</code> tidak bisa dipakai di <code>WHERE</code>, tapi bisa di <code>ORDER BY</code>.</dd>
+
+  <dt>11. Apa beda INNER, LEFT, RIGHT, FULL, dan CROSS JOIN?</dt>
+  <dd>INNER: hanya baris yang berpasangan. LEFT: semua baris kiri, kanan NULL bila tak berpasangan. RIGHT: kebalikannya (biasanya ditulis ulang sebagai LEFT). FULL: semua baris kedua sisi. CROSS: semua kombinasi (perkalian Kartesius). <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-table-expressions.html">[7]</a></sup> Contoh LEFT: semua karyawan beserta jumlah pinjamannya, termasuk yang nol. Beda di MySQL: <code>FULL OUTER JOIN</code> tidak didukung; ditiru dengan <code>LEFT JOIN ... UNION ... RIGHT JOIN</code>.</dd>
+
+  <dt>12. Kenapa LEFT JOIN saya berubah jadi INNER JOIN?</dt>
+  <dd>Karena kondisi untuk tabel kanan ditaruh di <code>WHERE</code>. <code>LEFT JOIN peminjaman p ... WHERE p.tanggal_kembali IS NULL</code> masih benar, tapi <code>WHERE p.tanggal_pinjam &gt;= '2026-01-01'</code> membuang baris yang p-nya NULL. Pindahkan kondisi itu ke <code>ON</code>.</dd>
+
+  <dt>13. Apa beda WHERE dan HAVING?</dt>
+  <dd><code>WHERE</code> menyaring baris sebelum dikelompokkan dan tidak bisa memakai agregat. <code>HAVING</code> menyaring kelompok setelah agregasi: <code>GROUP BY kategori_id HAVING COUNT(*) &gt; 5</code>.</dd>
+
+  <dt>14. COUNT(*), COUNT(kolom), dan COUNT(DISTINCT kolom)?</dt>
+  <dd><code>COUNT(*)</code> menghitung baris. <code>COUNT(p.id)</code> mengabaikan NULL, sehingga setelah LEFT JOIN memberi 0 untuk karyawan tanpa pinjaman. <code>COUNT(DISTINCT p.aset_id)</code> menghitung aset berbeda yang pernah dipinjam seseorang.</dd>
+
+  <dt>15. UNION atau UNION ALL?</dt>
+  <dd><code>UNION</code> menghapus baris duplikat dari hasil gabungan (butuh sort/hash, lebih lambat); <code>UNION ALL</code> mempertahankan semuanya. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-union.html">[8]</a></sup> Pakai <code>UNION ALL</code> bila tahu tidak ada duplikat atau duplikat memang diinginkan.</dd>
+
+  <dt>16. IN atau EXISTS?</dt>
+  <dd><code>EXISTS</code> mengecek apakah subquery mengembalikan minimal satu baris; <code>IN</code> membandingkan nilai dengan daftar hasil subquery. <sup class="cite"><a href="https://www.postgresql.org/docs/18/functions-subquery.html">[9]</a></sup> Untuk versi negatif pakai <code>NOT EXISTS</code> karena aman terhadap NULL. Contoh aset yang belum pernah dipinjam: <code>SELECT kode FROM aset a WHERE NOT EXISTS (SELECT 1 FROM peminjaman p WHERE p.aset_id = a.id)</code>.</dd>
+
+  <dt>17. Apa itu correlated subquery?</dt>
+  <dd>Subquery yang merujuk kolom query luar, sehingga secara logis dievaluasi per baris luar. Contoh: aset yang harganya di atas rata-rata kategorinya, <code>WHERE a.harga &gt; (SELECT AVG(harga) FROM aset x WHERE x.kategori_id = a.kategori_id)</code>. Planner sering mengubahnya menjadi join, tapi bila lambat, tulis ulang dengan CTE + JOIN atau window function <code>AVG(harga) OVER (PARTITION BY kategori_id)</code>.</dd>
+
+  <dt>18. Apa itu CTE, dan kapan dipakai?</dt>
+  <dd>CTE (<code>WITH nama AS (...)</code>) memberi nama pada query bantu supaya query panjang terbaca berurutan dan bisa dirujuk lebih dari sekali. <code>WITH RECURSIVE</code> dipakai untuk hierarki, misalnya struktur organisasi. Di PostgreSQL CTE sederhana yang dirujuk sekali di-inline oleh planner. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-with.html">[10]</a></sup></dd>
+
+  <dt>19. Apa beda window function dan GROUP BY?</dt>
+  <dd><code>GROUP BY</code> melebur baris menjadi satu per kelompok. Window function menghitung atas sekumpulan baris terkait (<code>OVER (PARTITION BY ...)</code>) tapi tiap baris tetap muncul. <sup class="cite"><a href="https://www.postgresql.org/docs/18/tutorial-window.html">[11]</a></sup> Contoh: setiap aset beserta total nilai kategorinya, <code>SUM(harga) OVER (PARTITION BY kategori_id)</code>.</dd>
+
+  <dt>20. ROW_NUMBER, RANK, DENSE_RANK?</dt>
+  <dd>Untuk harga sama: <code>ROW_NUMBER</code> tetap 1, 2, 3; <code>RANK</code> 1, 1, 3; <code>DENSE_RANK</code> 1, 1, 2. <sup class="cite"><a href="https://www.postgresql.org/docs/18/functions-window.html">[12]</a></sup> Top-3 aset termahal per kategori: <code>ROW_NUMBER() OVER (PARTITION BY kategori_id ORDER BY harga DESC)</code> di subquery, lalu <code>WHERE urutan &lt;= 3</code> di luar. Beda di MySQL: window function baru ada di MySQL ≥ 8.0. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/window-functions.html">[13]</a></sup></dd>
+
+  <dt>21. Bagaimana mencari harga tertinggi kedua?</dt>
+  <dd><code>SELECT DISTINCT harga FROM aset ORDER BY harga DESC LIMIT 1 OFFSET 1;</code> atau, untuk ke-N per kelompok, <code>DENSE_RANK() OVER (ORDER BY harga DESC) = 2</code>. Sebutkan bahwa <code>DISTINCT</code>/<code>DENSE_RANK</code> menangani harga kembar, dan hasilnya kosong bila hanya ada satu harga.</dd>
+
+  <dt>22. Bagaimana menemukan data duplikat?</dt>
+  <dd>Kelompokkan berdasarkan kolom yang seharusnya unik dan saring yang muncul lebih dari sekali: <code>SELECT nama, divisi, COUNT(*) FROM karyawan GROUP BY nama, divisi HAVING COUNT(*) &gt; 1;</code>. Untuk menghapus duplikat dan menyisakan satu, beri <code>ROW_NUMBER() OVER (PARTITION BY nama, divisi ORDER BY id)</code> lalu hapus yang nomornya &gt; 1. Setelah bersih, cegah dengan constraint <code>UNIQUE</code>.</dd>
+
+  <dt>23. LIKE vs ILIKE, dan kenapa <code>LIKE '%laptop%'</code> lambat?</dt>
+  <dd><code>ILIKE</code> adalah LIKE tanpa membedakan huruf besar-kecil, khusus PostgreSQL. <sup class="cite"><a href="https://www.postgresql.org/docs/18/functions-matching.html">[14]</a></sup> Pola yang diawali <code>%</code> tidak bisa memakai index B-tree, jadi database memindai seluruh tabel. Untuk pencarian teks di tabel besar pakai index trigram (GIN) atau full-text search. Beda di MySQL: tidak ada ILIKE; perbandingan string biasanya sudah case-insensitive mengikuti collation kolom.</dd>
+</dl>
+
+<h2>Index, transaksi, dan performa</h2>
+<dl>
+  <dt>24. Kolom mana yang perlu diindex?</dt>
+  <dd>Kolom yang sering muncul di <code>WHERE</code>, <code>JOIN</code>, dan <code>ORDER BY</code> pada tabel besar: foreign key (<code>peminjaman.aset_id</code>, karena PostgreSQL tidak membuatnya otomatis), dan kolom filter halaman daftar. Untuk composite index, kolom dengan kondisi kesamaan di depan; index <code>(kategori_id, status)</code> paling efisien bila <code>kategori_id</code> ikut difilter. <sup class="cite"><a href="https://www.postgresql.org/docs/18/indexes-multicolumn.html">[15]</a></sup> Beda di MySQL: InnoDB otomatis membuat index untuk foreign key.</dd>
+
+  <dt>25. Kenapa index saya tidak dipakai?</dt>
+  <dd>Penyebab umum: fungsi pada kolom (<code>WHERE LOWER(kode) = 'ltp-001'</code> tidak memakai index di <code>kode</code>; buat index ekspresi <code>ON aset (LOWER(kode))</code>) <sup class="cite"><a href="https://www.postgresql.org/docs/18/indexes-expressional.html">[16]</a></sup>, wildcard di awal LIKE, tipe data yang berbeda, kolom selektivitas rendah, tabel kecil, atau statistik usang. Cek dengan <code>EXPLAIN ANALYZE</code>.</dd>
+
+  <dt>26. Bagaimana membaca EXPLAIN?</dt>
+  <dd><code>EXPLAIN</code> menampilkan rencana dan estimasi; <code>EXPLAIN ANALYZE</code> menjalankan query dan menambahkan waktu serta baris aktual. Perhatikan jenis scan (Seq Scan vs Index Scan), estimasi baris yang jauh dari aktual, dan "Rows Removed by Filter" yang besar. <sup class="cite"><a href="https://www.postgresql.org/docs/18/using-explain.html">[17]</a></sup> Karena benar-benar dijalankan, bungkus <code>EXPLAIN ANALYZE</code> untuk UPDATE/DELETE dengan <code>BEGIN ... ROLLBACK</code>.</dd>
+
+  <dt>27. Jelaskan ACID dan isolation level.</dt>
+  <dd>Atomicity, Consistency, Isolation, Durability. Contoh: meminjamkan aset (ubah status + insert peminjaman) dalam satu transaksi. Isolation level dari lemah ke kuat: READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE; makin kuat, makin sedikit anomali (dirty read, non-repeatable read, phantom read) tapi makin besar kemungkinan transaksi harus diulang. Default PostgreSQL READ COMMITTED <sup class="cite"><a href="https://www.postgresql.org/docs/18/transaction-iso.html">[18]</a></sup>; beda di MySQL: default InnoDB REPEATABLE READ. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html">[19]</a></sup></dd>
+
+  <dt>28. Apa itu deadlock dan bagaimana mencegahnya?</dt>
+  <dd>Dua transaksi saling menunggu lock yang dipegang yang lain. PostgreSQL mendeteksinya dan membatalkan salah satu transaksi. <sup class="cite"><a href="https://www.postgresql.org/docs/18/explicit-locking.html">[20]</a></sup> Pencegahan: kunci baris dalam urutan yang konsisten (misalnya selalu urut id), buat transaksi sependek mungkin, dan siapkan retry di aplikasi untuk transaksi yang dibatalkan.</dd>
+
+  <dt>29. Apa itu masalah N+1?</dt>
+  <dd>Satu query untuk daftar lalu satu query per baris: 50 peminjaman → 51 query. Terlihat dari log query atau <code>await</code> di dalam loop. Perbaikannya JOIN, satu query <code>WHERE id IN (...)</code>, atau di Prisma <code>include: { aset: true }</code> yang memuat relasi dengan jumlah query tetap. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/relation-queries">[21]</a></sup></dd>
+
+  <dt>30. OFFSET atau keyset pagination?</dt>
+  <dd><code>LIMIT 20 OFFSET 720</code> sederhana dan bisa lompat ke halaman tertentu, tapi baris yang dilewati tetap dihitung sehingga makin lambat di halaman jauh. <sup class="cite"><a href="https://www.postgresql.org/docs/18/queries-limit.html">[22]</a></sup> Keyset <code>WHERE id &gt; 740 ORDER BY id LIMIT 20</code> cepat dan stabil saat data bertambah, tapi hanya maju/mundur berurutan.</dd>
+
+  <dt>31. Bagaimana menulis upsert (insert atau update)?</dt>
+  <dd>PostgreSQL: <code>INSERT INTO kategori (nama) VALUES ('Laptop') ON CONFLICT (nama) DO NOTHING;</code> atau <code>DO UPDATE SET ... = EXCLUDED....</code>, butuh constraint unique pada kolom konflik. <sup class="cite"><a href="https://www.postgresql.org/docs/18/sql-insert.html">[23]</a></sup> Beda di MySQL: <code>INSERT ... ON DUPLICATE KEY UPDATE ...</code>. <sup class="cite"><a href="https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html">[24]</a></sup></dd>
+
+  <dt>32. Apa itu SQL injection dan cara mencegahnya?</dt>
+  <dd>Input pengguna disambung ke string SQL sehingga mengubah struktur query, misalnya kode <code>' OR '1'='1</code>. Pencegahan utama: query berparameter (<code>WHERE kode = $1</code>), bukan sambungan string; ditambah validasi input dan akun database dengan hak minimum. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">[25]</a></sup> ORM seperti Prisma memakai parameter secara default.</dd>
+</dl>
+
+<p class="note sources">
+  <a href="https://www.postgresql.org/docs/18/ddl-constraints.html">[1] PostgreSQL 18: Constraints</a> ·
+  <a href="https://www.postgresql.org/docs/18/functions-comparison.html">[2] PostgreSQL 18: Comparison Functions and Operators</a> ·
+  <a href="https://www.postgresql.org/docs/18/datatype-character.html">[3] PostgreSQL 18: Character Types</a> ·
+  <a href="https://www.postgresql.org/docs/18/sql-truncate.html">[4] PostgreSQL 18: TRUNCATE</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/truncate-table.html">[5] MySQL 8.4: TRUNCATE TABLE</a> ·
+  <a href="https://www.postgresql.org/docs/18/sql-select.html">[6] PostgreSQL 18: SELECT</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-table-expressions.html">[7] PostgreSQL 18: Table Expressions (joins)</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-union.html">[8] PostgreSQL 18: Combining Queries (UNION)</a> ·
+  <a href="https://www.postgresql.org/docs/18/functions-subquery.html">[9] PostgreSQL 18: Subquery Expressions</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-with.html">[10] PostgreSQL 18: WITH Queries (CTE)</a> ·
+  <a href="https://www.postgresql.org/docs/18/tutorial-window.html">[11] PostgreSQL 18: Window Functions (tutorial)</a> ·
+  <a href="https://www.postgresql.org/docs/18/functions-window.html">[12] PostgreSQL 18: Window Functions (reference)</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/window-functions.html">[13] MySQL 8.4: Window Functions</a> ·
+  <a href="https://www.postgresql.org/docs/18/functions-matching.html">[14] PostgreSQL 18: Pattern Matching</a> ·
+  <a href="https://www.postgresql.org/docs/18/indexes-multicolumn.html">[15] PostgreSQL 18: Multicolumn Indexes</a> ·
+  <a href="https://www.postgresql.org/docs/18/indexes-expressional.html">[16] PostgreSQL 18: Indexes on Expressions</a> ·
+  <a href="https://www.postgresql.org/docs/18/using-explain.html">[17] PostgreSQL 18: Using EXPLAIN</a> ·
+  <a href="https://www.postgresql.org/docs/18/transaction-iso.html">[18] PostgreSQL 18: Transaction Isolation</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html">[19] MySQL 8.4: InnoDB Transaction Isolation Levels</a> ·
+  <a href="https://www.postgresql.org/docs/18/explicit-locking.html">[20] PostgreSQL 18: Explicit Locking (Deadlocks)</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/relation-queries">[21] Prisma ORM v7: Relation queries</a> ·
+  <a href="https://www.postgresql.org/docs/18/queries-limit.html">[22] PostgreSQL 18: LIMIT and OFFSET</a> ·
+  <a href="https://www.postgresql.org/docs/18/sql-insert.html">[23] PostgreSQL 18: INSERT (ON CONFLICT)</a> ·
+  <a href="https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html">[24] MySQL 8.4: INSERT ... ON DUPLICATE KEY UPDATE</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">[25] OWASP: SQL Injection Prevention Cheat Sheet</a>
+</p>
+<p class="note">Lesson terkait: <a href="../lessons/0003-sql-desain-skema-dan-query.html">0003</a> · <a href="../lessons/0004-sql-index-transaksi-performa.html">0004</a> · <a href="../index.html">Indeks</a></p>
+</main>
+</body>
+</html>

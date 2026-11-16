@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0005 · CRUD end-to-end: fitur "Aset"</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0005 · Fullstack · ±30 menit</div>
+  <h1>CRUD end-to-end: fitur "Aset" dari halaman Next.js sampai tabel PostgreSQL</h1>
+  <p class="subtitle">Satu fitur utuh langkah demi langkah: skema Prisma, migrasi, endpoint Express, halaman Next.js, loading/error state, dan test, dengan auth, CORS, CSRF, XSS, SQL injection, dan RBAC disisipkan tepat di langkah tempat risikonya muncul</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab "jelaskan langkah membuat fitur CRUD dari frontend sampai backend" dalam ±3 menit,
+  menyebut potongan kode kunci di setiap langkah, dan menunjukkan di langkah mana setiap kontrol keamanan dipasang dan kenapa.
+</div>
+
+<p>Fitur yang dibangun: tim administrasi bisa melihat daftar aset (dengan pencarian, filter kategori/status, dan pagination), melihat detail, menambah, mengubah, dan menghapus aset. Hanya role <code>ADMIN</code> yang boleh mengubah dan menghapus.</p>
+
+<div class="flow">
+  <span class="box">1. Skema (Prisma)</span><span class="arrow">→</span>
+  <span class="box">2. Migrasi</span><span class="arrow">→</span>
+  <span class="box">3. API (Express + Zod)</span><span class="arrow">→</span>
+  <span class="box">4. UI (Next.js)</span><span class="arrow">→</span>
+  <span class="box">5. Test</span>
+</div>
+
+<h2>Langkah 1: skema Prisma</h2>
+<p>Tabel <code>aset</code> dari lesson 0003 ditulis ulang di <code>schema.prisma</code>. Nama model dan field memakai camelCase di JavaScript, dipetakan ke nama tabel/kolom snake_case dengan <code>@map</code>/<code>@@map</code>. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-schema/data-model/models">[1]</a></sup></p>
+<pre><code>generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"        // URL koneksi ada di prisma.config.ts (Prisma 7)
+}
+
+enum StatusAset {
+  TERSEDIA
+  DIPINJAM
+  RUSAK
+}</code></pre>
+<pre><code>model Aset {
+  id          Int          @id @default(autoincrement())
+  kode        String       @unique
+  nama        String
+  kategoriId  Int          @map("kategori_id")
+  kategori    Kategori     @relation(fields: [kategoriId], references: [id])
+  harga       Decimal      @db.Decimal(12, 2)
+  status      StatusAset   @default(TERSEDIA)
+  tanggalBeli DateTime     @map("tanggal_beli") @db.Date
+  deletedAt   DateTime?    @map("deleted_at")
+  peminjaman  Peminjaman[]
+
+  @@index([kategoriId, status])
+  @@map("aset")
+}</code></pre>
+<p>Di Prisma 7, URL database ditulis di <code>prisma.config.ts</code> lewat <code>env("DATABASE_URL")</code>, bukan di <code>schema.prisma</code>. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/reference/prisma-config-reference">[2]</a></sup> Di sini status dibuat <code>enum</code> (menjadi tipe ENUM PostgreSQL) sebagai ganti <code>CHECK</code> di lesson 0003; keduanya sah.</p>
+
+<h2>Langkah 2: migrasi</h2>
+<pre><code># Development: buat file SQL migrasi dari perubahan skema, lalu terapkan ke DB lokal
+npx prisma migrate dev --name tambah_aset
+#   -&gt; prisma/migrations/20261116090000_tambah_aset/migration.sql
+
+# Prisma 7: generate client dijalankan sendiri
+npx prisma generate
+
+# Production (di pipeline deploy): hanya menerapkan migrasi yang sudah di-commit
+npx prisma migrate deploy</code></pre>
+<p>
+  <code>migrate dev</code> menghasilkan file <code>migration.sql</code> yang di-commit ke Git, jadi perubahan skema ikut di-review seperti kode. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-migrate/getting-started">[3]</a></sup>
+  Sejak Prisma 7, <code>migrate dev</code> tidak lagi otomatis menjalankan <code>prisma generate</code>, dan client dibuat dengan driver adapter seperti <code>@prisma/adapter-pg</code>. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v6/more/upgrades/to-v7">[4]</a></sup>
+</p>
+<pre><code>// src/db.js
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from './generated/prisma/client.js';
+
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+export const prisma = new PrismaClient({ adapter });</code></pre>
+<p class="note">Migrasi yang mengubah kolom berisi data (rename, ubah tipe) dilakukan bertahap: tambah kolom baru, isi datanya, ubah kode, baru hapus kolom lama. Selalu backup database sebelum <code>migrate deploy</code> di production.</p>
+
+<h2>Langkah 3: endpoint Express</h2>
+<p>Lima endpoint mengikuti desain di lesson 0002. Yang baru di sini: list dengan <strong>pagination</strong>, <strong>search</strong>, dan <strong>filter</strong>. Query string divalidasi Zod; <code>z.coerce.number()</code> mengubah <code>"2"</code> menjadi <code>2</code>.</p>
+<pre><code>const listQuery = z.object({
+  q: z.string().trim().max(50).optional(),
+  kategoriId: z.coerce.number().int().positive().optional(),
+  status: z.enum(['TERSEDIA', 'DIPINJAM', 'RUSAK']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+asetRouter.get('/', async (req, res) =&gt; {
+  const parsed = listQuery.safeParse(req.query);
+  if (!parsed.success) throw new HttpError(400, 'Query tidak valid', parsed.error.issues);
+  res.json(await asetService.list(parsed.data));
+});</code></pre>
+<pre><code>export async function list({ q, kategoriId, status, page, pageSize }) {
+  const where = {
+    deletedAt: null,
+    ...(kategoriId &amp;&amp; { kategoriId }),
+    ...(status &amp;&amp; { status }),
+    ...(q &amp;&amp; { OR: [
+      { kode: { contains: q, mode: 'insensitive' } },
+      { nama: { contains: q, mode: 'insensitive' } },
+    ] }),
+  };
+  const [data, total] = await prisma.$transaction([
+    prisma.aset.findMany({ where, include: { kategori: true }, orderBy: { id: 'desc' },
+      skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.aset.count({ where }),
+  ]);
+  return { data, total, page, pageSize };
+}</code></pre>
+<p>
+  <code>mode: 'insensitive'</code> adalah filter case-insensitive yang didukung Prisma untuk PostgreSQL. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/filtering-and-sorting">[5]</a></sup>
+  <code>count</code> memakai <code>where</code> yang sama supaya total halaman sesuai filter.
+</p>
+<div class="note"><strong>Keamanan: SQL injection.</strong>
+  SQL injection terjadi bila input pengguna disambung ke string SQL sehingga bisa mengubah struktur query. Pertahanan utamanya query berparameter (prepared statement). <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">[6]</a></sup>
+  Query builder Prisma dan <code>$queryRaw</code> dengan tagged template sudah berparameter; <code>$queryRawUnsafe</code> dengan string hasil sambungan input berisiko SQL injection. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/using-raw-sql/raw-queries">[7]</a></sup>
+  Contoh salah: <code>$queryRawUnsafe("... WHERE nama LIKE '%" + q + "%'")</code>. Contoh benar: <code>$queryRaw`... WHERE nama ILIKE ${'%' + q + '%'}`</code>.
+</div>
+<p>Update dan delete hanya untuk <code>ADMIN</code>. Delete memakai <strong>soft delete</strong>: kolom <code>deletedAt</code> diisi, baris tidak dihapus, sehingga riwayat peminjaman yang merujuk aset itu tetap utuh dan bisa diaudit.</p>
+<pre><code>asetRouter.patch('/:id', requireRole('ADMIN'), validate(asetUpdateSchema), async (req, res) =&gt; {
+  res.json(await asetService.ubah(Number(req.params.id), req.body));
+});
+asetRouter.delete('/:id', requireRole('ADMIN'), async (req, res) =&gt; {
+  await asetService.hapus(Number(req.params.id));
+  res.status(204).end();
+});
+
+export async function hapus(id) {
+  const aktif = await prisma.peminjaman.count({ where: { asetId: id, tanggalKembali: null } });
+  if (aktif &gt; 0) throw new HttpError(409, 'Aset sedang dipinjam');
+  const { count } = await prisma.aset.updateMany({
+    where: { id, deletedAt: null }, data: { deletedAt: new Date() },
+  });
+  if (count === 0) throw new HttpError(404, 'Aset tidak ditemukan');
+}</code></pre>
+
+<h3>Auth: session vs JWT, cookie httpOnly</h3>
+<table>
+  <thead><tr><th></th><th>Session (server-side)</th><th>JWT</th></tr></thead>
+  <tbody>
+    <tr><td>Isi cookie/token</td><td>ID acak; data user disimpan di server (tabel session atau Redis)</td><td>Klaim (id, role, kedaluwarsa) yang ditandatangani, dibawa klien <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc7519">[8]</a></sup></td></tr>
+    <tr><td>Logout / cabut akses</td><td>Hapus baris session, langsung berlaku</td><td>Token tetap valid sampai <code>exp</code>, kecuali ada daftar blokir</td></tr>
+    <tr><td>Cocok untuk</td><td>Aplikasi internal satu domain (pilihan di sini)</td><td>Banyak service yang memverifikasi token tanpa database bersama</td></tr>
+  </tbody>
+</table>
+<p>
+  Atribut <code>HttpOnly</code> membuat cookie tidak bisa dibaca JavaScript lewat <code>document.cookie</code>, sehingga XSS tidak bisa mencuri session ID. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc6265#section-4.1.2.6">[9]</a></sup>
+  <code>Secure</code> hanya mengirim cookie lewat HTTPS, dan <code>SameSite=Lax</code> tidak mengirim cookie pada request POST lintas situs. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie">[10]</a></sup>
+  Session ID harus acak dan panjang, dan dibuat ulang setelah login. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html">[11]</a></sup> Password disimpan sebagai hash dengan algoritma lambat seperti Argon2id atau bcrypt, tidak pernah plaintext. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">[12]</a></sup>
+</p>
+<pre><code>// POST /auth/login (setelah password diverifikasi)
+res.cookie('sid', sesi.id, { httpOnly: true, secure: true, sameSite: 'lax', maxAge: 8 * 3600 * 1000 });
+
+// RBAC sederhana: role disimpan di karyawan.role, dicek per endpoint
+export const requireRole = (...roles) =&gt; (req, res, next) =&gt; {
+  if (!req.user) throw new HttpError(401, 'Belum login');
+  if (!roles.includes(req.user.role)) throw new HttpError(403, 'Tidak berhak');
+  next();
+};</code></pre>
+<p><strong>RBAC</strong> (role-based access control) memberi izin berdasarkan role, bukan per orang. Pemeriksaannya wajib di server untuk setiap request dan default-nya menolak; menyembunyikan tombol "Hapus" di UI hanya kenyamanan, bukan keamanan. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html">[13]</a></sup></p>
+
+<h3>CORS</h3>
+<p>
+  CORS (Cross-Origin Resource Sharing) adalah mekanisme <strong>browser</strong>: header seperti <code>Access-Control-Allow-Origin</code> dari server memberi tahu browser apakah JavaScript dari origin lain boleh membaca respons. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS">[14]</a></sup>
+  Di arsitektur ini, Next.js memanggil Express dari server ke server, sehingga CORS tidak berlaku. CORS baru perlu bila Client Component memanggil API langsung dari browser. Saat itu, pakai allowlist origin, bukan <code>*</code>, karena cookie (<code>credentials</code>) tidak boleh dipakai dengan wildcard. <sup class="cite"><a href="https://expressjs.com/en/resources/middleware/cors.html">[15]</a></sup>
+  CORS bukan pengganti auth: ia tidak menghentikan <code>curl</code> atau Postman.
+</p>
+<pre><code>import cors from 'cors';
+app.use(cors({ origin: ['https://aset.kantor.example'], credentials: true }));</code></pre>
+
+<h2>Langkah 4: halaman Next.js</h2>
+<p>Semua panggilan ke API lewat satu helper server-only yang meneruskan cookie session pengguna ke Express. Dengan begitu Express tetap satu-satunya tempat pemeriksaan auth dan RBAC.</p>
+<pre><code>// lib/api.js
+import 'server-only';
+import { cookies } from 'next/headers';
+
+export async function api(path, init = {}) {
+  const sid = (await cookies()).get('sid')?.value;
+  const res = await fetch(`${process.env.API_URL}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', Cookie: `sid=${sid}`, ...init.headers },
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.json());
+  return res.status === 204 ? null : res.json();
+}</code></pre>
+<p><strong>List</strong> (Server Component). Data yang tergantung request dibungkus <code>&lt;Suspense&gt;</code> supaya judul dan form cari tampil dulu dan tabel di-stream; tanpa Cache Components, file <code>loading.js</code> di folder route memberi efek serupa untuk satu halaman penuh. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/caching">[16]</a></sup></p>
+<pre><code>// app/aset/page.jsx
+export default function HalamanAset({ searchParams }) {
+  return (
+    &lt;main&gt;
+      &lt;h1&gt;Daftar aset&lt;/h1&gt;
+      &lt;FormCari /&gt;
+      &lt;Suspense fallback={&lt;p&gt;Memuat aset…&lt;/p&gt;}&gt;
+        &lt;TabelAset searchParams={searchParams} /&gt;
+      &lt;/Suspense&gt;
+    &lt;/main&gt;
+  );
+}
+
+async function TabelAset({ searchParams }) {
+  const { q = '', page = '1' } = await searchParams;
+  const { data, total } = await api(`/aset?${new URLSearchParams({ q, page })}`);
+  return &lt;Tabel baris={data} total={total} /&gt;;
+}</code></pre>
+<p><strong>Create</strong> lewat Server Action. Setelah sukses, <code>revalidatePath</code> menyegarkan daftar lalu <code>redirect</code> kembali ke daftar. <sup class="cite"><a href="https://nextjs.org/docs/app/getting-started/mutating-data">[17]</a></sup> Error validasi dari API dikembalikan sebagai state, bukan dilempar, supaya form bisa menampilkannya.</p>
+<pre><code>// app/aset/actions.js
+'use server';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+
+export async function simpanAset(prevState, formData) {
+  const body = Object.fromEntries(formData);
+  body.kategoriId = Number(body.kategoriId);
+  body.harga = Number(body.harga);
+  try {
+    await api('/aset', { method: 'POST', body: JSON.stringify(body) });
+  } catch (err) {
+    if (err instanceof ApiError &amp;&amp; err.status &lt; 500) return { error: err.body.error, details: err.body.details };
+    throw err;
+  }
+  revalidatePath('/aset');
+  redirect('/aset');
+}</code></pre>
+<pre><code>// app/aset/baru/form-aset.jsx
+'use client';
+import { useActionState } from 'react';
+import { simpanAset } from '../actions';
+
+export function FormAset() {
+  const [state, action, pending] = useActionState(simpanAset, null);
+  return (
+    &lt;form action={action}&gt;
+      &lt;label htmlFor="kode"&gt;Kode&lt;/label&gt;
+      &lt;input id="kode" name="kode" required pattern="[A-Z]{3}-\d{3}" /&gt;
+      &lt;label htmlFor="nama"&gt;Nama&lt;/label&gt;
+      &lt;input id="nama" name="nama" required /&gt;
+      {/* kategoriId (select), harga, tanggalBeli: pola yang sama */}
+      {state?.error &amp;&amp; &lt;p role="alert"&gt;{state.error}&lt;/p&gt;}
+      &lt;button disabled={pending}&gt;{pending ? 'Menyimpan…' : 'Simpan'}&lt;/button&gt;
+    &lt;/form&gt;
+  );
+}</code></pre>
+<p><strong>Edit dan hapus</strong> memakai pola yang sama: halaman <code>app/aset/[id]/edit/page.jsx</code> memuat detail lewat <code>api(`/aset/${id}`)</code> lalu mengisi form dengan <code>defaultValue</code>; tombol hapus adalah form kecil dengan <code>action={hapusAset.bind(null, aset.id)}</code>. Argumen yang di-<code>bind</code> tidak dienkripsi, jadi id tetap divalidasi di server. <sup class="cite"><a href="https://nextjs.org/blog/security-nextjs-server-components-actions">[18]</a></sup></p>
+<pre><code>// app/aset/error.js: error boundary per route, wajib Client Component
+'use client';
+export default function Error({ error, retry }) {
+  return (
+    &lt;div role="alert"&gt;
+      &lt;p&gt;Gagal memuat data aset. Coba lagi, atau hubungi tim IT bila berulang.&lt;/p&gt;
+      &lt;button onClick={() =&gt; retry()}&gt;Coba lagi&lt;/button&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+<p><strong>Loading/error state:</strong> <code>&lt;Suspense&gt;</code> atau <code>loading.js</code> untuk loading, <code>pending</code> dari <code>useActionState</code> untuk tombol submit, <code>error.js</code> untuk error tak terduga, dan state dari Server Action untuk error validasi. Di production, pesan error dari Server Component disamarkan dan hanya membawa <code>digest</code> untuk dicocokkan dengan log server. Prop <code>retry</code> stabil sejak Next.js 16.3. <sup class="cite"><a href="https://nextjs.org/docs/app/api-reference/file-conventions/error">[19]</a></sup></p>
+
+<div class="note"><strong>Keamanan: CSRF dan XSS di UI.</strong>
+  <strong>CSRF</strong> (Cross-Site Request Forgery) = situs lain membuat browser korban mengirim request yang membawa cookie korban. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">[20]</a></sup>
+  Server Action hanya menerima POST, cookie <code>SameSite</code> menahan sebagian besar serangan, dan Next.js membandingkan header <code>Origin</code> dengan <code>Host</code> lalu menolak bila berbeda. <sup class="cite"><a href="https://nextjs.org/blog/security-nextjs-server-components-actions">[18]</a></sup>
+  Untuk Route Handler atau API Express yang dipanggil langsung dari browser, perlindungan CSRF dipasang sendiri (SameSite cookie + cek Origin atau CSRF token), dan GET tidak boleh mengubah data.
+  <br><strong>XSS</strong> (Cross-Site Scripting) = input pengguna (misalnya nama aset <code>&lt;script&gt;…</code>) dijalankan sebagai kode di browser orang lain. Pertahanan utamanya output encoding sesuai konteks. <sup class="cite"><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">[21]</a></sup>
+  React meng-escape teks di JSX secara otomatis; lubangnya adalah <code>dangerouslySetInnerHTML</code>, yang hanya boleh dipakai untuk HTML tepercaya atau yang sudah disanitasi. <sup class="cite"><a href="https://react.dev/reference/react-dom/components/common#dangerously-setting-the-inner-html">[22]</a></sup>
+</div>
+
+<h2>Langkah 5: test</h2>
+<p>Prioritas test untuk sole developer: <strong>integration test API</strong> dengan <code>supertest</code> terhadap database test, karena satu test mencakup route, validasi, service, Prisma, dan SQL sekaligus. Ditambah sedikit test end-to-end browser (misalnya Playwright) untuk alur terpenting.</p>
+<pre><code>import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import request from 'supertest';
+import { app } from '../src/app.js';
+
+test('POST /aset menolak harga negatif dengan 400', async () =&gt; {
+  const res = await request(app).post('/aset').set('Cookie', sesiAdmin)
+    .send({ kode: 'LTP-099', nama: 'Laptop uji', kategoriId: 1, harga: -5 });
+  assert.equal(res.status, 400);
+});
+
+test('staf tidak boleh menghapus aset (403)', async () =&gt; {
+  const res = await request(app).delete('/aset/1').set('Cookie', sesiStaf);
+  assert.equal(res.status, 403);
+});</code></pre>
+<p>Kasus yang layak di-test: create sukses (201 + <code>Location</code>), validasi gagal (400), kode duplikat (409), tanpa login (401), role salah (403), hapus aset yang sedang dipinjam (409), dan aset yang sudah di-soft delete tidak muncul di list.</p>
+
+<h2>Contoh jawaban lisan (±3 menit)</h2>
+<blockquote>"Tolong jelaskan langkah membuat fitur CRUD dari frontend sampai backend."</blockquote>
+<p>
+  "Saya ambil contoh fitur data aset di aplikasi inventaris kantor. Saya mulai dari kebutuhan: siapa yang memakai, field apa saja, dan aturan bisnisnya, misalnya kode aset unik dan aset yang sedang dipinjam tidak boleh dihapus.
+</p>
+<p>
+  Langkah pertama skema database. Saya definisikan model Aset di Prisma dengan relasi ke Kategori, constraint unique di kode, index untuk filter yang sering dipakai, dan kolom deletedAt untuk soft delete. Lalu saya jalankan prisma migrate dev, sehingga terbentuk file migrasi SQL yang ikut di-commit dan di-review. Di production saya hanya menjalankan migrate deploy, setelah backup.
+</p>
+<p>
+  Langkah kedua API di Express. Ada lima endpoint: GET list dengan pagination, search, dan filter, GET detail, POST, PATCH, dan DELETE. Saya pisahkan route, service, dan akses data. Route mengurus HTTP dan status code, input divalidasi dengan Zod, dan aturan bisnis ada di service. Error dikumpulkan di satu error handler, jadi formatnya konsisten: 400 untuk validasi, 404 kalau tidak ada, 409 kalau kode duplikat. Di Express 5, error dari handler async otomatis sampai ke handler itu.
+</p>
+<p>
+  Keamanan saya pasang di sini juga. Login memakai session dengan cookie httpOnly, Secure, dan SameSite, password di-hash. Ada RBAC sederhana: hanya admin yang boleh ubah dan hapus, dan itu dicek di server, bukan hanya menyembunyikan tombol. SQL injection tertangani karena Prisma memakai query berparameter, dan saya tidak menyambung string ke raw query.
+</p>
+<p>
+  Langkah ketiga UI di Next.js. Halaman daftar adalah Server Component yang memanggil API, dengan Suspense untuk loading state. Form tambah dan edit memakai Server Action yang meneruskan cookie session ke API, menampilkan pesan validasi, lalu revalidatePath dan redirect setelah sukses. Ada error.js untuk error tak terduga. React meng-escape output, jadi XSS tertutup selama saya tidak memakai dangerouslySetInnerHTML, dan Server Action hanya menerima POST dengan pengecekan Origin, jadi CSRF juga tertangani. CORS baru saya atur kalau browser memanggil API langsung, dengan allowlist origin.
+</p>
+<p>
+  Langkah terakhir test. Saya tulis integration test dengan supertest terhadap database test untuk kasus utama dan kasus gagal: validasi, duplikat, tidak login, dan role salah. Setelah itu deploy, lalu saya catat perubahan di dokumentasi dan changelog supaya tim operasional tahu fitur barunya."
+</p>
+
+<p>Berikutnya, lesson 0006: Anda bukan hanya menulis fitur, tapi menjadi satu-satunya developer. Bagaimana bekerja dari requirement sampai maintenance record?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Teknis") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-schema/data-model/models">[1] Prisma ORM v7: Models</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/reference/prisma-config-reference">[2] Prisma ORM v7: Prisma Config reference</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-migrate/getting-started">[3] Prisma ORM v7: Getting started with Prisma Migrate</a> ·
+  <a href="https://www.prisma.io/docs/orm/v6/more/upgrades/to-v7">[4] Prisma ORM: Upgrade to v7</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/filtering-and-sorting">[5] Prisma ORM v7: Filtering and Sorting</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html">[6] OWASP: SQL Injection Prevention Cheat Sheet</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/using-raw-sql/raw-queries">[7] Prisma ORM v7: Raw queries</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc7519">[8] RFC 7519: JSON Web Token (JWT)</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc6265#section-4.1.2.6">[9] RFC 6265 §4.1.2.6: The HttpOnly Attribute</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie">[10] MDN: Set-Cookie</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html">[11] OWASP: Session Management Cheat Sheet</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">[12] OWASP: Password Storage Cheat Sheet</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html">[13] OWASP: Authorization Cheat Sheet</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS">[14] MDN: Cross-Origin Resource Sharing (CORS)</a> ·
+  <a href="https://expressjs.com/en/resources/middleware/cors.html">[15] Express: cors middleware</a> ·
+  <a href="https://nextjs.org/docs/app/getting-started/caching">[16] Next.js docs: Caching (streaming dengan Suspense)</a> ·
+  <a href="https://nextjs.org/docs/app/getting-started/mutating-data">[17] Next.js docs: Mutating Data</a> ·
+  <a href="https://nextjs.org/blog/security-nextjs-server-components-actions">[18] Next.js blog: How to Think About Security in Next.js</a> ·
+  <a href="https://nextjs.org/docs/app/api-reference/file-conventions/error">[19] Next.js docs: error.js</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html">[20] OWASP: CSRF Prevention Cheat Sheet</a> ·
+  <a href="https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html">[21] OWASP: XSS Prevention Cheat Sheet</a> ·
+  <a href="https://react.dev/reference/react-dom/components/common#dangerously-setting-the-inner-html">[22] React docs: dangerouslySetInnerHTML</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0004-sql-index-transaksi-performa.html">← 0004 · SQL: index, transaksi, performa</a>
+  <a href="0006-sole-developer-aplikasi-internal.html">0006 · Sole developer aplikasi internal →</a>
+</nav>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0002 · Express dan REST API</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0002 · Fullstack · ±25 menit</div>
+  <h1>Express dan REST API: status code, middleware, error handling, Zod</h1>
+  <p class="subtitle">Mendesain resource REST untuk inventaris aset, memilih status code sesuai RFC 9110, lalu menyusun API Express 5 dengan middleware, error handling terpusat, validasi Zod, dan layering route → service → Prisma</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menulis daftar endpoint REST untuk resource "aset" beserta status code-nya,
+  menjelaskan urutan middleware Express dan bagaimana error async sampai ke error handler di Express 5,
+  dan menunjukkan di layer mana validasi, aturan bisnis, dan query database diletakkan.
+</div>
+
+<h2>1. Desain resource REST</h2>
+<p>
+  REST memodelkan API sebagai <strong>resource</strong> (kata benda, jamak) yang dimanipulasi dengan method HTTP. Method punya semantik baku: <code>GET</code> dan <code>HEAD</code> bersifat <em>safe</em> (tidak mengubah state),
+  dan <code>PUT</code> serta <code>DELETE</code> bersifat <em>idempotent</em> (mengulang request yang sama memberi efek yang sama). <code>POST</code> tidak idempotent. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-common-method-properties">[1]</a></sup>
+</p>
+<table>
+  <thead><tr><th>Endpoint</th><th>Arti</th><th>Status sukses</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /aset?page=1&amp;q=laptop&amp;kategoriId=2</code></td><td>List dengan pagination, search, filter</td><td>200</td></tr>
+    <tr><td><code>GET /aset/:id</code></td><td>Detail satu aset</td><td>200</td></tr>
+    <tr><td><code>POST /aset</code></td><td>Buat aset baru</td><td>201 + header <code>Location</code></td></tr>
+    <tr><td><code>PATCH /aset/:id</code></td><td>Ubah sebagian field</td><td>200 (body aset baru)</td></tr>
+    <tr><td><code>DELETE /aset/:id</code></td><td>Hapus (atau soft delete, lesson 0005)</td><td>204 tanpa body</td></tr>
+    <tr><td><code>GET /karyawan/:id/peminjaman</code></td><td>Sub-resource: peminjaman milik satu karyawan</td><td>200</td></tr>
+  </tbody>
+</table>
+<p>Hindari kata kerja di URL (<code>/getAset</code>, <code>/hapusAset</code>). Aksi yang bukan CRUD murni boleh dimodelkan sebagai resource baru, misalnya <code>POST /peminjaman</code> untuk "pinjamkan aset".</p>
+
+<h2>2. Status code yang sering ditanya (RFC 9110)</h2>
+<table>
+  <thead><tr><th>Kode</th><th>Kapan dipakai di API aset</th></tr></thead>
+  <tbody>
+    <tr><td>200 OK</td><td>GET berhasil, PATCH berhasil dan mengembalikan data</td></tr>
+    <tr><td>201 Created</td><td>POST membuat resource; header <code>Location</code> menunjuk resource baru <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-201-created">[2]</a></sup></td></tr>
+    <tr><td>204 No Content</td><td>DELETE berhasil, tidak ada body</td></tr>
+    <tr><td>400 Bad Request</td><td>Request rusak: JSON tidak valid, query param bukan angka</td></tr>
+    <tr><td>401 Unauthorized</td><td>Belum login atau token tidak valid (sebenarnya berarti "unauthenticated") <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-401-unauthorized">[3]</a></sup></td></tr>
+    <tr><td>403 Forbidden</td><td>Sudah login, tapi tidak berhak (staf biasa mencoba menghapus aset) <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-403-forbidden">[4]</a></sup></td></tr>
+    <tr><td>404 Not Found</td><td>Aset dengan id itu tidak ada</td></tr>
+    <tr><td>409 Conflict</td><td>Bentrok dengan state saat ini: kode aset sudah dipakai, aset sedang dipinjam <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-409-conflict">[5]</a></sup></td></tr>
+    <tr><td>422 Unprocessable Content</td><td>JSON-nya valid tapi isinya melanggar aturan (harga negatif) <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-422-unprocessable-content">[6]</a></sup></td></tr>
+    <tr><td>500 Internal Server Error</td><td>Bug atau kegagalan tak terduga; detailnya hanya di log, tidak dikirim ke klien</td></tr>
+  </tbody>
+</table>
+<p class="note">Banyak tim memakai 400 untuk semua error validasi. Itu juga wajar. Yang penting konsisten dan terdokumentasi, misalnya: "validasi Zod gagal → 400 dengan daftar field yang salah".</p>
+
+<h2>3. Routing dan middleware Express 5</h2>
+<p>
+  <strong>Middleware</strong> adalah fungsi <code>(req, res, next)</code> yang dijalankan berurutan sesuai urutan <code>app.use()</code> dan pendaftaran route. Ia bisa membaca/mengubah <code>req</code> dan <code>res</code>, mengakhiri request, atau memanggil <code>next()</code> untuk lanjut. <sup class="cite"><a href="https://expressjs.com/en/guide/using-middleware.html">[7]</a></sup>
+  <code>express.Router()</code> mengelompokkan route per resource. <sup class="cite"><a href="https://expressjs.com/en/guide/routing.html">[8]</a></sup>
+</p>
+<pre><code>import express from 'express';
+import { asetRouter } from './aset/aset.routes.js';
+import { requireAuth } from './auth/require-auth.js';
+import { errorHandler } from './errors/error-handler.js';
+
+const app = express();
+app.use(express.json());                 // 1. parse body JSON
+app.use(requestLogger);                  // 2. log method, path, durasi
+app.use('/aset', requireAuth, asetRouter); // 3. auth, lalu route aset
+app.use((req, res) =&gt; res.status(404).json({ error: 'Tidak ditemukan' }));
+app.use(errorHandler);                   // 4. paling akhir: error handler
+export { app };</code></pre>
+
+<h2>4. Error handling terpusat (Express 5)</h2>
+<p>
+  Di <strong>Express 5</strong>, route handler dan middleware yang mengembalikan Promise otomatis memanggil <code>next(err)</code> bila Promise-nya reject atau melempar error. Karena fungsi <code>async</code> selalu mengembalikan Promise, error-nya sampai ke Express tanpa kode tambahan. <sup class="cite"><a href="https://expressjs.com/en/guide/error-handling.html">[9]</a></sup>
+  Di Express 4, error di handler <code>async</code> tidak tertangkap kecuali dibungkus <code>try/catch</code> + <code>next(err)</code> atau memakai paket seperti <code>express-async-errors</code>. <sup class="cite"><a href="https://expressjs.com/en/guide/migrating-5.html">[10]</a></sup>
+</p>
+<p>Error handler dibedakan dari middleware biasa oleh <strong>empat</strong> argumen <code>(err, req, res, next)</code> dan didaftarkan paling akhir. Bila header respons sudah terkirim, delegasikan ke handler bawaan dengan <code>next(err)</code>. <sup class="cite"><a href="https://expressjs.com/en/guide/error-handling.html">[9]</a></sup></p>
+<pre><code>export class HttpError extends Error {
+  constructor(status, message, details) {
+    super(message);
+    this.status = status;
+    this.details = details;
+  }
+}
+
+export function errorHandler(err, req, res, next) {
+  if (res.headersSent) return next(err);
+  if (err instanceof HttpError) {
+    return res.status(err.status).json({ error: err.message, details: err.details });
+  }
+  req.log?.error(err);                    // stack trace hanya di log server
+  res.status(500).json({ error: 'Terjadi kesalahan di server' });
+}</code></pre>
+
+<h2>5. Validasi dengan Zod</h2>
+<p>
+  <strong>Zod</strong> adalah library validasi skema untuk TypeScript/JavaScript (versi 4). <code>schema.safeParse(data)</code> tidak melempar error, tapi mengembalikan objek dengan <code>success</code>; bila gagal, daftar masalahnya ada di <code>error.issues</code>. <sup class="cite"><a href="https://zod.dev/basics">[11]</a></sup>
+  <code>z.coerce.number()</code> mengubah string query param menjadi angka, dan <code>.partial()</code> membuat semua field opsional, cocok untuk PATCH. <sup class="cite"><a href="https://zod.dev/api">[12]</a></sup>
+</p>
+<pre><code>import { z } from 'zod';
+
+export const asetCreateSchema = z.object({
+  kode: z.string().regex(/^[A-Z]{3}-\d{3}$/),       // contoh: LTP-001
+  nama: z.string().min(1).max(100),
+  kategoriId: z.number().int().positive(),
+  harga: z.number().nonnegative(),
+  status: z.enum(['TERSEDIA', 'DIPINJAM', 'RUSAK']).default('TERSEDIA'),
+});
+export const asetUpdateSchema = asetCreateSchema.partial();
+
+export const validate = (schema) =&gt; (req, res, next) =&gt; {
+  const result = schema.safeParse(req.body);
+  if (!result.success) throw new HttpError(400, 'Validasi gagal', result.error.issues);
+  req.body = result.data;                 // data yang sudah bersih dan bertipe
+  next();
+};</code></pre>
+
+<h2>6. Layering: route → service → Prisma</h2>
+<div class="flow">
+  <span class="box">Route: HTTP (path, status, validasi)</span><span class="arrow">→</span>
+  <span class="box">Service: aturan bisnis</span><span class="arrow">→</span>
+  <span class="box">Prisma: query database</span>
+</div>
+<ul>
+  <li><strong>Route</strong> hanya tahu HTTP: ambil input, panggil service, pilih status code. Tidak ada query di sini.</li>
+  <li><strong>Service</strong> berisi aturan bisnis ("aset yang sedang dipinjam tidak boleh dihapus") dan tidak tahu <code>req</code>/<code>res</code>, sehingga bisa dipakai ulang dan di-test tanpa HTTP.</li>
+  <li><strong>Prisma</strong> adalah ORM: <code>prisma.aset.findUnique(...)</code> diterjemahkan menjadi SQL berparameter. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/crud">[13]</a></sup></li>
+</ul>
+<pre><code>// aset.routes.js
+export const asetRouter = express.Router();
+asetRouter.get('/:id', async (req, res) =&gt; {
+  res.json(await asetService.detail(Number(req.params.id)));
+});
+asetRouter.post('/', validate(asetCreateSchema), async (req, res) =&gt; {
+  const aset = await asetService.buat(req.body);
+  res.status(201).location(`/aset/${aset.id}`).json(aset);
+});
+
+// aset.service.js
+export async function detail(id) {
+  const aset = await prisma.aset.findUnique({ where: { id }, include: { kategori: true } });
+  if (!aset) throw new HttpError(404, 'Aset tidak ditemukan');
+  return aset;
+}</code></pre>
+<p>
+  Tidak ada <code>try/catch</code> di route: di Express 5 error dari <code>await</code> otomatis diteruskan ke <code>errorHandler</code>.
+  Pelanggaran unique dari database (Prisma error <code>P2002</code>) bisa diterjemahkan ke 409 di service atau di error handler. <sup class="cite"><a href="https://www.prisma.io/docs/orm/v7/reference/error-reference">[14]</a></sup>
+</p>
+
+<p class="note">Latihan: tanpa melihat tabel, sebutkan status code untuk (a) membuat aset dengan kode yang sudah ada, (b) staf biasa menghapus aset, (c) token kedaluwarsa, (d) hapus berhasil. Jawaban: 409, 403, 401, 204.</p>
+
+<p>Berikutnya, lesson 0003: tabel di balik API ini. Bagaimana mendesain skema inventaris aset dan menulis query JOIN, GROUP BY, dan window function?</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Teknis") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-common-method-properties">[1] RFC 9110 §9.2: Common Method Properties</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-201-created">[2] RFC 9110 §15.3.2: 201 Created</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-401-unauthorized">[3] RFC 9110 §15.5.2: 401 Unauthorized</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-403-forbidden">[4] RFC 9110 §15.5.4: 403 Forbidden</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-409-conflict">[5] RFC 9110 §15.5.10: 409 Conflict</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-422-unprocessable-content">[6] RFC 9110 §15.5.21: 422 Unprocessable Content</a> ·
+  <a href="https://expressjs.com/en/guide/using-middleware.html">[7] Express: Using middleware</a> ·
+  <a href="https://expressjs.com/en/guide/routing.html">[8] Express: Routing</a> ·
+  <a href="https://expressjs.com/en/guide/error-handling.html">[9] Express: Error Handling</a> ·
+  <a href="https://expressjs.com/en/guide/migrating-5.html">[10] Express: Migrating to Express 5</a> ·
+  <a href="https://zod.dev/basics">[11] Zod: Basic usage</a> ·
+  <a href="https://zod.dev/api">[12] Zod: Defining schemas</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/prisma-client/queries/crud">[13] Prisma ORM v7: CRUD</a> ·
+  <a href="https://www.prisma.io/docs/orm/v7/reference/error-reference">[14] Prisma ORM v7: Error message reference</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0001-fondasi-web-dan-nextjs.html">← 0001 · Fondasi web dan Next.js</a>
+  <a href="0003-sql-desain-skema-dan-query.html">0003 · SQL: desain skema dan query →</a>
+</nav>
+
+</main>
+</body>
+</html>
