@@ -1,6 +1,6 @@
 # 04: Lesson 0008–0010: coding case dan simulasi interview
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 02, 03
 
 **What to build:** Lesson 0008, 0009, 0010 sesuai `../spec.md`, serta reference `fullstack/reference/soal-coding-tambahan.html` (±8 soal). Baca-saja.
@@ -8,7 +8,7 @@ Blocked by: 02, 03
 - 0010 `0010-simulasi-interview.html`: tiga babak (Fundamental & SQL, CRUD & sole dev, Live coding). Setiap pertanyaan diambil dari JD, disertai contoh jawaban lisan siap baca atau pseudocode, dan menautkan lesson terkait.
 - Tambahkan bagian 0008–0010 di `tests/fullstack/lessons.test.js`.
 
-- [ ] 0008, 0009
-- [ ] 0010
-- [ ] `reference/soal-coding-tambahan.html`
-- [ ] Test hijau
+- [x] 0008, 0009
+- [x] 0010
+- [x] `reference/soal-coding-tambahan.html`
+- [x] Test hijau

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0010 · Simulasi interview tiga babak</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0010 · Fullstack · ±30 menit</div>
+  <h1>Simulasi interview tiga babak</h1>
+  <p class="subtitle">Pertanyaan yang paling mungkin muncul dari JD posisi Fullstack Web Developer aplikasi internal, dikelompokkan dalam tiga babak, masing-masing dengan contoh jawaban lisan siap baca atau pseudocode dan tautan ke lesson yang membahasnya</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjawab setiap pertanyaan di bawah dengan suara keras dalam 30–60 detik tanpa membaca,
+  menulis pseudocode babak live coding dalam ±10 menit per soal sambil menjelaskan langkahnya,
+  dan tahu lesson mana yang harus dibaca ulang bila sebuah jawaban masih tersendat.
+</div>
+
+<h2>Cara memakai simulasi ini</h2>
+<div class="flow">
+  <span class="box">Baca pertanyaan</span><span class="arrow">→</span>
+  <span class="box">Tutup jawaban, jawab keras-keras</span><span class="arrow">→</span>
+  <span class="box">Bandingkan dengan contoh</span><span class="arrow">→</span>
+  <span class="box">Tersendat? Baca ulang lesson terkait</span>
+</div>
+<p>
+  Setiap pertanyaan diberi label asal JD-nya, karena interviewer biasanya menurunkan pertanyaan langsung dari kalimat di JD.
+  Contoh jawaban ditulis untuk diucapkan: kalimat pendek, satu contoh konkret dari aplikasi inventaris aset, lalu berhenti.
+  Jangan menghafal kata per kata; hafalkan urutan poinnya. Untuk latihan tambahan, pakai dua reference: <a href="../reference/pertanyaan-sql.html">±30 pertanyaan SQL</a> dan <a href="../reference/soal-coding-tambahan.html">soal coding tambahan</a>.
+</p>
+<table>
+  <thead><tr><th>Babak</th><th>Isi</th><th>Waktu latihan</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Fundamental web, API, dan SQL</td><td>±10 menit</td></tr>
+    <tr><td>2</td><td>CRUD end-to-end, sole developer, dan peran IT</td><td>±10 menit</td></tr>
+    <tr><td>3</td><td>Live coding dengan pseudocode</td><td>±10 menit (satu soal penuh, sisanya cukup ide dan pseudocode)</td></tr>
+  </tbody>
+</table>
+
+<h2>Babak 1: Fundamental &amp; SQL</h2>
+<dl>
+  <dt>1. Apa beda Server Component dan Client Component di Next.js App Router? <em>(JD: konsep front-end modern)</em></dt>
+  <dd>"Di App Router, komponen secara default adalah Server Component: dirender di server, bisa langsung mengambil data, dan kodenya tidak dikirim ke browser. Client Component ditandai <code>'use client'</code> dan dipakai bila butuh state, event handler seperti <code>onClick</code>, atau API browser. Di aplikasi inventaris, halaman daftar aset saya buat Server Component yang memanggil API, sedangkan kotak pencarian dan tombol konfirmasi hapus jadi Client Component kecil. Prinsipnya, dorong batas <code>'use client'</code> sejauh mungkin ke daun supaya JavaScript di browser sedikit." Lihat <a href="0001-fondasi-web-dan-nextjs.html">0001</a>.</dd>
+
+  <dt>2. Jelaskan event delegation dan closure dengan contoh. <em>(JD: HTML, CSS, JavaScript)</em></dt>
+  <dd>"Event dari elemen anak menggelembung (bubbling) ke induknya, jadi daripada memasang listener di setiap baris tabel aset, saya pasang satu listener di <code>&lt;tbody&gt;</code> dan memeriksa <code>event.target.closest('button')</code>. Itu event delegation: lebih hemat dan tetap jalan untuk baris yang ditambahkan belakangan. Closure adalah fungsi yang tetap mengingat variabel dari scope tempat ia dibuat, misalnya fungsi debounce untuk kotak pencarian yang menyimpan timer-nya sendiri di antara pemanggilan." Lihat <a href="0001-fondasi-web-dan-nextjs.html">0001</a>.</dd>
+
+  <dt>3. Bagaimana Anda mendesain REST API untuk aset, dan status code apa yang dipakai? <em>(JD: REST API, back-end)</em></dt>
+  <dd>"Resource-nya kata benda jamak: <code>GET /aset</code> untuk daftar dengan pagination dan filter, <code>GET /aset/:id</code>, <code>POST /aset</code>, <code>PATCH /aset/:id</code>, dan <code>DELETE /aset/:id</code>. Status code mengikuti RFC 9110: 201 untuk create, 204 untuk delete tanpa body, 400 atau 422 untuk validasi gagal, 401 bila belum login, 403 bila role tidak boleh, 404 bila tidak ada, dan 409 bila kode aset duplikat. Di Express 5 saya pisahkan route, service, dan Prisma, validasi dengan Zod, dan satu error handler terpusat supaya format error konsisten." Lihat <a href="0002-express-dan-rest-api.html">0002</a>.</dd>
+
+  <dt>4. Jelaskan normalisasi dan rancang tabel untuk inventaris aset. <em>(JD: desain database dasar)</em></dt>
+  <dd>"Normalisasi memastikan setiap fakta disimpan sekali. 1NF: nilai atomik, tanpa daftar dalam satu sel. 2NF: kolom bergantung pada seluruh key. 3NF: tidak ada kolom yang bergantung pada kolom non-key lain. Untuk inventaris saya buat empat tabel: <code>kategori</code>, <code>karyawan</code>, <code>aset</code> dengan foreign key ke kategori dan kode unik, serta <code>peminjaman</code> sebagai tabel penghubung N-N antara aset dan karyawan yang menyimpan tanggal pinjam dan kembali. Constraint CHECK menjaga misalnya tanggal kembali tidak sebelum tanggal pinjam." Lihat <a href="0003-sql-desain-skema-dan-query.html">0003</a>.</dd>
+
+  <dt>5. Tulis query: jumlah aset per kategori, hanya kategori dengan lebih dari 5 aset. <em>(JD: MySQL/PostgreSQL)</em></dt>
+  <dd>
+<pre><code>SELECT k.nama, COUNT(a.id) AS jumlah
+FROM kategori k
+JOIN aset a ON a.kategori_id = k.id
+WHERE a.deleted_at IS NULL
+GROUP BY k.id, k.nama
+HAVING COUNT(a.id) &gt; 5
+ORDER BY jumlah DESC;</code></pre>
+  "WHERE menyaring baris sebelum dikelompokkan, HAVING menyaring hasil kelompok. Bila kategori tanpa aset juga harus muncul dengan nol, saya ganti menjadi LEFT JOIN dan memindahkan syarat <code>deleted_at</code> ke klausa ON." Lihat <a href="0003-sql-desain-skema-dan-query.html">0003</a> dan <a href="../reference/pertanyaan-sql.html">reference SQL</a>.</dd>
+
+  <dt>6. Query daftar peminjaman lambat. Apa yang Anda lakukan? <em>(JD: memonitor performa sistem)</em></dt>
+  <dd>"Saya ukur dulu, bukan menebak: jalankan <code>EXPLAIN ANALYZE</code> pada query-nya dan lihat apakah ada sequential scan di tabel besar atau estimasi baris yang jauh meleset. Bila filter-nya <code>WHERE karyawan_id = ? ORDER BY tanggal_pinjam DESC</code>, saya buat composite index dengan urutan kolom yang sama. Di level aplikasi saya cek N+1, yaitu query di dalam loop, dan menggantinya dengan <code>include</code> Prisma atau satu query <code>IN</code>. Untuk halaman yang dalam, pagination keyset lebih stabil daripada OFFSET besar. Setelah itu saya ukur lagi dan mencatatnya di maintenance record." Lihat <a href="0004-sql-index-transaksi-performa.html">0004</a>.</dd>
+
+  <dt>7. Kapan Anda memakai transaksi, dan apa itu isolation level? <em>(JD: integrasi database)</em></dt>
+  <dd>"Transaksi dipakai bila beberapa perubahan harus berhasil atau gagal bersama, misalnya mencatat peminjaman sekaligus mengubah status aset menjadi dipinjam; di Prisma lewat <code>$transaction</code>. ACID menjamin atomik, konsisten, terisolasi, dan tahan lama. Isolation level mengatur seberapa banyak transaksi lain terlihat: default PostgreSQL READ COMMITTED, default InnoDB MySQL REPEATABLE READ. Untuk mencegah satu aset dipinjam dua orang sekaligus, saya andalkan constraint di database atau penguncian baris, bukan hanya pengecekan di aplikasi." Lihat <a href="0004-sql-index-transaksi-performa.html">0004</a>.</dd>
+</dl>
+
+<h2>Babak 2: CRUD &amp; sole dev</h2>
+<dl>
+  <dt>1. Jelaskan langkah membuat fitur CRUD dari frontend sampai backend. <em>(JD: membangun aplikasi web front-end, back-end, integrasi database, API)</em></dt>
+  <dd>"Saya mulai dari kebutuhan dan aturan bisnis, lalu skema Prisma dan <code>prisma migrate dev</code> sehingga file migrasi ikut di-commit. Kedua, endpoint Express untuk list dengan pagination dan filter, detail, create, update, dan soft delete, dengan validasi Zod dan error handler terpusat. Ketiga, halaman Next.js: daftar sebagai Server Component dengan loading state, form dengan Server Action yang memanggil API lalu revalidate. Keamanan dipasang di sepanjang jalan: session dengan cookie httpOnly, RBAC dicek di server, query berparameter untuk mencegah SQL injection. Terakhir integration test dengan supertest, lalu deploy dan catat di changelog." Versi lengkap ±3 menit ada di <a href="0005-crud-end-to-end.html">0005</a>.</dd>
+
+  <dt>2. Kenapa Server Action tidak langsung mengakses database, tapi memanggil API Express? <em>(JD: back-end, server-side logic)</em></dt>
+  <dd>"Karena aturan bisnis dan validasi cukup ada di satu tempat, yaitu service di Express, dan API yang sama bisa dipakai klien lain seperti aplikasi mobile atau integrasi dengan sistem kantor lain. Server Action tetap endpoint POST publik, jadi di dalamnya saya tetap cek session dan validasi input, lalu meneruskan cookie ke API. Kalau aplikasinya kecil dan hanya punya satu klien, akses langsung lewat Prisma dari Server Action juga sah; saya akan menyebut trade-off itu." Lihat <a href="0001-fondasi-web-dan-nextjs.html">0001</a> dan <a href="0005-crud-end-to-end.html">0005</a>.</dd>
+
+  <dt>3. Bagaimana Anda mengamankan aplikasi internal dari XSS, CSRF, dan SQL injection? <em>(JD: troubleshooting dan maintenance sistem)</em></dt>
+  <dd>"XSS: React meng-escape output secara default, jadi saya hindari <code>dangerouslySetInnerHTML</code>, dan cookie session bertanda httpOnly supaya tidak bisa dibaca script. CSRF: cookie SameSite, dan Server Action hanya menerima POST dengan pengecekan Origin; untuk API yang dipanggil browser saya pakai token CSRF atau header khusus. SQL injection: Prisma memakai query berparameter, dan bila terpaksa raw SQL saya pakai tagged template yang juga berparameter, tidak pernah menyambung string. Terakhir, otorisasi dicek di server per role, bukan hanya menyembunyikan tombol." Lihat <a href="0005-crud-end-to-end.html">0005</a>.</dd>
+
+  <dt>4. Anda satu-satunya developer. Bagaimana Anda bekerja dari permintaan user sampai aplikasi berjalan? <em>(JD: bekerja dengan tim operasional dan administrasi untuk menerjemahkan kebutuhan bisnis)</em></dt>
+  <dd>"Saya mulai dengan mengamati proses user dan mengumpulkan contoh data nyata, lalu menyepakati MVP tertulis: apa yang masuk versi pertama dan apa yang ditunda. Stack saya pilih yang bisa saya rawat sendiri. Aturan bisnis penting saya lindungi dengan test, rilis dulu ke staging untuk UAT, lalu deploy dengan langkah yang terdokumentasi. Setelah live, saya pasang backup terjadwal yang diuji restore, monitoring, dan jadwal preventive maintenance. Semuanya dicatat: dokumentasi teknis, SOP, dan maintenance record, supaya orang lain bisa melanjutkan bila saya tidak ada." Lihat <a href="0006-sole-developer-aplikasi-internal.html">0006</a>.</dd>
+
+  <dt>5. Ceritakan proyek yang Anda banggakan (STAR). <em>(JD: membangun dan merawat sistem internal)</em></dt>
+  <dd>"Situation: kantor dengan sekitar 850 aset mencatat semuanya di Excel bersama, dan stock opname memakan 5 hari kerja dengan 37 aset tidak jelas lokasinya. Task: sebagai satu-satunya developer, saya diminta membuat aplikasi inventaris dalam sekitar 2 bulan, termasuk migrasi data. Action: saya menyepakati MVP, memilih Next.js, Express, dan PostgreSQL, membersihkan 140 baris data ganda saat import, menulis unit test untuk aturan peminjaman, menjalankan UAT, lalu menyiapkan backup 3-2-1 dan tiga SOP. Result: stock opname turun dari 5 hari menjadi 2 hari dan aset yang tidak jelas lokasinya dari 37 menjadi 4." Versi lengkap ada di <a href="0006-sole-developer-aplikasi-internal.html">0006</a>.</dd>
+
+  <dt>6. Apa isi dokumentasi teknis, SOP, dan maintenance record Anda? <em>(JD: menyiapkan dokumentasi teknis, prosedur sistem, dan maintenance record)</em></dt>
+  <dd>"Dokumentasi teknis menjelaskan arsitektur, cara menjalankan aplikasi secara lokal, variabel environment, dan skema data. SOP adalah langkah bernomor untuk tugas berulang yang bisa dijalankan orang lain, misalnya rilis versi baru, restore backup, dan membuat atau menonaktifkan akun. Maintenance record mencatat setiap tindakan: tanggal, apa yang dikerjakan, alasannya, hasilnya, dan tindak lanjut, misalnya uji restore bulanan atau update dependency. Ketiganya disimpan di repo atau wiki internal, bukan di kepala saya." Lihat <a href="0006-sole-developer-aplikasi-internal.html">0006</a>.</dd>
+
+  <dt>7. Seorang user tidak bisa membuka aplikasi internal. Bagaimana Anda menanganinya? <em>(JD: perawatan jaringan dan perangkat user)</em></dt>
+  <dd>"Pertama saya tentukan cakupannya: hanya dia atau semua orang. Kalau semua, saya cek server aplikasi, health check, dan log. Kalau hanya dia, saya cek dari sisi perangkat: koneksi jaringan, <code>ipconfig</code> untuk melihat apakah ia dapat IP dari DHCP, <code>ping</code> ke gateway dan ke server, lalu <code>nslookup</code> nama aplikasinya untuk memastikan DNS benar. Setelah itu baru browser: cache, cookie session, atau akun yang terkunci. Penyebab dan solusinya saya catat supaya kasus serupa lebih cepat." Lihat <a href="0007-peran-it-di-luar-development.html">0007</a>.</dd>
+
+  <dt>8. Bagaimana kemampuan multimedia Anda? <em>(JD: multimedia dasar)</em></dt>
+  <dd>"Saya jujur tentang levelnya: saya bisa mengerjakan kebutuhan kantor sehari-hari seperti mengedit foto, membuat poster atau banner sederhana, dan memotong video pendek, dengan memperhatikan resolusi, aspect ratio, dan kompresi sesuai kanalnya. Saya tidak memposisikan diri sebagai desainer grafis. Saya membawa portofolio berisi beberapa karya dengan konteks singkat, dan untuk kebutuhan yang di atas kemampuan saya, saya usulkan template atau vendor." Lihat <a href="0007-peran-it-di-luar-development.html">0007</a>.</dd>
+</dl>
+
+<h2>Babak 3: Live coding</h2>
+<p>Di babak ini jawaban utamanya pseudocode. Ucapkan urutan tujuh langkah: soal, pertanyaan klarifikasi, ide, pseudocode, implementasi, kompleksitas, edge case. Implementasi JavaScript lengkap dan penjelasannya ada di lesson yang ditautkan.</p>
+<dl>
+  <dt>1. Cek apakah integer adalah palindrome tanpa mengubahnya menjadi string. <em>(JD: JavaScript, server-side logic)</em></dt>
+  <dd>
+  Klarifikasi: angka negatif dianggap bukan palindrome? Ide: balik separuh angka dengan <code>mod 10</code> dan pembagian integer, lalu bandingkan dengan separuh sisanya; teknik separuh ini juga mencegah overflow.
+<pre><code>fungsi isPalindrome(x):
+    jika x &lt; 0 atau (x mod 10 = 0 dan x ≠ 0): kembalikan false
+    rev ← 0
+    selama x &gt; rev:
+        rev ← rev × 10 + (x mod 10)
+        x ← x div 10
+    kembalikan x = rev atau x = rev div 10</code></pre>
+  Kompleksitas <code>O(log n)</code> waktu, <code>O(1)</code> ruang. Edge case: negatif, berakhiran 0 (mis. 10), 0 sendiri, satu digit. Lihat <a href="0008-coding-angka-dan-string.html">0008</a>.</dd>
+
+  <dt>2. Cek apakah string kurung <code>()[]{}</code> valid. <em>(JD: JavaScript)</em></dt>
+  <dd>
+  Ide: kurung yang terakhir dibuka harus pertama ditutup, jadi pakai stack.
+<pre><code>fungsi isValid(s):
+    pasangan ← { ")": "(", "]": "[", "}": "{" }
+    stack ← kosong
+    untuk setiap c di s:
+        jika c kurung buka: push c
+        selain itu jika stack kosong atau pop() ≠ pasangan[c]: kembalikan false
+    kembalikan stack kosong</code></pre>
+  <code>O(n)</code> waktu dan ruang. Edge case: string kosong (valid), kurung tutup di awal, kurung buka tersisa, susunan silang <code>([)]</code>. Lihat <a href="0008-coding-angka-dan-string.html">0008</a>.</dd>
+
+  <dt>3. Cari dua index yang nilainya berjumlah target. <em>(JD: server-side logic)</em></dt>
+  <dd>
+  Klarifikasi: array terurut? Bila tidak, pakai hash map; bila terurut dan memori harus <code>O(1)</code>, pakai two pointers.
+<pre><code>fungsi twoSum(nums, target):
+    dilihat ← map kosong              // nilai → index
+    untuk i dari 0 sampai n − 1:
+        butuh ← target − nums[i]
+        jika butuh ada di dilihat: kembalikan [dilihat[butuh], i]
+        dilihat[nums[i]] ← i
+    kembalikan []</code></pre>
+  <code>O(n)</code> waktu, <code>O(n)</code> ruang, dibanding brute force <code>O(n²)</code>. Edge case: nilai kembar <code>[3, 3]</code>, tidak ada pasangan, angka negatif. Lihat <a href="0009-coding-array-dan-pencarian.html">0009</a>.</dd>
+
+  <dt>4. Panjang substring terpanjang tanpa karakter berulang. <em>(JD: JavaScript)</em></dt>
+  <dd>
+  Ide: sliding window <code>[kiri, i]</code> yang selalu bebas duplikat, dengan map index terakhir setiap karakter.
+<pre><code>fungsi terpanjang(s):
+    terakhir ← map kosong;  kiri ← 0;  terbaik ← 0
+    untuk i dari 0 sampai n − 1:
+        jika s[i] ada di terakhir dan terakhir[s[i]] ≥ kiri:
+            kiri ← terakhir[s[i]] + 1
+        terakhir[s[i]] ← i
+        terbaik ← maks(terbaik, i − kiri + 1)
+    kembalikan terbaik</code></pre>
+  <code>O(n)</code> waktu. Edge case: string kosong, semua karakter sama, <code>"abba"</code> (kemunculan lama di luar jendela). Lihat <a href="0009-coding-array-dan-pencarian.html">0009</a>.</dd>
+
+  <dt>5. Cari sebuah nilai di daftar ID aset yang sudah terurut. <em>(JD: server-side logic, performa sistem)</em></dt>
+  <dd>
+  Ide: binary search, buang separuh ruang pencarian setiap perbandingan.
+<pre><code>fungsi binarySearch(nums, target):
+    lo ← 0;  hi ← n − 1
+    selama lo ≤ hi:
+        mid ← lo + (hi − lo) div 2
+        jika nums[mid] = target: kembalikan mid
+        jika nums[mid] &lt; target: lo ← mid + 1
+        selain itu: hi ← mid − 1
+    kembalikan −1</code></pre>
+  <code>O(log n)</code> waktu. Edge case: array kosong, target di ujung, overflow <code>(lo + hi) / 2</code> di bahasa 32-bit. "Di database, index B-tree memberi efek yang sama untuk kolom yang sering dicari." Lihat <a href="0009-coding-array-dan-pencarian.html">0009</a> dan <a href="0004-sql-index-transaksi-performa.html">0004</a>.</dd>
+</dl>
+
+<h2>Penutup: pertanyaan balik untuk interviewer</h2>
+<p>Di akhir interview biasanya ada kesempatan bertanya. Pertanyaan yang menunjukkan Anda sudah memikirkan pekerjaannya:</p>
+<ul>
+  <li>"Sistem internal apa saja yang sekarang berjalan, dan mana yang paling sering bermasalah?"</li>
+  <li>"Bagaimana pembagian waktu yang diharapkan antara development dan support IT?"</li>
+  <li>"Apakah sudah ada dokumentasi, backup, dan server staging, atau itu bagian dari yang perlu saya bangun?"</li>
+  <li>"Siapa yang biasanya menyampaikan kebutuhan aplikasi, dan bagaimana prioritasnya diputuskan?"</li>
+</ul>
+<p>Setelah simulasi ini, ulangi babak yang paling tersendat setelah beberapa hari, lalu baca ulang <a href="../reference/pertanyaan-sql.html">reference SQL</a> dan <a href="../reference/soal-coding-tambahan.html">soal coding tambahan</a>. Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a>.</p>
+
+<nav class="lesson-nav">
+  <a href="0009-coding-array-dan-pencarian.html">← 0009 · Coding: array dan pencarian</a>
+  <a href="../index.html">Indeks lesson</a>
+</nav>
+
+</main>
+</body>
+</html>

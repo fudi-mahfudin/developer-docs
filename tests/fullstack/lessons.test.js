@@ -260,3 +260,30 @@ test("reference soal-coding-tambahan: ±8 extra soal in the same 7-step format",
     .forEach(link => assert.ok(html.includes(link), `reference: belum menautkan ${link}`));
   assertCitesNumbered(html, "reference/soal-coding-tambahan");
 });
+
+test("fullstack 0010: three interview rounds of JD-based questions with visible answers linked to lessons", () => {
+  fs_.assertListedAsTersedia({ "0010": { file: "0010-simulasi-interview.html" } });
+  const html = fs_.readLesson("0010");
+  assert.equal((html.match(/<div class="win">/g) || []).length, 1, "0010: harus tepat satu target");
+  const BABAK = [/Babak 1: Fundamental &amp; SQL/, /Babak 2: CRUD &amp; sole dev/, /Babak 3: Live coding/];
+  const heads = [...html.matchAll(/<h2>([^<]*)<\/h2>/g)].map(m => m[1]).filter(h => h.startsWith("Babak"));
+  assert.equal(heads.length, 3, "0010: tepat tiga babak");
+  BABAK.forEach((re, i) => assert.match(heads[i], re, `0010: babak ${i + 1}`));
+  heads.forEach(h => {
+    const body = (html.split(`<h2>${h}</h2>`)[1] || "").split("<h2>")[0];
+    const dts = [...body.matchAll(/<dt>([\s\S]*?)<\/dt>/g)].map(m => m[1]);
+    const dds = [...body.matchAll(/<dd>([\s\S]*?)<\/dd>/g)].map(m => m[1]);
+    assert.ok(dts.length >= 4, `${h}: butuh >= 4 pertanyaan`);
+    assert.equal(dts.length, dds.length, `${h}: setiap pertanyaan punya jawaban`);
+    dts.forEach(q => assert.match(q, /JD:/, `${h}: pertanyaan harus menyebut asal JD: ${q}`));
+    dds.forEach((a, i) => assert.match(a, /href="000\d-[\w-]+\.html"/, `${h}: jawaban ${i + 1} belum menautkan lesson terkait`));
+  });
+  const live = (html.split(`<h2>${heads[2]}</h2>`)[1] || "").split("<h2>")[0];
+  assert.match(live, /<pre><code>fungsi /, "Babak 3: jawaban berupa pseudocode");
+  for (let n = 1; n <= 9; n++) {
+    const num = String(n).padStart(4, "0");
+    assert.match(html, new RegExp(`href="${num}-[\\w-]+\\.html"`), `0010 belum menautkan lesson ${num}`);
+  }
+  ["../reference/pertanyaan-sql.html", "../reference/soal-coding-tambahan.html", "../index.html"]
+    .forEach(link => assert.ok(html.includes(`href="${link}"`), `0010 belum menautkan ${link}`));
+});

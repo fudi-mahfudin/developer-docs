@@ -87,4 +87,42 @@ Prinsip bahwa setiap user hanya diberi hak akses minimum yang dibutuhkan untuk t
 
 ## Coding dan simulasi
 
-(Diisi oleh lesson 0008–0010.)
+**Format tujuh langkah** (0008, 0009):
+Urutan menjawab soal coding di track ini: soal → pertanyaan klarifikasi → ide → pseudocode → implementasi JavaScript → kompleksitas → edge case. Pseudocode adalah jawaban utama.
+
+**Pseudocode**:
+Langkah algoritma dalam bahasa campuran yang tidak terikat sintaks bahasa pemrograman; di track ini memakai `←` untuk assignment, `mod` dan `div` untuk sisa dan pembagian integer.
+
+**Big-O (kompleksitas waktu/ruang)**:
+Cara menyatakan bagaimana waktu atau memori tambahan tumbuh terhadap ukuran input n, mis. `O(1)`, `O(log n)`, `O(n)`, `O(n²)`.
+
+**Edge case**:
+Input di batas atau di luar kebiasaan (kosong, satu elemen, negatif, duplikat, overflow) yang harus disebut sebelum ditanya interviewer.
+
+**Overflow**:
+Hasil hitungan melewati batas tipe angka, mis. integer 32-bit bertanda [−2^31, 2^31 − 1]. Di JavaScript, integer `number` eksak sampai `Number.MAX_SAFE_INTEGER` (2^53 − 1).
+
+**Membalik separuh angka** (0008):
+Teknik palindrome integer tanpa string: balik digit dari belakang sampai angka terbalik ≥ sisa angka, lalu bandingkan kedua separuh. Tidak bisa overflow.
+
+**Hash map** (0008, 0009):
+Struktur key-value dengan akses rata-rata `O(1)`; di JavaScript `Map`. Dipakai untuk frequency count dan "sudah pernah dilihat?" (two sum).
+
+**Stack**:
+Struktur LIFO (last in, first out); di JavaScript array dengan `push`/`pop`. Dipakai untuk valid parentheses.
+
+**Two pointers** (0009):
+Dua index yang bergerak di array (biasanya terurut) untuk mengganti loop bersarang `O(n²)` menjadi `O(n)`.
+
+**Sliding window** (0009):
+Rentang `[kiri, kanan]` yang digeser maju untuk mencari substring/subarray terpanjang atau terpendek yang memenuhi syarat dalam `O(n)`.
+
+**Binary search** (0009):
+Pencarian di data terurut dengan membuang separuh ruang pencarian setiap perbandingan, `O(log n)`.
+_Avoid_: "binary search" untuk data yang belum terurut
+
+**Kadane** (reference soal coding tambahan):
+Algoritma `O(n)` untuk jumlah subarray bersebelahan terbesar: pada setiap posisi, pilih mulai baru atau melanjutkan subarray sebelumnya.
+
+**Simulasi interview tiga babak** (0010):
+Latihan tanya-jawab yang dibaca langsung: Babak 1 Fundamental & SQL, Babak 2 CRUD & sole dev, Babak 3 Live coding. Setiap pertanyaan diberi label asal JD dan tautan ke lesson terkait.
