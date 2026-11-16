@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0009 · Coding: array dan pencarian</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0009 · Fullstack · ±30 menit</div>
+  <h1>Coding: array dan pencarian</h1>
+  <p class="subtitle">Empat pola array yang paling sering keluar di live coding level easy–medium: hash map (two sum), two pointers, sliding window, dan binary search. Format tujuh langkah yang sama dengan Lesson 0008</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa mengenali pola dari kalimat soal ("pasangan yang jumlahnya", "array terurut", "substring terpanjang", "cari di data terurut"),
+  menulis pseudocode dan JavaScript-nya, menjelaskan kenapa solusi brute force <code>O(n²)</code> bisa diturunkan menjadi <code>O(n)</code> atau <code>O(log n)</code>,
+  dan menyebut edge case-nya sendiri.
+</div>
+
+<h2>Mengenali pola dari kalimat soal</h2>
+<table>
+  <thead><tr><th>Petunjuk di soal</th><th>Pola</th><th>Biaya yang diturunkan</th></tr></thead>
+  <tbody>
+    <tr><td>"cari dua elemen yang jumlahnya target", array <em>tidak</em> terurut</td><td>Hash map: simpan yang sudah dilihat</td><td><code>O(n²)</code> → <code>O(n)</code> waktu, bayar <code>O(n)</code> memori</td></tr>
+    <tr><td>Array <em>terurut</em>, pasangan atau hapus duplikat in-place</td><td>Two pointers</td><td><code>O(n²)</code> → <code>O(n)</code>, memori <code>O(1)</code></td></tr>
+    <tr><td>"substring/subarray terpanjang/terpendek yang memenuhi syarat"</td><td>Sliding window</td><td><code>O(n²)</code> atau lebih → <code>O(n)</code></td></tr>
+    <tr><td>"cari nilai di data terurut", "posisi pertama yang memenuhi"</td><td>Binary search</td><td><code>O(n)</code> → <code>O(log n)</code></td></tr>
+  </tbody>
+</table>
+<p>Urutan menjawab sama dengan 0008: soal → pertanyaan klarifikasi → ide → pseudocode → implementasi JavaScript → kompleksitas → edge case. Sebutkan solusi brute force lebih dulu dalam satu kalimat, lalu tingkatkan.</p>
+
+<h2>Soal 1: Two sum (hash map)</h2>
+
+<h3>Soal</h3>
+<p>Diberikan array integer <code>nums</code> dan integer <code>target</code>, kembalikan index dua elemen berbeda yang jumlahnya sama dengan <code>target</code>. Contoh: <code>nums = [2, 7, 11, 15]</code>, <code>target = 9</code> → <code>[0, 1]</code>.</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Apakah selalu ada tepat satu jawaban? Bila tidak ada, kembalikan apa: <code>[]</code>, <code>null</code>, atau error?</li>
+  <li>Boleh memakai elemen yang sama dua kali? (Biasanya tidak; tapi dua elemen bernilai sama di index berbeda boleh.)</li>
+  <li>Yang diminta index atau nilainya? Apakah array terurut?</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Brute force: coba semua pasangan, <code>O(n²)</code>. Lebih baik: untuk setiap elemen, pasangan yang dibutuhkan adalah <code>target − nums[i]</code>.
+  Simpan setiap nilai yang sudah dilewati di <strong>hash map</strong> (nilai → index), sehingga pertanyaan "apakah pasangannya sudah pernah muncul?" dijawab dalam waktu rata-rata konstan.
+  <code>Map</code> JavaScript wajib diimplementasikan dengan hash table atau mekanisme lain yang waktu aksesnya rata-rata sublinear. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">[1]</a></sup>
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>fungsi twoSum(nums, target):
+    dilihat ← map kosong              // nilai → index
+    untuk i dari 0 sampai n − 1:
+        butuh ← target − nums[i]
+        jika butuh ada di dilihat: kembalikan [dilihat[butuh], i]
+        dilihat[nums[i]] ← i
+    kembalikan []</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>function twoSum(nums, target) {
+  const seen = new Map();             // nilai -&gt; index
+  for (let i = 0; i &lt; nums.length; i++) {
+    const need = target - nums[i];
+    if (seen.has(need)) return [seen.get(need), i];
+    seen.set(nums[i], i);
+  }
+  return [];
+}</code></pre>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>: satu kali lewat, setiap operasi map rata-rata <code>O(1)</code>. Ruang <code>O(n)</code> untuk map. Ini pertukaran klasik: memori ditukar dengan waktu.</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>Nilai kembar</strong> (<code>[3, 3]</code>, target 6): benar karena pengecekan dilakukan <em>sebelum</em> nilai saat ini dimasukkan ke map, jadi elemen tidak berpasangan dengan dirinya sendiri.</li>
+  <li><strong>Tidak ada pasangan</strong> atau array kosong / satu elemen: kembalikan <code>[]</code> (sesuai jawaban klarifikasi).</li>
+  <li><strong>Angka negatif dan nol</strong>: tidak butuh penanganan khusus; <code>[-1, -2, -3, -4, -5]</code>, target −8 → <code>[2, 4]</code>.</li>
+  <li><strong>Hasil penjumlahan besar</strong>: di JavaScript aman sampai 2<sup>53</sup> − 1; di bahasa 32-bit sebutkan kemungkinan overflow.</li>
+</ul>
+
+<h2>Soal 2: Two pointers pada array terurut</h2>
+
+<h3>Soal</h3>
+<p>Diberikan array integer <code>nums</code> yang sudah <strong>terurut naik</strong> dan <code>target</code>, kembalikan index dua elemen yang jumlahnya <code>target</code>, dengan memori tambahan <code>O(1)</code>. Contoh: <code>[2, 7, 11, 15]</code>, target 9 → <code>[0, 1]</code>.</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Urutannya naik atau turun? Ada duplikat?</li>
+  <li>Index mulai dari 0 atau 1? (Beberapa versi soal memakai index berbasis 1.)</li>
+  <li>Bila ada beberapa pasangan, cukup satu?</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Karena array terurut, letakkan satu pointer di ujung kiri (nilai terkecil) dan satu di ujung kanan (nilai terbesar).
+  Bila jumlahnya terlalu kecil, satu-satunya cara memperbesarnya adalah menggeser pointer kiri ke kanan; bila terlalu besar, geser pointer kanan ke kiri.
+  Setiap langkah membuang satu kandidat yang pasti tidak mungkin menjadi jawaban, jadi semua pasangan yang relevan tetap terperiksa tanpa hash map.
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>fungsi pairSorted(nums, target):
+    kiri ← 0;  kanan ← n − 1
+    selama kiri &lt; kanan:
+        jumlah ← nums[kiri] + nums[kanan]
+        jika jumlah = target: kembalikan [kiri, kanan]
+        jika jumlah &lt; target: kiri ← kiri + 1
+        selain itu: kanan ← kanan − 1
+    kembalikan []</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>function pairSorted(nums, target) {
+  let lo = 0, hi = nums.length - 1;
+  while (lo &lt; hi) {
+    const sum = nums[lo] + nums[hi];
+    if (sum === target) return [lo, hi];
+    if (sum &lt; target) lo++;
+    else hi--;
+  }
+  return [];
+}</code></pre>
+<p>Variasi yang sering ditanyakan dengan pola yang sama: <strong>hapus duplikat</strong> dari array terurut secara in-place dan kembalikan jumlah elemen unik. Pointer <code>k</code> menunjuk posisi tulis berikutnya, pointer <code>i</code> membaca.</p>
+<pre><code>function removeDuplicates(nums) {
+  if (nums.length === 0) return 0;
+  let k = 1;                           // nums[0..k-1] sudah unik
+  for (let i = 1; i &lt; nums.length; i++) {
+    if (nums[i] !== nums[k - 1]) nums[k++] = nums[i];
+  }
+  return k;                            // [0,0,1,1,2] -&gt; 3, isi awal [0,1,2]
+}</code></pre>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>: setiap langkah menggeser salah satu pointer, paling banyak n − 1 langkah. Ruang <code>O(1)</code>. Sama untuk <code>removeDuplicates</code>.</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>Array kosong atau satu elemen</strong>: loop tidak berjalan, kembalikan <code>[]</code> (atau <code>0</code>/<code>1</code> untuk hapus duplikat).</li>
+  <li><strong>Tidak ada pasangan</strong>: pointer bertemu, kembalikan <code>[]</code>.</li>
+  <li><strong>Nilai kembar</strong> (<code>[3, 3]</code>, target 6): <code>lo &lt; hi</code> menjamin dua index berbeda.</li>
+  <li><strong>Array tidak terurut</strong>: pola ini salah. Mengurutkan dulu (<code>O(n log n)</code>) mengubah index asli, jadi untuk soal "kembalikan index" pada array tidak terurut pakai hash map dari Soal 1.</li>
+</ul>
+
+<h2>Soal 3: Sliding window, substring terpanjang tanpa karakter berulang</h2>
+
+<h3>Soal</h3>
+<p>Diberikan string <code>s</code>, kembalikan panjang substring terpanjang yang tidak memuat karakter berulang. Contoh: <code>"abcabcbb"</code> → <code>3</code> (<code>"abc"</code>), <code>"bbbbb"</code> → <code>1</code>, <code>"pwwkew"</code> → <code>3</code> (<code>"wke"</code>).</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Substring (harus bersebelahan) atau subsequence (boleh melompat)? Soal ini substring.</li>
+  <li>Karakter apa saja yang mungkin: huruf kecil saja, ASCII, atau Unicode? Spasi ikut dihitung?</li>
+  <li>Yang diminta panjangnya saja atau substring-nya juga?</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Brute force memeriksa semua substring, <code>O(n²)</code> atau lebih. Sliding window menjaga satu <em>jendela</em> <code>[kiri, i]</code> yang selalu bebas karakter berulang.
+  Ujung kanan maju satu karakter setiap langkah. Bila karakter baru sudah pernah muncul <em>di dalam jendela</em>, ujung kiri melompat ke satu posisi setelah kemunculan terakhirnya.
+  Map menyimpan index terakhir setiap karakter, sehingga lompatan itu <code>O(1)</code>. Panjang terbaik dicatat setiap langkah.
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>fungsi lengthOfLongestSubstring(s):
+    terakhir ← map kosong            // karakter → index terakhir
+    kiri ← 0;  terbaik ← 0
+    untuk i dari 0 sampai n − 1:
+        c ← s[i]
+        jika c ada di terakhir dan terakhir[c] ≥ kiri:
+            kiri ← terakhir[c] + 1
+        terakhir[c] ← i
+        terbaik ← maks(terbaik, i − kiri + 1)
+    kembalikan terbaik</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>function lengthOfLongestSubstring(s) {
+  const last = new Map();             // karakter -&gt; index terakhir
+  let left = 0, best = 0, i = 0;
+  for (const ch of s) {
+    if (last.has(ch) &amp;&amp; last.get(ch) &gt;= left) left = last.get(ch) + 1;
+    last.set(ch, i);
+    best = Math.max(best, i - left + 1);
+    i++;
+  }
+  return best;
+}</code></pre>
+<p><code>for...of</code> pada string berjalan per code point <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/Symbol.iterator">[2]</a></sup>, jadi <code>i</code> dihitung manual sebagai posisi karakter, bukan index UTF-16.</p>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>: setiap karakter diproses sekali, dan <code>kiri</code> hanya bergerak maju. Ruang <code>O(k)</code> dengan k jumlah karakter berbeda (paling banyak ukuran alfabet).</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>String kosong</strong>: <code>0</code>.</li>
+  <li><strong>Semua karakter sama</strong> (<code>"bbbbb"</code>): <code>1</code>.</li>
+  <li><strong>Kemunculan lama di luar jendela</strong> (<code>"abba"</code>): saat <code>a</code> kedua muncul, index terakhir <code>a</code> (0) sudah di kiri jendela (kiri = 2). Syarat <code>≥ kiri</code> mencegah ujung kiri mundur; tanpa syarat itu jawabannya salah (3, padahal 2).</li>
+  <li><strong>Spasi dan simbol</strong>: dihitung sebagai karakter biasa (<code>" "</code> → <code>1</code>).</li>
+</ul>
+
+<h2>Soal 4: Binary search</h2>
+
+<h3>Soal</h3>
+<p>Diberikan array integer <code>nums</code> yang terurut naik dan <code>target</code>, kembalikan index <code>target</code>, atau <code>-1</code> bila tidak ada. Waktu harus <code>O(log n)</code>. Contoh: <code>[-1, 0, 3, 5, 9, 12]</code>, target 9 → <code>4</code>; target 2 → <code>-1</code>.</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Apakah ada duplikat? Bila ada, index yang mana: sembarang, pertama, atau terakhir?</li>
+  <li>Bila tidak ditemukan, kembalikan <code>-1</code> atau posisi sisipnya?</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Bandingkan target dengan elemen tengah. Karena array terurut, satu perbandingan membuang separuh ruang pencarian: bila elemen tengah lebih kecil, target hanya mungkin di kanan; bila lebih besar, hanya di kiri.
+  Invariant: bila target ada, ia selalu berada di <code>[lo, hi]</code>. Loop berhenti saat rentang kosong (<code>lo &gt; hi</code>).
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>fungsi binarySearch(nums, target):
+    lo ← 0;  hi ← n − 1
+    selama lo ≤ hi:
+        mid ← lo + (hi − lo) div 2
+        jika nums[mid] = target: kembalikan mid
+        jika nums[mid] &lt; target: lo ← mid + 1
+        selain itu: hi ← mid − 1
+    kembalikan −1</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>function binarySearch(nums, target) {
+  let lo = 0, hi = nums.length - 1;
+  while (lo &lt;= hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (nums[mid] === target) return mid;
+    if (nums[mid] &lt; target) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return -1;
+}</code></pre>
+<p>Untuk pencarian di aplikasi, <code>Array.prototype.indexOf</code> dan <code>includes</code> memeriksa elemen satu per satu (linear) <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/indexOf">[3]</a></sup>; binary search hanya berlaku bila data terurut. Di database, index B-tree (Lesson <a href="0004-sql-index-transaksi-performa.html">0004</a>) memakai gagasan yang sama.</p>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(log n)</code>: ruang pencarian dibagi dua setiap putaran, jadi satu juta elemen butuh sekitar 20 perbandingan. Ruang <code>O(1)</code> untuk versi iteratif; versi rekursif memakai <code>O(log n)</code> call stack.</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>Array kosong</strong>: <code>hi = -1</code>, loop tidak berjalan, <code>-1</code>.</li>
+  <li><strong>Target di ujung</strong> (index 0 atau n − 1) dan <strong>satu elemen</strong>: syarat <code>lo ≤ hi</code> (bukan <code>&lt;</code>) memastikan elemen terakhir yang tersisa tetap diperiksa.</li>
+  <li><strong>Overflow saat menghitung mid</strong>: <code>(lo + hi) / 2</code> bisa overflow di bahasa dengan integer 32-bit bila array sangat besar; <code>lo + (hi − lo) / 2</code> aman. Di JavaScript tidak terjadi sampai 2<sup>53</sup> − 1 <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER">[4]</a></sup>, tapi menyebutnya menunjukkan pemahaman.</li>
+  <li><strong>Loop tak berhenti</strong>: selalu geser ke <code>mid + 1</code> atau <code>mid − 1</code>, jangan ke <code>mid</code>, supaya rentang selalu mengecil.</li>
+  <li><strong>Duplikat</strong>: versi ini mengembalikan salah satu index. Untuk index pertama, saat ketemu simpan <code>mid</code> lalu lanjutkan ke kiri (<code>hi = mid − 1</code>).</li>
+</ul>
+
+<h2>Ringkasan</h2>
+<p>
+  Empat pola ini menutup sebagian besar soal array easy–medium. Pola lanjutan (dynamic programming, graph) di luar cakupan track ini; daftar latihannya ada di <a href="../RESOURCES.md">RESOURCES.md</a>.
+  Soal tambahan dengan pola yang sama (merge dua array terurut, rotate array, max subarray/Kadane): <a href="../reference/soal-coding-tambahan.html">reference soal coding tambahan</a>.
+  Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Coding dan simulasi").
+</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">[1] MDN: Map</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/Symbol.iterator">[2] MDN: String.prototype[Symbol.iterator]()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/indexOf">[3] MDN: Array.prototype.indexOf()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER">[4] MDN: Number.MAX_SAFE_INTEGER</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0008-coding-angka-dan-string.html">← 0008 · Coding: angka dan string</a>
+  <a href="0010-simulasi-interview.html">0010 · Simulasi interview →</a>
+</nav>
+
+</main>
+</body>
+</html>

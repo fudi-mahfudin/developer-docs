@@ -210,6 +210,7 @@ function assertCodingFormat(html, label) {
 
 const CODING = {
   "0008": { file: "0008-coding-angka-dan-string.html", soal: [/[Pp]alindrome integer/, /[Rr]everse integer/, /[Aa]nagram/, /[Vv]alid parentheses/] },
+  "0009": { file: "0009-coding-array-dan-pencarian.html", soal: [/[Tt]wo sum/, /[Tt]wo pointers/, /[Ss]liding window/, /[Bb]inary search/] },
 };
 
 test("coding lessons are listed as tersedia in the index", () => {
@@ -236,4 +237,13 @@ test("fullstack 0008: palindrome integer without strings, half reversal, and its
   [/negatif/, /berakhiran 0/, /overflow/i].forEach(re => assert.match(edge, re, `palindrome edge case ${re}`));
   assert.match(rev.body, /overflow/i);
   assert.match(rev.body, /2<sup>31<\/sup>|2147483647/, "reverse integer: batas 32-bit");
+});
+
+test("fullstack 0009: each pattern names its data structure or invariant", () => {
+  const [twoSum, pointers, window, search] = soalSections(fs_.readLesson("0009"));
+  assert.match(step(twoSum.body, "Ide"), /hash map/i, "two sum: hash map");
+  assert.match(pointers.body, /terurut/, "two pointers: array terurut");
+  assert.match(pointers.body, /duplikat/, "two pointers: hapus duplikat sebagai variasi");
+  assert.match(window.body, /substring terpanjang/i, "sliding window: substring terpanjang tanpa karakter berulang");
+  assert.match(step(search.body, "Edge case"), /overflow/i, "binary search: overflow saat menghitung mid");
 });
