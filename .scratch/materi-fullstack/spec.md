@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # Spec: Track fullstack ringkas untuk interview Fullstack/IT internal (10 lesson, branch `on-bsm`)
 
