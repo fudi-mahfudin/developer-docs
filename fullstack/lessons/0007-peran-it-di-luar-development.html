@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0007 · Peran IT di luar development: support, jaringan dasar, multimedia</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0007 · Fullstack · ±20 menit</div>
+  <h1>Peran IT di luar development: support, jaringan dasar, multimedia</h1>
+  <p class="subtitle">Cukup untuk menjawab di interview: IP, subnet, DHCP, DNS, gateway, alat diagnosa, alur troubleshooting internet dan printer, backup 3-2-1, hak akses, dan multimedia dasar yang dijawab dengan jujur</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menjelaskan peran IP address, subnet mask, gateway, DHCP, dan DNS dalam satu napas,
+  menceritakan alur troubleshooting "tidak bisa internet" dan "tidak bisa print" secara berurutan,
+  menyebut prinsip backup 3-2-1 dan least privilege,
+  dan menjawab pertanyaan multimedia dengan jujur sambil menunjukkan portofolio.
+</div>
+
+<p>
+  JD posisi ini menyebut perawatan hardware, jaringan, perangkat user, dan multimedia dasar. Interviewer tidak mencari network engineer atau desainer grafis.
+  Ia ingin tahu apakah Anda bisa menyelesaikan masalah sehari-hari secara sistematis, tahu kapan harus eskalasi ke vendor atau ISP, dan jujur tentang batas kemampuan Anda.
+</p>
+
+<h2>1. Jaringan kantor dalam lima istilah</h2>
+<ul>
+  <li><strong>IP address</strong>: alamat perangkat di jaringan, mis. <code>192.168.1.23</code>. Jaringan kantor memakai alamat privat dari tiga blok yang dicadangkan: <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, dan <code>192.168.0.0/16</code>. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc1918">[1]</a></sup></li>
+  <li><strong>Subnet mask / prefix</strong>: menentukan bagian alamat yang menunjuk jaringan. Pada <code>192.168.1.0/24</code>, 24 bit pertama adalah bagian jaringan dan 8 bit sisanya untuk host (mask <code>255.255.255.0</code>). <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc4632">[2]</a></sup> Dua perangkat di subnet yang sama bisa langsung berkomunikasi.</li>
+  <li><strong>Default gateway</strong>: router yang dituju untuk semua alamat di luar subnet, termasuk internet. Biasanya alamat <code>.1</code> di subnet kantor.</li>
+  <li><strong>DHCP</strong>: protokol yang membagikan konfigurasi jaringan ke perangkat secara otomatis. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc2131">[3]</a></sup> Alurnya empat pesan: DHCPDISCOVER, DHCPOFFER, DHCPREQUEST, DHCPACK, dan alamat diberikan untuk jangka waktu tertentu (<em>lease</em>). <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc2131">[3]</a></sup> Selain IP, DHCP biasanya juga membagikan subnet mask, gateway, dan alamat DNS server.</li>
+  <li><strong>DNS</strong>: sistem yang menerjemahkan nama (mis. <code>inventaris.kantor.local</code>) menjadi IP address. Tujuan utamanya ruang nama yang konsisten untuk merujuk sumber daya; program <em>resolver</em> di komputer user menanyakan nama ke name server. <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc1034">[4]</a></sup></li>
+</ul>
+<p>
+  Petunjuk cepat: bila IP komputer berawalan <code>169.254.</code>, komputer memberi dirinya sendiri alamat <em>link-local</em> dari blok <code>169.254/16</code> <sup class="cite"><a href="https://www.rfc-editor.org/rfc/rfc3927">[5]</a></sup>.
+  Dalam praktik ini hampir selalu berarti komputer gagal mendapat alamat dari DHCP: cek kabel/Wi-Fi, lalu DHCP server atau router.
+</p>
+
+<h2>2. Empat alat diagnosa (Windows)</h2>
+<table>
+  <thead><tr><th>Perintah</th><th>Fungsi</th></tr></thead>
+  <tbody>
+    <tr><td><code>ipconfig /all</code></td><td>Menampilkan konfigurasi TCP/IP lengkap: IP, subnet mask, default gateway, DNS server. <code>/release</code> dan <code>/renew</code> melepas dan meminta ulang alamat dari DHCP; <code>/flushdns</code> mengosongkan cache DNS lokal. <sup class="cite"><a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ipconfig">[6]</a></sup></td></tr>
+    <tr><td><code>ping</code></td><td>Mengirim ICMP echo request untuk menguji konektivitas. Bila ping ke IP berhasil tapi ping ke nama gagal, kemungkinan besar masalahnya di name resolution (DNS). <sup class="cite"><a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ping">[7]</a></sup></td></tr>
+    <tr><td><code>tracert</code></td><td>Menampilkan jalur ke tujuan dengan mengirim echo request dengan TTL yang naik satu per satu; setiap router di jalur muncul sebagai satu hop. Baris <code>*</code> berarti router tidak membalas dalam batas waktu. <sup class="cite"><a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tracert">[8]</a></sup></td></tr>
+    <tr><td><code>nslookup</code></td><td>Mendiagnosa DNS: menanyakan sebuah nama ke DNS server default atau ke server tertentu. <sup class="cite"><a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/nslookup">[9]</a></sup></td></tr>
+  </tbody>
+</table>
+<p>Di Linux/macOS padanannya <code>ip addr</code> atau <code>ifconfig</code>, <code>ping</code>, <code>traceroute</code>, dan <code>nslookup</code>/<code>dig</code>.</p>
+
+<h2>3. Alur troubleshooting "tidak bisa internet"</h2>
+<p>Prinsipnya: tentukan cakupan dulu, lalu cek dari lapisan terdekat ke terjauh. Setiap langkah yang berhasil mempersempit lokasi masalah.</p>
+<div class="flow">
+  <span class="box">Cakupan: satu user atau semua?</span><span class="arrow">→</span>
+  <span class="box">Fisik: kabel, Wi-Fi, lampu port</span><span class="arrow">→</span>
+  <span class="box"><code>ipconfig</code>: dapat IP dari DHCP?</span><span class="arrow">→</span>
+  <span class="box"><code>ping</code> gateway</span><span class="arrow">→</span>
+  <span class="box"><code>ping 8.8.8.8</code> (IP internet)</span><span class="arrow">→</span>
+  <span class="box"><code>nslookup</code> nama situs</span><span class="arrow">→</span>
+  <span class="box">Browser, proxy, aplikasi</span>
+</div>
+<pre><code>C:\&gt; ipconfig            → IPv4 169.254.x.x?  masalah DHCP / kabel
+C:\&gt; ping 192.168.1.1    → gagal?  masalah ke router/switch lokal
+C:\&gt; ping 8.8.8.8        → gagal?  router atau ISP
+C:\&gt; nslookup google.com → gagal tapi ping IP berhasil?  DNS
+C:\&gt; ipconfig /flushdns  → lalu coba lagi di browser</code></pre>
+<p class="note">
+  Contoh jawaban: "Pertama saya tanya apakah hanya dia atau semua orang. Kalau semua, kemungkinan di router atau ISP, jadi saya cek perangkat jaringan dan menghubungi ISP bila perlu.
+  Kalau hanya dia, saya cek kabel atau Wi-Fi, lalu <code>ipconfig</code>: kalau IP-nya 169.254, berarti tidak dapat alamat dari DHCP.
+  Setelah itu saya ping gateway, ping IP di internet, lalu <code>nslookup</code>. Kalau ping IP berhasil tapi nama gagal, masalahnya di DNS.
+  Saya catat penyebab dan solusinya supaya kasus yang sama berikutnya lebih cepat."
+</p>
+
+<h2>4. Alur troubleshooting "tidak bisa print"</h2>
+<ol>
+  <li><strong>Cakupan</strong>: satu user atau semua user ke printer itu? Kalau semua, masalahnya di printer atau jaringannya.</li>
+  <li><strong>Fisik</strong>: printer menyala, kertas dan tinta/toner ada, tidak ada pesan error atau kertas macet di panel.</li>
+  <li><strong>Antrean print</strong>: dokumen tersangkut di antrean (queue). Hapus job yang macet; bila perlu restart service Print Spooler.</li>
+  <li><strong>Koneksi</strong>: <code>ping</code> IP printer. Bila IP printer berubah-ubah, beri IP tetap lewat DHCP reservation di router supaya komputer user tidak kehilangan printer.</li>
+  <li><strong>Driver</strong>: printer yang benar terpilih sebagai default, driver sesuai model; instal ulang bila perlu.</li>
+</ol>
+<p class="note">
+  Contoh jawaban: "Saya cek dulu cakupannya. Kalau semua orang tidak bisa, saya cek printernya langsung: panel, kertas, lalu ping IP-nya.
+  Kalau hanya satu orang, saya lihat antrean print di komputernya dan hapus job yang macet, lalu cek printer default dan drivernya.
+  Kasus yang sering berulang di kantor kecil adalah IP printer yang berubah setelah router restart, dan solusinya DHCP reservation."
+</p>
+
+<h2>5. Perangkat user, backup, dan hak akses</h2>
+<ul>
+  <li><strong>Perawatan perangkat</strong>: update OS dan antivirus terjadwal, cek sisa disk, catat setiap perangkat di aplikasi inventaris aset (pemegang, lokasi, tanggal servis). Jadwal dan hasilnya masuk maintenance record, sama seperti aplikasi di lesson 0006.</li>
+  <li><strong>Backup 3-2-1</strong>: simpan 3 salinan file penting (1 utama + 2 backup), di 2 jenis media berbeda, dengan 1 salinan di luar lokasi kantor. <sup class="cite"><a href="https://www.cisa.gov/sites/default/files/publications/data_backup_options.pdf">[10]</a></sup> Contoh: folder kerja di PC, salinan di NAS kantor, salinan di cloud storage.</li>
+  <li>
+    <strong>Akun dan hak akses</strong>: pakai prinsip <em>least privilege</em>, yaitu setiap user hanya diberi hak akses minimum yang dibutuhkan untuk tugasnya. <sup class="cite"><a href="https://csrc.nist.gov/glossary/term/least_privilege">[11]</a></sup>
+    Praktiknya: satu akun per orang (bukan akun bersama), user biasa bukan administrator lokal, akses folder bersama per bagian, dan checklist offboarding yang menonaktifkan akun di hari terakhir karyawan.
+  </li>
+</ul>
+
+<h2>6. Multimedia dasar</h2>
+<p>Yang biasanya diminta: banner atau poster acara kantor, foto dokumentasi, konten media sosial, dan video pendek. Tools umum: Canva, Adobe Photoshop/Illustrator/Premiere Pro, GIMP, DaVinci Resolve, CapCut. Sebut saja yang memang pernah Anda pakai.</p>
+<div class="flow">
+  <span class="box">Brief: tujuan, kanal, ukuran, deadline</span><span class="arrow">→</span>
+  <span class="box">Draft</span><span class="arrow">→</span>
+  <span class="box">Review dan revisi</span><span class="arrow">→</span>
+  <span class="box">Export sesuai kanal</span><span class="arrow">→</span>
+  <span class="box">Arsip file sumber</span>
+</div>
+<table>
+  <thead><tr><th>Istilah</th><th>Arti singkat</th></tr></thead>
+  <tbody>
+    <tr><td>Resolusi</td><td>Jumlah piksel lebar × tinggi, mis. 1920 × 1080 (Full HD). Makin besar, makin tajam dan makin besar file-nya.</td></tr>
+    <tr><td>Aspect ratio</td><td>Perbandingan lebar dan tinggi, mis. 16:9 (layar/YouTube), 1:1 (feed persegi), 9:16 (story/reels). Di CSS, properti <code>aspect-ratio</code> mempertahankan rasio ini saat ukuran berubah. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/CSS/aspect-ratio">[12]</a></sup></td></tr>
+    <tr><td>Kompresi lossy vs lossless</td><td>Lossy membuang detail supaya file kecil, cocok untuk foto; lossless tidak membuang data, cocok untuk screenshot, diagram, logo, dan teks. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Image_types">[13]</a></sup></td></tr>
+    <tr><td>Format gambar</td><td>JPEG (lossy, foto), PNG (lossless, mendukung transparansi), WebP (lossy atau lossless, umumnya lebih kecil dari JPEG/PNG), SVG (vektor, tajam di ukuran apa pun). <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Image_types">[13]</a></sup></td></tr>
+  </tbody>
+</table>
+<p class="note">
+  Contoh jawaban jujur untuk "seberapa bisa Anda desain atau edit video?": "Saya bukan desainer, tapi saya bisa menyelesaikan kebutuhan dasar kantor.
+  Saya biasa membuat poster dan konten media sosial dengan Canva dan memotong video pendek dengan CapCut. Saya selalu minta brief dulu: untuk kanal apa, ukurannya berapa, kapan dibutuhkan.
+  Untuk desain identitas atau video profesional, saya akan menyarankan memakai desainer atau vendor. Ini contoh hasil saya." Lalu tunjukkan portofolio.
+</p>
+<p><strong>Cara menyiapkan portofolio kecil</strong>:</p>
+<ul>
+  <li>Pilih 3–5 karya terbaik saja, bukan semua yang pernah dibuat. Satu PDF atau satu folder tautan yang bisa dibuka dari ponsel.</li>
+  <li>Setiap karya diberi konteks satu baris: kebutuhan, kanal, tools, waktu pengerjaan, dan peran Anda bila dikerjakan bersama orang lain.</li>
+  <li>Tampilkan sebelum/sesudah untuk editing foto atau revisi desain, karena interviewer melihat proses, bukan hanya hasil.</li>
+  <li>Masukkan juga screenshot aplikasi yang pernah Anda bangun (mis. halaman daftar aset) sebagai bukti kemampuan UI.</li>
+  <li>Jangan memasukkan karya orang lain atau template yang hampir tidak diubah tanpa menyebutnya.</li>
+</ul>
+
+<h2>7. Pertanyaan interview singkat</h2>
+<p><strong>"Apa beda DHCP dan DNS?"</strong> DHCP memberi perangkat konfigurasi jaringan (IP, subnet mask, gateway, DNS server) secara otomatis. DNS menerjemahkan nama menjadi IP address. Bila DHCP gagal, perangkat tidak punya alamat yang benar; bila DNS gagal, perangkat punya alamat tapi tidak bisa membuka situs berdasarkan nama.</p>
+<p><strong>"Komputer dapat IP 169.254.x.x, artinya apa?"</strong> Komputer tidak mendapat alamat dari DHCP dan memberi dirinya alamat link-local. Cek koneksi fisik atau Wi-Fi, lalu DHCP server atau router, lalu jalankan <code>ipconfig /release</code> dan <code>/renew</code>.</p>
+<p><strong>"Bagaimana Anda membagi waktu antara support dan development?"</strong> Gangguan yang menghentikan pekerjaan banyak orang didahulukan. Permintaan kecil saya kumpulkan dan kerjakan di slot waktu tertentu supaya development tidak terus terpotong. Masalah yang berulang saya catat dan selesaikan akar masalahnya, mis. DHCP reservation untuk printer, supaya tiket yang sama tidak datang lagi.</p>
+<p><strong>"Karyawan keluar hari ini. Apa yang Anda lakukan?"</strong> Jalankan checklist offboarding: nonaktifkan akun email dan aplikasi internal, cabut akses VPN dan folder bersama, ganti password akun bersama yang ia ketahui, terima kembali perangkatnya, lalu catat pengembaliannya di aplikasi inventaris aset.</p>
+
+<p>Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Peran · sole developer dan IT") · Sumber: <a href="../RESOURCES.md">RESOURCES.md</a></p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://www.rfc-editor.org/rfc/rfc1918">[1] RFC 1918: Address Allocation for Private Internets</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc4632">[2] RFC 4632: Classless Inter-domain Routing (CIDR)</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc2131">[3] RFC 2131: Dynamic Host Configuration Protocol</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc1034">[4] RFC 1034: Domain Names, Concepts and Facilities</a> ·
+  <a href="https://www.rfc-editor.org/rfc/rfc3927">[5] RFC 3927: Dynamic Configuration of IPv4 Link-Local Addresses</a> ·
+  <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ipconfig">[6] Microsoft Learn: ipconfig</a> ·
+  <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/ping">[7] Microsoft Learn: ping</a> ·
+  <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tracert">[8] Microsoft Learn: tracert</a> ·
+  <a href="https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/nslookup">[9] Microsoft Learn: nslookup</a> ·
+  <a href="https://www.cisa.gov/sites/default/files/publications/data_backup_options.pdf">[10] CISA (US-CERT): Data Backup Options</a> ·
+  <a href="https://csrc.nist.gov/glossary/term/least_privilege">[11] NIST CSRC Glossary: least privilege</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/CSS/aspect-ratio">[12] MDN: aspect-ratio</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Image_types">[13] MDN: Image file type and format guide</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0006-sole-developer-aplikasi-internal.html">← 0006 · Sole developer aplikasi internal</a>
+  <a href="0008-coding-angka-dan-string.html">0008 · Coding: angka dan string →</a>
+</nav>
+
+</main>
+</body>
+</html>
