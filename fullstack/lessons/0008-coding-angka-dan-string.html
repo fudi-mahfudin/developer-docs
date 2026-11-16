@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0008 · Coding: angka dan string</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<main>
+
+<header class="lesson-head">
+  <div class="kicker">Lesson 0008 · Fullstack · ±30 menit</div>
+  <h1>Coding: angka dan string</h1>
+  <p class="subtitle">Empat soal live coding easy yang sering muncul: palindrome integer tanpa konversi ke string, reverse integer dengan overflow, anagram, dan valid parentheses. Setiap soal ditulis dalam tujuh langkah, dengan pseudocode sebagai jawaban utama</p>
+</header>
+
+<div class="win">
+  <strong>Target lesson ini:</strong> Anda bisa menyelesaikan keempat soal di papan tulis atau editor tanpa bantuan:
+  bertanya klarifikasi dulu, menjelaskan ide dalam satu kalimat, menulis pseudocode, menerjemahkannya ke JavaScript,
+  menyebut kompleksitas waktu dan ruang, dan menyebut edge case sebelum interviewer menanyakannya.
+</div>
+
+<h2>Cara menjawab soal coding di interview</h2>
+<p>
+  Interviewer posisi ini jarang menuntut solusi paling cerdas. Yang dinilai adalah cara berpikir: apakah Anda memahami soal sebelum mengetik, bisa menjelaskan rencana, dan memeriksa kasus pinggir.
+  Karena itu setiap soal di lesson ini mengikuti urutan yang sama, dan urutan itulah yang Anda ucapkan keras-keras saat interview:
+</p>
+<div class="flow">
+  <span class="box">Soal</span><span class="arrow">→</span>
+  <span class="box">Pertanyaan klarifikasi</span><span class="arrow">→</span>
+  <span class="box">Ide</span><span class="arrow">→</span>
+  <span class="box">Pseudocode</span><span class="arrow">→</span>
+  <span class="box">Implementasi JavaScript</span><span class="arrow">→</span>
+  <span class="box">Kompleksitas</span><span class="arrow">→</span>
+  <span class="box">Edge case</span>
+</div>
+<p>
+  Pseudocode adalah jawaban utama: bila waktu habis atau bahasa yang diminta bukan JavaScript, pseudocode yang benar sudah menunjukkan solusinya.
+  Kompleksitas ditulis dalam notasi Big-O: <code>O(n)</code> berarti waktu tumbuh sebanding dengan ukuran input, <code>O(1)</code> berarti memori tambahan tetap berapa pun ukuran input.
+</p>
+<p class="note">
+  Dua fakta JavaScript yang dipakai di lesson ini. Pertama, semua angka bertipe <code>number</code> adalah floating point 64-bit, sehingga integer hanya eksak sampai <code>Number.MAX_SAFE_INTEGER</code> = 2<sup>53</sup> − 1. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER">[1]</a></sup>
+  Kedua, tidak ada pembagian integer: pakai <code>Math.floor(x / 10)</code> untuk angka positif <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/floor">[2]</a></sup> atau <code>Math.trunc(x / 10)</code> yang membuang pecahan ke arah nol, juga untuk angka negatif. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/trunc">[3]</a></sup>
+</p>
+
+<h2>Soal 1: Palindrome integer tanpa konversi ke string</h2>
+
+<h3>Soal</h3>
+<p>Diberikan integer <code>x</code>, kembalikan <code>true</code> bila <code>x</code> dibaca sama dari depan dan dari belakang. Contoh: <code>121</code> → <code>true</code>, <code>-121</code> → <code>false</code>, <code>10</code> → <code>false</code>. Syarat tambahan: jangan mengubah angka menjadi string.</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Apakah angka negatif dianggap palindrome? (Biasanya tidak, karena <code>-121</code> dibalik menjadi <code>121-</code>.)</li>
+  <li>Berapa rentang input: integer 32-bit bertanda, atau lebih besar? Ini menentukan apakah membalik angka bisa overflow.</li>
+  <li>Benar-benar tidak boleh memakai string atau array digit sama sekali?</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Ambil digit dari belakang dengan <code>x % 10</code> dan buang digit itu dengan pembagian integer, lalu susun digit-digit itu menjadi angka terbalik.
+  Cukup membalik <strong>separuh</strong> angka: berhenti ketika angka terbalik sudah sama atau lebih besar dari sisa angka asli.
+  Bila jumlah digit genap, kedua separuh harus sama (<code>1221</code> → <code>12</code> dan <code>12</code>); bila ganjil, digit tengah dibuang dari angka terbalik (<code>12321</code> → <code>12</code> dan <code>123</code>, lalu <code>123 / 10</code> dibulatkan ke bawah = <code>12</code>).
+  Membalik separuh juga berarti angka terbalik tidak pernah lebih besar dari input, sehingga tidak bisa overflow.
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>fungsi isPalindrome(x):
+    jika x &lt; 0: kembalikan false
+    jika x berakhiran 0 dan x ≠ 0: kembalikan false
+    rev ← 0
+    selama x &gt; rev:
+        rev ← rev × 10 + (x mod 10)
+        x ← x div 10
+    kembalikan (x = rev) atau (x = rev div 10)</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>function isPalindrome(x) {
+  if (x &lt; 0 || (x % 10 === 0 &amp;&amp; x !== 0)) return false;
+  let rev = 0;
+  while (x &gt; rev) {
+    rev = rev * 10 + (x % 10);
+    x = Math.floor(x / 10);
+  }
+  return x === rev || x === Math.floor(rev / 10);
+}</code></pre>
+<p>Jejak untuk <code>12321</code>: (x, rev) = (1232, 1) → (123, 12). Loop belum berhenti karena 123 &gt; 12, jadi satu putaran lagi: (12, 123). Sekarang x = 12 ≤ rev = 123, dan x sama dengan <code>Math.floor(123 / 10)</code> = 12, hasilnya <code>true</code>.</p>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(log₁₀ n)</code>: setiap putaran membuang satu digit, dan hanya separuh digit yang diproses. Ruang <code>O(1)</code>: hanya dua variabel angka.</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>Angka negatif</strong>: langsung <code>false</code>, karena tanda minus hanya ada di depan.</li>
+  <li><strong>Angka berakhiran 0</strong> (mis. <code>10</code>, <code>120</code>): langsung <code>false</code>, karena angka tidak pernah diawali 0. Tanpa pengecekan ini, <code>10</code> salah dianggap palindrome: x = 1, rev = 0, lalu x = 0 dan rev = 1, dan <code>0 === Math.floor(1 / 10)</code> bernilai <code>true</code>. Pengecualian: <code>0</code> sendiri adalah palindrome.</li>
+  <li><strong>Overflow</strong>: membalik seluruh angka bisa melewati batas 32-bit (mis. <code>2147483647</code> dibalik menjadi <code>7463847412</code>). Teknik membalik separuh menghindarinya karena <code>rev</code> tidak pernah melebihi input. Di JavaScript angka sampai 2<sup>53</sup> − 1 masih eksak <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER">[1]</a></sup>, tapi sebutkan alasan ini karena interviewer sering bertanya "bagaimana di Java atau C?".</li>
+  <li><strong>Satu digit</strong> (<code>0</code>–<code>9</code>): selalu <code>true</code>; loop tidak berjalan atau berjalan sekali dan cabang <code>rev / 10</code> yang cocok.</li>
+</ul>
+
+<h2>Soal 2: Reverse integer dengan overflow</h2>
+
+<h3>Soal</h3>
+<p>Diberikan integer 32-bit bertanda <code>x</code>, kembalikan digitnya dalam urutan terbalik. Bila hasilnya keluar dari rentang [−2<sup>31</sup>, 2<sup>31</sup> − 1] (yaitu [−2147483648, 2147483647]), kembalikan <code>0</code>. Contoh: <code>123</code> → <code>321</code>, <code>-123</code> → <code>-321</code>, <code>120</code> → <code>21</code>, <code>1534236469</code> → <code>0</code>.</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Apa yang dikembalikan bila hasilnya overflow: <code>0</code>, error, atau nilai terpotong?</li>
+  <li>Apakah lingkungannya dianggap tidak bisa menyimpan angka di atas 32-bit (jadi overflow harus dicegah <em>sebelum</em> terjadi), atau cukup diperiksa setelahnya?</li>
+  <li>Tanda minus dipertahankan, dan nol di belakang hilang (<code>120</code> → <code>21</code>)?</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Sama dengan soal 1: ambil digit terakhir, buang dari <code>x</code>, tambahkan ke <code>rev</code>. Sebelum menghitung <code>rev × 10 + digit</code>, periksa apakah hasilnya akan melewati batas.
+  Bila <code>rev</code> sudah lebih besar dari <code>2147483647 div 10 = 214748364</code>, perkalian dengan 10 pasti overflow; bila sama dengan 214748364, digit berikutnya tidak boleh lebih dari 7. Untuk sisi negatif batasnya −214748364 dan digit −8.
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>MAX ← 2^31 − 1;  MIN ← −2^31
+fungsi reverse(x):
+    rev ← 0
+    selama x ≠ 0:
+        d ← x mod 10            // bertanda sama dengan x
+        x ← x div 10            // dibulatkan ke arah nol
+        jika rev &gt; MAX div 10 atau (rev = MAX div 10 dan d &gt; 7): kembalikan 0
+        jika rev &lt; MIN div 10 atau (rev = MIN div 10 dan d &lt; −8): kembalikan 0
+        rev ← rev × 10 + d
+    kembalikan rev</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>const MAX = 2 ** 31 - 1, MIN = -(2 ** 31);
+
+function reverse(x) {
+  let rev = 0;
+  while (x !== 0) {
+    const d = x % 10;               // -123 % 10 === -3
+    x = Math.trunc(x / 10);
+    if (rev &gt; Math.trunc(MAX / 10) || (rev === Math.trunc(MAX / 10) &amp;&amp; d &gt; 7)) return 0;
+    if (rev &lt; Math.trunc(MIN / 10) || (rev === Math.trunc(MIN / 10) &amp;&amp; d &lt; -8)) return 0;
+    rev = rev * 10 + d;
+  }
+  return rev;
+}</code></pre>
+<p>
+  Operator <code>%</code> di JavaScript adalah <em>remainder</em>, bukan modulo matematika: hasilnya selalu bertanda sama dengan bilangan yang dibagi, jadi <code>-123 % 10</code> adalah <code>-3</code>. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Remainder">[4]</a></sup>
+  Dipasangkan dengan <code>Math.trunc</code>, angka negatif tidak perlu ditangani terpisah. Memakai <code>Math.floor</code> di sini salah: <code>Math.floor(-12.3)</code> adalah <code>-13</code>. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/trunc">[3]</a></sup>
+</p>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(log₁₀ n)</code>, paling banyak 10 putaran untuk integer 32-bit. Ruang <code>O(1)</code>.</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>Overflow</strong>: <code>1534236469</code> dibalik menjadi 9646324351 &gt; 2<sup>31</sup> − 1, hasilnya <code>0</code>. <code>-2147483648</code> dibalik menjadi −8463847412, juga <code>0</code>.</li>
+  <li><strong>Nol di belakang</strong>: <code>120</code> → <code>21</code>; nol menjadi digit depan yang hilang dengan sendirinya.</li>
+  <li><strong>Angka negatif</strong>: tanda ikut terbawa lewat remainder bertanda, <code>-123</code> → <code>-321</code>.</li>
+  <li><strong>Nol</strong>: loop tidak berjalan, hasil <code>0</code>.</li>
+  <li><strong>Alternatif singkat di JavaScript</strong>: karena integer sampai 2<sup>53</sup> − 1 eksak, Anda bisa membalik dulu lalu memeriksa <code>rev &gt; MAX || rev &lt; MIN</code>. Sebutkan bahwa versi di atas tetap benar di bahasa yang benar-benar 32-bit.</li>
+</ul>
+
+<h2>Soal 3: Valid anagram</h2>
+
+<h3>Soal</h3>
+<p>Diberikan dua string <code>s</code> dan <code>t</code>, kembalikan <code>true</code> bila <code>t</code> adalah anagram dari <code>s</code>, yaitu memakai karakter yang sama dengan jumlah yang sama. Contoh: <code>"anagram"</code>, <code>"nagaram"</code> → <code>true</code>; <code>"rat"</code>, <code>"car"</code> → <code>false</code>.</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Apakah huruf besar dan kecil dibedakan? Spasi dan tanda baca ikut dihitung?</li>
+  <li>Karakternya hanya huruf kecil a–z, atau bisa Unicode apa saja (huruf beraksen, emoji)?</li>
+  <li>Seberapa panjang string-nya? (Menentukan apakah sorting <code>O(n log n)</code> sudah cukup.)</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Dua cara. (a) Urutkan kedua string lalu bandingkan: mudah ditulis, <code>O(n log n)</code>.
+  (b) Hitung kemunculan setiap karakter di <code>s</code> dengan hash map, lalu kurangi untuk setiap karakter di <code>t</code>; bila ada hitungan yang habis sebelum waktunya, bukan anagram. Cara (b) <code>O(n)</code> dan menjadi jawaban utama.
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>fungsi isAnagram(s, t):
+    jika panjang(s) ≠ panjang(t): kembalikan false
+    hitung ← map kosong
+    untuk setiap karakter c di s: hitung[c] ← hitung[c] + 1
+    untuk setiap karakter c di t:
+        jika hitung[c] = 0: kembalikan false
+        hitung[c] ← hitung[c] − 1
+    kembalikan true</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>function isAnagram(s, t) {
+  if (s.length !== t.length) return false;
+  const count = new Map();
+  for (const ch of s) count.set(ch, (count.get(ch) ?? 0) + 1);
+  for (const ch of t) {
+    const n = count.get(ch) ?? 0;
+    if (n === 0) return false;
+    count.set(ch, n - 1);
+  }
+  return true;
+}</code></pre>
+<p>
+  <code>Map</code> menyimpan pasangan key-value dengan key bertipe apa pun <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">[5]</a></sup>, dan <code>for...of</code> pada string berjalan per <em>code point</em>, bukan per unit UTF-16, sehingga emoji dihitung sebagai satu karakter. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/Symbol.iterator">[6]</a></sup>
+  Karena panjang sudah sama dan setiap karakter <code>t</code> mengurangi hitungan yang masih positif, tidak perlu loop ketiga untuk memeriksa sisa hitungan.
+</p>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>, dua kali lewat string. Ruang <code>O(k)</code> dengan k jumlah karakter berbeda; untuk huruf a–z saja itu <code>O(1)</code> (paling banyak 26 entri). Versi sorting: waktu <code>O(n log n)</code>.</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>Panjang berbeda</strong>: langsung <code>false</code> tanpa menghitung.</li>
+  <li><strong>Dua string kosong</strong>: <code>true</code>.</li>
+  <li><strong>Huruf sama, jumlah beda</strong> (<code>"aab"</code> vs <code>"abb"</code>): tertangkap saat hitungan <code>b</code> habis.</li>
+  <li><strong>Huruf besar/kecil dan Unicode</strong>: normalisasi dulu bila diminta (mis. <code>toLowerCase()</code>). Bila memakai sorting, ingat <code>sort()</code> tanpa comparator membandingkan unit UTF-16. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort">[7]</a></sup></li>
+</ul>
+
+<h2>Soal 4: Valid parentheses</h2>
+
+<h3>Soal</h3>
+<p>Diberikan string yang hanya berisi <code>( ) [ ] { }</code>, kembalikan <code>true</code> bila setiap kurung buka ditutup oleh kurung sejenis dalam urutan yang benar. Contoh: <code>"()[]{}"</code> → <code>true</code>, <code>"{[]}"</code> → <code>true</code>, <code>"(]"</code> → <code>false</code>, <code>"([)]"</code> → <code>false</code>.</p>
+
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Apakah string bisa berisi karakter lain selain kurung? Bila ya, abaikan atau anggap tidak valid?</li>
+  <li>Apakah string kosong dianggap valid?</li>
+</ul>
+
+<h3>Ide</h3>
+<p>
+  Kurung yang terakhir dibuka harus menjadi yang pertama ditutup: itu perilaku <strong>stack</strong> (LIFO, last in first out).
+  Kurung buka di-<code>push</code>; kurung tutup harus cocok dengan hasil <code>pop</code>. Di akhir, stack harus kosong.
+  Array JavaScript sudah berfungsi sebagai stack: <code>push</code> menambah di ujung <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/push">[8]</a></sup> dan <code>pop</code> mengambil elemen terakhir, atau <code>undefined</code> bila array kosong. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/pop">[9]</a></sup>
+</p>
+
+<h3>Pseudocode</h3>
+<pre><code>fungsi isValid(s):
+    pasangan ← { ")": "(", "]": "[", "}": "{" }
+    stack ← kosong
+    untuk setiap karakter c di s:
+        jika c kurung buka: push c ke stack
+        selain itu:
+            jika stack kosong atau pop(stack) ≠ pasangan[c]: kembalikan false
+    kembalikan stack kosong</code></pre>
+
+<h3>Implementasi JavaScript</h3>
+<pre><code>function isValid(s) {
+  const pasangan = { ")": "(", "]": "[", "}": "{" };
+  const stack = [];
+  for (const ch of s) {
+    if (ch === "(" || ch === "[" || ch === "{") stack.push(ch);
+    else if (stack.pop() !== pasangan[ch]) return false;
+  }
+  return stack.length === 0;
+}</code></pre>
+<p>Pengecekan "stack kosong" sudah tercakup: <code>pop()</code> pada array kosong mengembalikan <code>undefined</code>, yang tidak pernah sama dengan kurung buka.</p>
+
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>, satu kali lewat. Ruang <code>O(n)</code> untuk stack pada kasus terburuk (semua kurung buka).</p>
+
+<h3>Edge case</h3>
+<ul>
+  <li><strong>String kosong</strong>: <code>true</code> (stack kosong di akhir).</li>
+  <li><strong>Kurung tutup di awal</strong> (<code>"]"</code>, <code>"}{"</code>): <code>pop()</code> pada stack kosong, langsung <code>false</code>.</li>
+  <li><strong>Kurung buka tersisa</strong> (<code>"(()"</code>): loop selesai tanpa error, tapi stack tidak kosong, jadi <code>false</code>.</li>
+  <li><strong>Silang</strong> (<code>"([)]"</code>): <code>)</code> bertemu <code>[</code> di puncak stack, <code>false</code>. Ini alasan menghitung jumlah buka dan tutup saja tidak cukup.</li>
+  <li><strong>Panjang ganjil</strong>: pasti tidak valid; bisa dicek di awal sebagai optimasi kecil.</li>
+</ul>
+
+<h2>Pola yang dibawa pulang</h2>
+<table>
+  <thead><tr><th>Pola</th><th>Kapan dipakai</th><th>Soal di lesson ini</th></tr></thead>
+  <tbody>
+    <tr><td>Ambil digit dengan <code>% 10</code> dan pembagian integer</td><td>Soal angka yang melarang string</td><td>Palindrome integer, reverse integer</td></tr>
+    <tr><td>Hash map penghitung (frequency count)</td><td>Membandingkan isi tanpa peduli urutan</td><td>Anagram</td></tr>
+    <tr><td>Stack</td><td>Pasangan buka-tutup, urutan terbalik, "yang terakhir masuk diselesaikan dulu"</td><td>Valid parentheses</td></tr>
+  </tbody>
+</table>
+<p>Soal tambahan dengan pola yang sama (FizzBuzz, angka Armstrong, bilangan prima, karakter pertama yang tidak berulang): <a href="../reference/soal-coding-tambahan.html">reference soal coding tambahan</a>. Istilah: <a href="../GLOSSARY.md">GLOSSARY.md</a> (bagian "Coding dan simulasi").</p>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER">[1] MDN: Number.MAX_SAFE_INTEGER</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/floor">[2] MDN: Math.floor()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/trunc">[3] MDN: Math.trunc()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Remainder">[4] MDN: Remainder (%)</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">[5] MDN: Map</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/Symbol.iterator">[6] MDN: String.prototype[Symbol.iterator]()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort">[7] MDN: Array.prototype.sort()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/push">[8] MDN: Array.prototype.push()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/pop">[9] MDN: Array.prototype.pop()</a>
+</p>
+
+<nav class="lesson-nav">
+  <a href="0007-peran-it-di-luar-development.html">← 0007 · Peran IT di luar development</a>
+  <a href="0009-coding-array-dan-pencarian.html">0009 · Coding: array dan pencarian →</a>
+</nav>
+
+</main>
+</body>
+</html>

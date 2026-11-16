@@ -182,3 +182,58 @@ test("reference pertanyaan-sql: ±30 questions with visible answers on the inven
 });
 
 // ===== akhir bagian ticket 02 =====
+
+// ===== Lesson 0008–0010 + reference/soal-coding-tambahan.html (ticket 04) =====
+
+// Format soal coding (spec "Soal coding"): satu <h2>Soal N: ...</h2> per soal, berisi tujuh <h3> berurutan.
+// Pseudocode (jawaban utama) dan implementasi JS langsung tampil di <pre><code>.
+const LANGKAH = ["Soal", "Pertanyaan klarifikasi", "Ide", "Pseudocode", "Implementasi JavaScript", "Kompleksitas", "Edge case"];
+const soalSections = html => [...html.matchAll(/<h2>Soal \d+: ([^<]*)<\/h2>([\s\S]*?)(?=<h2>|<p class="note sources">)/g)]
+  .map(m => ({ title: m[1], body: m[2] }));
+const step = (body, name) => (body.split(`<h3>${name}</h3>`)[1] || "").split("<h3>")[0];
+
+function assertCodingFormat(html, label) {
+  const soal = soalSections(html);
+  soal.forEach(({ title, body }) => {
+    LANGKAH.reduce((from, name) => {
+      const at = body.indexOf(`<h3>${name}</h3>`, from);
+      assert.ok(at >= 0, `${label} "${title}": langkah ${name} tidak ada atau tidak berurutan`);
+      return at;
+    }, 0);
+    assert.match(step(body, "Pseudocode"), /<pre><code>/, `${label} "${title}": pseudocode tampil`);
+    assert.match(step(body, "Implementasi JavaScript"), /<pre><code>(?:(?!<\/code>)[\s\S])*\bfunction \w+\(/, `${label} "${title}": implementasi JS tampil`);
+    assert.match(step(body, "Kompleksitas"), /O\(/, `${label} "${title}": kompleksitas Big-O`);
+    assert.ok((step(body, "Edge case").match(/<li>/g) || []).length >= 2, `${label} "${title}": >= 2 edge case`);
+  });
+  return soal;
+}
+
+const CODING = {
+  "0008": { file: "0008-coding-angka-dan-string.html", soal: [/[Pp]alindrome integer/, /[Rr]everse integer/, /[Aa]nagram/, /[Vv]alid parentheses/] },
+};
+
+test("coding lessons are listed as tersedia in the index", () => {
+  fs_.assertListedAsTersedia(CODING);
+});
+
+Object.entries(CODING).forEach(([num, { soal: expected }]) => {
+  test(`fullstack ${num}: every soal follows the 7-step format with pseudocode and JS shown`, () => {
+    const html = fs_.readLesson(num);
+    assert.equal((html.match(/<div class="win">/g) || []).length, 1, `${num}: harus tepat satu target`);
+    assertCitesNumbered(html, num);
+    const soal = assertCodingFormat(html, num);
+    assert.equal(soal.length, expected.length, `${num}: jumlah soal`);
+    expected.forEach((re, i) => assert.match(soal[i].title, re, `${num}: soal ${i + 1} harus ${re}`));
+  });
+});
+
+test("fullstack 0008: palindrome integer without strings, half reversal, and its edge cases", () => {
+  const [pal, rev] = soalSections(fs_.readLesson("0008"));
+  const impl = step(pal.body, "Implementasi JavaScript");
+  assert.doesNotMatch(impl, /String\(|toString|\.split\(|`/, "palindrome: implementasi tanpa konversi ke string");
+  assert.match(pal.body, /separuh/, "palindrome: teknik membalik separuh angka");
+  const edge = step(pal.body, "Edge case");
+  [/negatif/, /berakhiran 0/, /overflow/i].forEach(re => assert.match(edge, re, `palindrome edge case ${re}`));
+  assert.match(rev.body, /overflow/i);
+  assert.match(rev.body, /2<sup>31<\/sup>|2147483647/, "reverse integer: batas 32-bit");
+});
