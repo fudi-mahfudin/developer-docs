@@ -247,3 +247,16 @@ test("fullstack 0009: each pattern names its data structure or invariant", () =>
   assert.match(window.body, /substring terpanjang/i, "sliding window: substring terpanjang tanpa karakter berulang");
   assert.match(step(search.body, "Edge case"), /overflow/i, "binary search: overflow saat menghitung mid");
 });
+
+test("reference soal-coding-tambahan: ±8 extra soal in the same 7-step format", () => {
+  const html = fs_.read("reference/soal-coding-tambahan.html");
+  assert.match(html, /<div class="kicker">Reference · Fullstack · /);
+  const soal = assertCodingFormat(html, "reference/soal-coding-tambahan");
+  assert.ok(soal.length >= 7 && soal.length <= 10, `reference: ±8 soal, ada ${soal.length}`);
+  const titles = soal.map(s => s.title).join(" | ");
+  [/FizzBuzz/, /Armstrong/, /prima/, /[Mm]erge dua array terurut/, /tidak berulang/, /[Rr]otate array/, /Kadane/, /[Aa]nagram/]
+    .forEach(re => assert.match(titles, re, `reference: belum ada soal ${re}`));
+  ["href=\"../index.html\"", "href=\"../lessons/0008-coding-angka-dan-string.html\"", "href=\"../lessons/0009-coding-array-dan-pencarian.html\""]
+    .forEach(link => assert.ok(html.includes(link), `reference: belum menautkan ${link}`));
+  assertCitesNumbered(html, "reference/soal-coding-tambahan");
+});

@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · Soal coding tambahan</title>
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="reference">
+<main>
+<div class="kicker">Reference · Fullstack · 8 soal coding tambahan</div>
+<h1>Soal coding tambahan</h1>
+<p class="subtitle">Delapan soal easy–medium ekstra dengan format tujuh langkah yang sama dengan Lesson <a href="../lessons/0008-coding-angka-dan-string.html">0008</a> dan <a href="../lessons/0009-coding-array-dan-pencarian.html">0009</a>: soal → pertanyaan klarifikasi → ide → pseudocode → implementasi JavaScript → kompleksitas → edge case.</p>
+
+<p class="note">Cara latihan: tutup semua di bawah judul soal, ucapkan pertanyaan klarifikasi dan ide dengan suara keras, tulis pseudocode di kertas dalam ±10 menit, lalu bandingkan. Setiap implementasi di halaman ini sudah dijalankan terhadap edge case-nya.</p>
+
+<h2>Soal 1: FizzBuzz</h2>
+<h3>Soal</h3>
+<p>Untuk setiap bilangan 1 sampai <code>n</code>, hasilkan <code>"Fizz"</code> bila habis dibagi 3, <code>"Buzz"</code> bila habis dibagi 5, <code>"FizzBuzz"</code> bila habis dibagi keduanya, dan bilangan itu sendiri (sebagai string) untuk lainnya.</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Dicetak ke console atau dikembalikan sebagai array?</li>
+  <li>Apa hasil untuk <code>n ≤ 0</code>?</li>
+</ul>
+<h3>Ide</h3>
+<p>Periksa kasus paling spesifik dulu: habis dibagi 15 (3 dan 5) harus dicek sebelum 3 atau 5 saja. "Habis dibagi" diperiksa dengan operator remainder <code>%</code>. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Remainder">[1]</a></sup></p>
+<h3>Pseudocode</h3>
+<pre><code>untuk i dari 1 sampai n:
+    jika i mod 15 = 0: tambahkan "FizzBuzz"
+    selain itu jika i mod 3 = 0: tambahkan "Fizz"
+    selain itu jika i mod 5 = 0: tambahkan "Buzz"
+    selain itu: tambahkan i sebagai string</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function fizzBuzz(n) {
+  const out = [];
+  for (let i = 1; i &lt;= n; i++) {
+    if (i % 15 === 0) out.push("FizzBuzz");
+    else if (i % 3 === 0) out.push("Fizz");
+    else if (i % 5 === 0) out.push("Buzz");
+    else out.push(String(i));
+  }
+  return out;
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>, ruang <code>O(n)</code> untuk array hasil (<code>O(1)</code> bila langsung dicetak).</p>
+<h3>Edge case</h3>
+<ul>
+  <li>Urutan cabang: bila <code>% 3</code> dicek lebih dulu, 15 menjadi <code>"Fizz"</code>.</li>
+  <li><code>n = 0</code> atau negatif: array kosong.</li>
+  <li>Interviewer bisa menambah aturan (mis. 7 → <code>"Bazz"</code>): sebutkan versi yang menyusun string per aturan dari tabel <code>[[3, "Fizz"], [5, "Buzz"]]</code> supaya aturan baru tidak menambah cabang.</li>
+</ul>
+
+<h2>Soal 2: Angka Armstrong (jumlah pangkat digit)</h2>
+<h3>Soal</h3>
+<p>Angka Armstrong adalah bilangan bulat non-negatif yang sama dengan jumlah setiap digitnya dipangkatkan banyaknya digit. Contoh: 153 = 1³ + 5³ + 3³ → <code>true</code>; 9474 = 9⁴ + 4⁴ + 7⁴ + 4⁴ → <code>true</code>; 154 → <code>false</code>.</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Bilangan negatif dianggap apa? (Biasanya <code>false</code>.)</li>
+  <li>Boleh memakai string untuk mengambil digit, atau harus aritmetika?</li>
+</ul>
+<h3>Ide</h3>
+<p>Dua kali lewat digit dengan <code>% 10</code> dan pembagian integer (pola dari Lesson 0008): pertama menghitung banyak digit <code>k</code>, kedua menjumlahkan digit<sup>k</sup>. Angka 0 punya satu digit.</p>
+<h3>Pseudocode</h3>
+<pre><code>fungsi isArmstrong(n):
+    jika n bukan integer atau n &lt; 0: kembalikan false
+    k ← banyak digit n            // 0 dihitung 1 digit
+    jumlah ← 0;  x ← n
+    selama x &gt; 0:
+        jumlah ← jumlah + (x mod 10)^k
+        x ← x div 10
+    kembalikan jumlah = n</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function isArmstrong(n) {
+  if (!Number.isInteger(n) || n &lt; 0) return false;
+  let digits = 1;
+  for (let x = Math.floor(n / 10); x &gt; 0; x = Math.floor(x / 10)) digits++;
+  let sum = 0;
+  for (let x = n; x &gt; 0; x = Math.floor(x / 10)) sum += (x % 10) ** digits;
+  return sum === n;
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(d)</code> dengan d banyak digit (= <code>O(log n)</code>), ruang <code>O(1)</code>.</p>
+<h3>Edge case</h3>
+<ul>
+  <li><code>0</code> sampai <code>9</code>: semuanya Armstrong (d¹ = d), termasuk 0 karena dihitung satu digit.</li>
+  <li>Angka negatif atau pecahan: <code>false</code>; <code>Number.isInteger</code> menolak pecahan dan nilai bukan number. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isInteger">[2]</a></sup></li>
+  <li>Bilangan sangat besar: jumlah pangkat bisa melewati 2<sup>53</sup> − 1 dan kehilangan presisi; sebutkan <code>BigInt</code> bila rentang input besar.</li>
+</ul>
+
+<h2>Soal 3: Cek bilangan prima</h2>
+<h3>Soal</h3>
+<p>Kembalikan <code>true</code> bila <code>n</code> adalah bilangan prima: bilangan bulat lebih dari 1 yang hanya habis dibagi 1 dan dirinya sendiri. Contoh: 2, 3, 7919 → <code>true</code>; 1, 9, 7917 → <code>false</code>.</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Satu angka atau banyak angka sekaligus? (Banyak angka sampai batas N lebih cocok dengan Sieve of Eratosthenes.)</li>
+  <li>Rentang <code>n</code>: sampai berapa?</li>
+</ul>
+<h3>Ide</h3>
+<p>Bila <code>n = a × b</code> dengan a ≤ b, maka a ≤ √n. Jadi cukup mencoba pembagi sampai √n. Tangani 2 terpisah, lalu coba hanya pembagi ganjil 3, 5, 7, …</p>
+<h3>Pseudocode</h3>
+<pre><code>fungsi isPrime(n):
+    jika n bukan integer atau n &lt; 2: kembalikan false
+    jika n genap: kembalikan n = 2
+    d ← 3
+    selama d × d ≤ n:
+        jika n mod d = 0: kembalikan false
+        d ← d + 2
+    kembalikan true</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function isPrime(n) {
+  if (!Number.isInteger(n) || n &lt; 2) return false;
+  if (n % 2 === 0) return n === 2;
+  for (let d = 3; d * d &lt;= n; d += 2) {
+    if (n % d === 0) return false;
+  }
+  return true;
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(√n)</code>, ruang <code>O(1)</code>.</p>
+<h3>Edge case</h3>
+<ul>
+  <li><code>0</code>, <code>1</code>, dan bilangan negatif: bukan prima.</li>
+  <li><code>2</code>: satu-satunya prima genap, ditangani sebelum loop ganjil.</li>
+  <li>Kuadrat prima (9, 25, 49): syarat <code>d × d ≤ n</code> (bukan <code>&lt;</code>) supaya pembagi √n ikut dicoba.</li>
+  <li>Pecahan (<code>2.5</code>): <code>false</code> lewat <code>Number.isInteger</code>. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isInteger">[2]</a></sup></li>
+</ul>
+
+<h2>Soal 4: Merge dua array terurut</h2>
+<h3>Soal</h3>
+<p>Diberikan dua array integer <code>a</code> dan <code>b</code> yang masing-masing terurut naik, kembalikan satu array terurut berisi semua elemen keduanya. Contoh: <code>[1, 3, 5]</code> dan <code>[2, 4, 6, 8]</code> → <code>[1, 2, 3, 4, 5, 6, 8]</code>.</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Boleh membuat array baru, atau harus in-place (mis. <code>a</code> punya ruang kosong di belakang)?</li>
+  <li>Duplikat dipertahankan?</li>
+</ul>
+<h3>Ide</h3>
+<p>Two pointers, satu di setiap array. Ambil yang lebih kecil dari dua kepala, majukan pointer-nya. Saat salah satu habis, salin sisa array lainnya. Menggabung lalu <code>sort()</code> juga benar tapi <code>O((n + m) log(n + m))</code> dan, tanpa comparator, mengurutkan angka sebagai string. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort">[3]</a></sup></p>
+<h3>Pseudocode</h3>
+<pre><code>fungsi mergeSorted(a, b):
+    hasil ← [];  i ← 0;  j ← 0
+    selama i &lt; panjang(a) dan j &lt; panjang(b):
+        jika a[i] ≤ b[j]: tambahkan a[i]; i ← i + 1
+        selain itu: tambahkan b[j]; j ← j + 1
+    tambahkan sisa a[i..] dan sisa b[j..]
+    kembalikan hasil</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function mergeSorted(a, b) {
+  const out = [];
+  let i = 0, j = 0;
+  while (i &lt; a.length &amp;&amp; j &lt; b.length) {
+    if (a[i] &lt;= b[j]) out.push(a[i++]);
+    else out.push(b[j++]);
+  }
+  while (i &lt; a.length) out.push(a[i++]);
+  while (j &lt; b.length) out.push(b[j++]);
+  return out;
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n + m)</code>, ruang <code>O(n + m)</code> untuk hasil.</p>
+<h3>Edge case</h3>
+<ul>
+  <li>Salah satu atau kedua array kosong: hasilnya salinan array lainnya, atau <code>[]</code>.</li>
+  <li>Nilai sama di kedua array: <code>≤</code> mengambil dari <code>a</code> dulu, sehingga urutan stabil.</li>
+  <li>Panjang sangat berbeda: dua loop sisa menangani ekornya.</li>
+</ul>
+
+<h2>Soal 5: Karakter pertama yang tidak berulang</h2>
+<h3>Soal</h3>
+<p>Diberikan string <code>s</code>, kembalikan index karakter pertama yang hanya muncul sekali, atau <code>-1</code> bila tidak ada. Contoh: <code>"leetcode"</code> → <code>0</code>, <code>"loveleetcode"</code> → <code>2</code>, <code>"aabb"</code> → <code>-1</code>.</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Huruf besar dan kecil dibedakan?</li>
+  <li>Index dalam karakter (code point) atau dalam unit UTF-16 bila ada emoji?</li>
+</ul>
+<h3>Ide</h3>
+<p>Dua kali lewat: pertama hitung frekuensi setiap karakter dengan <code>Map</code> <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">[4]</a></sup>, kedua cari dari kiri karakter pertama yang hitungannya 1.</p>
+<h3>Pseudocode</h3>
+<pre><code>fungsi firstUniqChar(s):
+    hitung ← map kosong
+    untuk setiap karakter c di s: hitung[c] ← hitung[c] + 1
+    untuk i dari 0 sampai n − 1:
+        jika hitung[s[i]] = 1: kembalikan i
+    kembalikan −1</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function firstUniqChar(s) {
+  const chars = [...s];                // per code point
+  const count = new Map();
+  for (const ch of chars) count.set(ch, (count.get(ch) ?? 0) + 1);
+  for (let i = 0; i &lt; chars.length; i++) {
+    if (count.get(chars[i]) === 1) return i;
+  }
+  return -1;
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>, ruang <code>O(k)</code> untuk k karakter berbeda (<code>O(1)</code> bila alfabet tetap, mis. a–z).</p>
+<h3>Edge case</h3>
+<ul>
+  <li>String kosong: <code>-1</code>.</li>
+  <li>Semua karakter berulang: <code>-1</code>.</li>
+  <li>Satu karakter: <code>0</code>.</li>
+  <li><code>indexOf</code> dan <code>lastIndexOf</code> per karakter juga benar tapi <code>O(n²)</code>.</li>
+</ul>
+
+<h2>Soal 6: Rotate array</h2>
+<h3>Soal</h3>
+<p>Putar array <code>nums</code> ke kanan sebanyak <code>k</code> langkah, in-place. Contoh: <code>[1, 2, 3, 4, 5, 6, 7]</code>, k = 3 → <code>[5, 6, 7, 1, 2, 3, 4]</code>.</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Ke kanan atau ke kiri? Harus in-place dengan memori <code>O(1)</code>?</li>
+  <li>Bisakah <code>k</code> lebih besar dari panjang array, atau negatif?</li>
+</ul>
+<h3>Ide</h3>
+<p>Rotasi k kali sama dengan rotasi <code>k mod n</code> kali. Trik tiga kali balik: balik seluruh array, lalu balik k elemen pertama, lalu balik sisanya. <code>[1..7]</code> → <code>[7,6,5,4,3,2,1]</code> → <code>[5,6,7,4,3,2,1]</code> → <code>[5,6,7,1,2,3,4]</code>. Tukar dua elemen memakai destructuring assignment. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring">[5]</a></sup></p>
+<h3>Pseudocode</h3>
+<pre><code>fungsi rotate(nums, k):
+    n ← panjang(nums);  jika n = 0: selesai
+    k ← k mod n
+    balik(nums, 0, n − 1)
+    balik(nums, 0, k − 1)
+    balik(nums, k, n − 1)
+
+fungsi balik(nums, lo, hi):
+    selama lo &lt; hi: tukar nums[lo] dan nums[hi]; lo ← lo + 1; hi ← hi − 1</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function rotate(nums, k) {
+  const n = nums.length;
+  if (n === 0) return nums;
+  k = k % n;
+  const balik = (lo, hi) =&gt; {
+    while (lo &lt; hi) {
+      [nums[lo], nums[hi]] = [nums[hi], nums[lo]];
+      lo++;
+      hi--;
+    }
+  };
+  balik(0, n - 1);
+  balik(0, k - 1);
+  balik(k, n - 1);
+  return nums;
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code> (setiap elemen ditukar paling banyak dua kali), ruang <code>O(1)</code>.</p>
+<h3>Edge case</h3>
+<ul>
+  <li><code>k &gt; n</code>: <code>k % n</code>, mis. <code>[1, 2]</code> dengan k = 5 sama dengan k = 1 → <code>[2, 1]</code>.</li>
+  <li><code>k = 0</code> atau <code>k = n</code>: array tidak berubah.</li>
+  <li>Array kosong: dicek sebelum <code>k % n</code> supaya tidak membagi dengan nol (<code>k % 0</code> menghasilkan <code>NaN</code>).</li>
+  <li>k negatif (rotasi ke kiri): klarifikasi dulu; bila diizinkan, pakai <code>((k % n) + n) % n</code>.</li>
+</ul>
+
+<h2>Soal 7: Max subarray (algoritma Kadane)</h2>
+<h3>Soal</h3>
+<p>Diberikan array integer tidak kosong <code>nums</code>, kembalikan jumlah terbesar dari subarray yang bersebelahan (minimal satu elemen). Contoh: <code>[-2, 1, -3, 4, -1, 2, 1, -5, 4]</code> → <code>6</code> (subarray <code>[4, -1, 2, 1]</code>).</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Bila semua angka negatif, apakah jawabannya angka terbesar atau 0 (subarray kosong)?</li>
+  <li>Yang diminta jumlahnya saja, atau juga posisi awal dan akhirnya?</li>
+</ul>
+<h3>Ide</h3>
+<p>Untuk setiap posisi i, subarray terbaik yang <em>berakhir di i</em> adalah <code>nums[i]</code> sendiri atau subarray terbaik yang berakhir di i − 1 ditambah <code>nums[i]</code>; ambil yang lebih besar. Jawaban akhir adalah maksimum dari semua nilai itu. Bila jumlah berjalan sudah negatif, ia hanya merugikan, jadi mulai baru.</p>
+<h3>Pseudocode</h3>
+<pre><code>fungsi maxSubArray(nums):
+    sekarang ← nums[0];  terbaik ← nums[0]
+    untuk i dari 1 sampai n − 1:
+        sekarang ← maks(nums[i], sekarang + nums[i])
+        terbaik ← maks(terbaik, sekarang)
+    kembalikan terbaik</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function maxSubArray(nums) {
+  let cur = nums[0], best = nums[0];
+  for (let i = 1; i &lt; nums.length; i++) {
+    cur = Math.max(nums[i], cur + nums[i]);
+    best = Math.max(best, cur);
+  }
+  return best;
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>, ruang <code>O(1)</code>. Brute force semua subarray <code>O(n²)</code>.</p>
+<h3>Edge case</h3>
+<ul>
+  <li>Semua negatif (<code>[-3, -1, -2]</code>): <code>-1</code>, karena inisialisasi dengan <code>nums[0]</code>, bukan 0. Menginisialisasi <code>best = 0</code> adalah bug paling umum.</li>
+  <li>Satu elemen: elemen itu sendiri.</li>
+  <li>Array kosong: <code>nums[0]</code> bernilai <code>undefined</code>; tanyakan kontraknya dan lempar error atau kembalikan nilai yang disepakati. <code>Math.max()</code> tanpa argumen menghasilkan <code>-Infinity</code>. <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/max">[6]</a></sup></li>
+</ul>
+
+<h2>Soal 8: Valid anagram dengan array hitungan (a–z)</h2>
+<h3>Soal</h3>
+<p>Sama dengan Lesson 0008 soal 3, tapi input dijamin hanya huruf kecil <code>a</code>–<code>z</code>, dan interviewer meminta solusi tanpa <code>Map</code>.</p>
+<h3>Pertanyaan klarifikasi</h3>
+<ul>
+  <li>Dijamin hanya a–z? Bila input bisa berisi karakter lain, versi <code>Map</code> dari 0008 lebih aman.</li>
+  <li>Huruf besar perlu diubah ke kecil dulu?</li>
+</ul>
+<h3>Ide</h3>
+<p>Alfabet tetap 26 huruf, jadi pakai array 26 angka sebagai penghitung. Index huruf = kode karakter dikurangi kode <code>"a"</code> (<code>charCodeAt</code> mengembalikan unit UTF-16 sebagai angka <sup class="cite"><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/charCodeAt">[7]</a></sup>). Tambah untuk <code>s</code>, kurangi untuk <code>t</code> dalam satu loop; anagram bila semua hitungan kembali 0.</p>
+<h3>Pseudocode</h3>
+<pre><code>fungsi isAnagramAZ(s, t):
+    jika panjang(s) ≠ panjang(t): kembalikan false
+    hitung ← array 26 berisi 0
+    untuk i dari 0 sampai n − 1:
+        hitung[s[i] − 'a'] ← +1
+        hitung[t[i] − 'a'] ← −1
+    kembalikan semua hitung = 0</code></pre>
+<h3>Implementasi JavaScript</h3>
+<pre><code>function isAnagramAZ(s, t) {
+  if (s.length !== t.length) return false;
+  const count = new Array(26).fill(0);
+  const a = "a".charCodeAt(0);
+  for (let i = 0; i &lt; s.length; i++) {
+    count[s.charCodeAt(i) - a]++;
+    count[t.charCodeAt(i) - a]--;
+  }
+  return count.every(c =&gt; c === 0);
+}</code></pre>
+<h3>Kompleksitas</h3>
+<p>Waktu <code>O(n)</code>, ruang <code>O(1)</code> (array tetap 26 elemen, tidak tumbuh dengan input).</p>
+<h3>Edge case</h3>
+<ul>
+  <li>Panjang berbeda: <code>false</code> sebelum loop.</li>
+  <li>Dua string kosong: <code>true</code>.</li>
+  <li>Karakter di luar a–z membuat index negatif atau &gt; 25 dan hasilnya salah tanpa error: ini alasan pertanyaan klarifikasi pertama.</li>
+</ul>
+
+<p class="note sources">
+  Sumber:
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Remainder">[1] MDN: Remainder (%)</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/isInteger">[2] MDN: Number.isInteger()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort">[3] MDN: Array.prototype.sort()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map">[4] MDN: Map</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring">[5] MDN: Destructuring</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/max">[6] MDN: Math.max()</a> ·
+  <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/charCodeAt">[7] MDN: String.prototype.charCodeAt()</a>
+</p>
+<p class="note">Lesson terkait: <a href="../lessons/0008-coding-angka-dan-string.html">0008</a> · <a href="../lessons/0009-coding-array-dan-pencarian.html">0009</a> · <a href="../lessons/0010-simulasi-interview.html">0010</a> · <a href="../index.html">Indeks</a></p>
+</main>
+</body>
+</html>
