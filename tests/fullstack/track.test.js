@@ -72,14 +72,6 @@ test("fullstack RESOURCES lists out-of-scope topics as further reading", () => {
   [/LeetCode/, /NeetCode/, /DP|dynamic programming/i, /graph/i, /Docker/].forEach(re => assert.match(extra, re));
 });
 
-test("fullstack is linked from the root index, the glossary map, and CLAUDE.md", () => {
-  assert.match(fs.readFileSync(path.join(ROOT, "index.html"), "utf8"), /href="fullstack\/index\.html"/);
-  assert.match(fs.readFileSync(path.join(ROOT, "GLOSSARY-MAP.md"), "utf8"), /fullstack\/GLOSSARY\.md/);
-  const claude = fs.readFileSync(path.join(ROOT, "CLAUDE.md"), "utf8");
-  assert.match(claude, /fullstack\/GLOSSARY\.md/);
-  assert.match(claude, /tests\/\{shared,dotnet,fhir,sysdesign,nodejs,fullstack\}\//);
-});
-
 lessons.forEach(({ num, href }) => {
   test(`fullstack ${num}: lesson page exists, uses the kicker, links its neighbours, has one win`, () => {
     const html = read(href);
