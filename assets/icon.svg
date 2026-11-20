@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Persiapan Interview">
+  <!-- Latar penuh (aman untuk maskable); isi berada di dalam safe zone 60% di tengah. -->
+  <rect width="512" height="512" fill="#8b1e3f"/>
+  <g fill="none" stroke="#fffff8" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M196 186 L126 256 L196 326"/>
+    <path d="M316 186 L386 256 L316 326"/>
+    <path d="M280 166 L232 346"/>
+  </g>
+</svg>

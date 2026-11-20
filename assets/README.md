@@ -2,6 +2,8 @@
 
 Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetch`). Contoh lengkap yang bisa dibuka: `assets/examples/review-example.html`.
 
+**PWA (ADR 0004):** situs yang dideploy adalah PWA (offline + installable). Tag PWA disuntik saat build ke artefak `_site/`, jadi **jangan** menulis `<link rel="manifest">` atau `pwa.js` di HTML. Lesson baru otomatis ikut di-precache. Coba SW/offline/install dengan `npm run preview`. Jangan menautkan file yang tidak dideploy (`tests/`, `docs/`, `.scratch/`, `scripts/`); `tests/shared/build-pwa.test.js` memeriksanya.
+
 | File | Isi |
 |---|---|
 | `style.css` | Stylesheet bersama untuk lesson, reference, dan indeks (termasuk aturan cetak). |
@@ -13,6 +15,8 @@ Semua komponen jalan langsung dari `file://` (tanpa server, tanpa `import`/`fetc
 | `order.js` | Latihan "susun urutan" (↑/↓ + Periksa, tandai posisi benar/salah). Logic diuji di `tests/shared/order.test.js`. |
 | `hands-on.js` | Komponen hands-on lesson database (0019+): blok skrip `.sql` dengan tombol copy, dan latihan tulis query dengan jawaban di balik tombol "Lihat jawaban". Contoh: `assets/examples/hands-on-example.html`. |
 | `timer.js` | Timer bersegmen untuk latihan dibatasi waktu: `<div class="timer" data-segments="Konsep:20,Live coding:25,STAR:15">`. Mulai/Jeda/Reset, segmen berganti otomatis, tersembunyi saat dicetak. Logic diuji di `tests/shared/timer.test.js`. Contoh: lesson 0018. |
+| `pwa.js` | Registrasi service worker. Hanya disuntik ke situs yang dideploy (bukan ditulis di HTML), dan tidak melakukan apa-apa di `file://`. |
+| `icon.svg`, `icons/` | Sumber ikon aplikasi dan PNG hasil `npm run icons` (di-commit). |
 | `svg.diagram` (CSS di `style.css`) | Diagram arsitektur bercabang sebagai inline SVG (ADR 0003): `<svg class="diagram" viewBox=… role="img" aria-label=…>` berisi `<defs><marker id="panah">`, node `<g class="node service|store|cache|queue|client"><rect/><text/></g>`, dan garis `<path class="edge">` (`edge async` = putus-putus). Bungkus dengan `<figure class="diagram-fig">` + `figcaption` bila perlu. Alur linear tetap memakai `.flow`. Contoh: `assets/examples/diagram-example.html`. |
 
 ## Format soal (`<track>/assets/questions/NNNN.js`)
