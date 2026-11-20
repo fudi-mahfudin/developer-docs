@@ -1,0 +1,21 @@
+{
+  "name": "developer-docs",
+  "private": true,
+  "description": "Persiapan interview: situs statis + PWA (lihat docs/adr/0004-pwa.md)",
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build-pwa.js",
+    "preview": "npm run build && http-server _site -c-1 -p 8080",
+    "icons": "node scripts/icons.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "http-server": "^14.1.1",
+    "sharp": "^0.35.5",
+    "workbox-build": "^7.4.1",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1"
+  }
+}
